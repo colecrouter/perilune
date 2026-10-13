@@ -7,8 +7,8 @@
 		onConfirm
 	}: {
 		open?: boolean;
-		bedTarget: number;
-		nozzleTarget: number;
+		bedTarget: number | null;
+		nozzleTarget: number | null;
 		onConfirm: (coolBed: boolean, coolNozzle: boolean) => Promise<void>;
 	} = $props();
 	let coolBed = $state(true);

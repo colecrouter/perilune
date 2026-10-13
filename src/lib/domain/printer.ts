@@ -33,27 +33,35 @@ export interface ActionRecord {
 export interface PrinterSnapshot {
 	revision: number;
 	updatedAt: number;
-	connection: 'connected' | 'disconnected';
+	mode: 'simulator' | 'moonraker';
+	connection: 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+	klippy: 'unknown' | 'ready' | 'startup' | 'shutdown' | 'error' | 'disconnected';
+	telemetryAt: number | null;
+	availableObjects: string[];
 	connectionGeneration: number;
 	storage: 'healthy' | 'degraded';
 	job: {
 		filename: string;
-		state: 'printing' | 'paused' | 'cancelled';
-		progress: number;
-		layer: number;
-		totalLayers: number;
-		remainingMinutes: number;
+		state: 'unknown' | 'standby' | 'printing' | 'paused' | 'complete' | 'cancelled' | 'error';
+		progress: number | null;
+		layer: number | null;
+		totalLayers: number | null;
+		remainingMinutes: number | null;
 	};
 	heaters: {
-		nozzle: { current: number; target: number };
-		bed: { current: number; target: number };
+		nozzle: { current: number | null; target: number | null };
+		bed: { current: number | null; target: number | null };
 	};
 	actions: ActionRecord[];
 }
 export const initialSnapshot = (): PrinterSnapshot => ({
 	revision: 0,
 	updatedAt: Date.now(),
+	mode: 'simulator',
 	connection: 'connected',
+	klippy: 'ready',
+	telemetryAt: Date.now(),
+	availableObjects: ['extruder', 'heater_bed', 'print_stats', 'virtual_sdcard'],
 	connectionGeneration: 0,
 	storage: 'healthy',
 	job: {
@@ -96,7 +104,7 @@ export function applyCommand(state: PrinterSnapshot, command: PrinterCommand): P
 			throw new CommandRejected({ message: 'The print is no longer paused' });
 		next.job.state = 'printing';
 	} else {
-		if (state.job.state === 'cancelled')
+		if (state.job.state !== 'printing' && state.job.state !== 'paused')
 			throw new CommandRejected({ message: 'The print is already stopped' });
 		next.job.state = 'cancelled';
 		if (command.coolBed) next.heaters.bed.target = 0;
@@ -104,3 +112,22 @@ export function applyCommand(state: PrinterSnapshot, command: PrinterCommand): P
 	}
 	return next;
 }
+
+/** Empty live state never presents demo telemetry as physical printer values. */
+export const initialLiveSnapshot = (): PrinterSnapshot => ({
+	...initialSnapshot(),
+	mode: 'moonraker',
+	connection: 'connecting',
+	klippy: 'unknown',
+	telemetryAt: null,
+	availableObjects: [],
+	job: {
+		filename: '',
+		state: 'unknown',
+		progress: null,
+		layer: null,
+		totalLayers: null,
+		remainingMinutes: null
+	},
+	heaters: { nozzle: { current: null, target: null }, bed: { current: null, target: null } }
+});

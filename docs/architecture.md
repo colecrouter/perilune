@@ -1,8 +1,8 @@
 # Architecture and decisions
 
-## First development slice
+## Process-owned services
 
-SvelteKit 3 and Vite+ serve a simulator-backed dashboard. A process-scoped Effect
+SvelteKit 3 and Vite+ serve a shared dashboard in simulator or read-only live mode. A process-scoped Effect
 ManagedRuntime owns a single PrinterService, its worker, temperature ticker, and
 SQLite-backed ActionStore. Browser connections never own these resources.
 
@@ -38,7 +38,30 @@ headers supplied by clients are not trusted. TLS/HTTP2/HTTP3 belong at the edge.
 
 The simulator begins with a fixed example print. Temperatures approach targets;
 print progress is fixed. Reset restores the example and preserves action history.
-This is an application-service simulator, not yet a Moonraker JSON-RPC simulator.
+This application-service demo is separate from the WebSocket protocol fixtures used to test live integration.
+
+## Persistent read-only Moonraker
+
+`PERILUNE_MOONRAKER_URL` selects live mode at process startup. A scoped Effect
+MoonrakerService owns one native Node WebSocket and a bounded exponential reconnect
+loop. JSON-RPC requests have deadlines; a periodic `server.info` round trip detects
+silent connections and distinguishes Moonraker reachability from Klipper readiness.
+Only identification, server info, object discovery, and status subscription RPCs
+are available. There is no arbitrary RPC or physical command API.
+
+A process-owned bridge consumes transport snapshots into PrinterService. Browser
+lifetimes never create printer sockets. Full initial subscription status replaces
+cached object state; notifications merge field deltas. Discovery limits subscriptions
+to objects actually available. Unavailable heaters and slicer layer information are
+null, rather than fictional values. Remaining time is an estimate based on elapsed
+print duration and file progress, not a slicer prediction.
+
+Live initialization is immediate with unknown values, so a slow/offline printer does
+not block rendering. Reconnects retain last known values with a telemetry timestamp.
+Shutdown/startup retain visible readings while indicating that Klipper is unavailable.
+All live action admission is rejected before persistence; simulator connection/reset
+methods cannot change live state. Physical command policies are a separate milestone.
+URLs, API keys, raw server errors, and printer configuration stay out of client state.
 
 ## Browser and interface
 
@@ -69,7 +92,7 @@ and patched during prepare so its diagnostics also appear in checks.
 
 ## Next milestones
 
-1. Protocol-level Moonraker simulator and persistent read-only WebSocket adapter.
+1. Completed: protocol-level Moonraker simulator and persistent read-only WebSocket adapter.
 2. Real command policies, reconciliation, cancellation macro behavior, priority stop.
 3. Camera gateway and source-change propagation.
 4. Built-in authentication and validated external identity.
@@ -79,4 +102,14 @@ and patched during prepare so its diagnostics also appear in checks.
 Authentication is not implemented. Compose binds only to loopback by default.
 Remote development instances must stay behind existing authentication. No real
 printer commands, migrations, configuration writes, heating, or motion are performed
-by this version.
+by live mode. Simulator commands only alter demo state.
+
+## Protocol references
+
+- [Moonraker WebSocket JSON-RPC](https://moonraker.readthedocs.io/en/latest/external_api/introduction/)
+- [Server state and client identification](https://moonraker.readthedocs.io/en/latest/external_api/server/)
+- [Connection authorization](https://moonraker.readthedocs.io/en/latest/external_api/authorization/)
+
+This milestone maps the primary extruder and heated bed. Multiple toolheads,
+additional temperature sensors, richer capability controls, and slicer-derived
+remaining-time estimates are future work.
