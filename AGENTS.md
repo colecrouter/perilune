@@ -21,5 +21,7 @@
   correctness, regressions, tests, and deployment assumptions; resolve actionable
   findings and record the review result in the PR. Small cosmetic edits need not
   trigger a separate review.
-- Visual direction: serif headings are chosen. Preserve warm surfaces and teal,
-  with a contrasting dark rail and restrained lime accents.
+- Visual direction: serif headings are chosen. Preserve the original warm neutrals and teal.
+  Lunar identity comes from a midnight-blue rail, subtle static stars, a crescent
+  mark, pale lavender accents, and the camera orbit. Avoid tinting the entire UI
+  green or replacing the established palette with a single hue.

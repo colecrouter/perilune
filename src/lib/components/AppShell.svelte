@@ -12,7 +12,12 @@
 
 <div class="app-shell">
 	<aside class="sidebar">
-		<a class="brand" href="/">Perilune</a>
+		<a class="brand" href="/">
+			<svg class="brand-mark" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"
+				><path d="M21 6a11 11 0 1 0 5 18A11 11 0 0 1 21 6" /></svg
+			>
+			<span>Perilune</span>
+		</a>
 		<nav aria-label="Main navigation">
 			{#each navigation as item}<a
 					href={item.href}
