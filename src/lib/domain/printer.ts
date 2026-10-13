@@ -34,6 +34,8 @@ export interface PrinterSnapshot {
 	revision: number;
 	updatedAt: number;
 	connection: 'connected' | 'disconnected';
+	connectionGeneration: number;
+	storage: 'healthy' | 'degraded';
 	job: {
 		filename: string;
 		state: 'printing' | 'paused' | 'cancelled';
@@ -52,6 +54,8 @@ export const initialSnapshot = (): PrinterSnapshot => ({
 	revision: 0,
 	updatedAt: Date.now(),
 	connection: 'connected',
+	connectionGeneration: 0,
+	storage: 'healthy',
 	job: {
 		filename: 'orbital-bracket.gcode',
 		state: 'printing',

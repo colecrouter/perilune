@@ -174,9 +174,6 @@ catalogs:
 overrides:
   vite@*: npm:@voidzero-dev/vite-plus-core@1.0.0
 
-patchedDependencies:
-  vite-plugin-sveltekit-legacy@0.1.0: 840fd0d8aedaec37e4e0a066168a5d5128bb68a8fa7be296d7a857ed3fb19d50
-
 importers:
 
   .:
@@ -246,8 +243,8 @@ importers:
         specifier: 'catalog:'
         version: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3)'
       vite-plugin-sveltekit-legacy:
-        specifier: ^0.1.0
-        version: 0.1.0(patch_hash=840fd0d8aedaec37e4e0a066168a5d5128bb68a8fa7be296d7a857ed3fb19d50)(@vitejs/plugin-legacy@8.2.3(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3))(terser@5.51.2))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3))
+        specifier: 0.1.1
+        version: 0.1.1(@sveltejs/kit@3.0.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.3.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3))(svelte@5.57.2))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3))(svelte@5.57.2)(typescript@6.0.3))(@vitejs/plugin-legacy@8.2.3(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3))(terser@5.51.2))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3))
       vite-plus:
         specifier: 'catalog:'
         version: 1.0.0(@opentelemetry/api@1.9.0)(@types/node@24.19.2)(@vitest/browser-playwright@5.0.1)(@vitest/ui@5.0.1)(svelte@5.57.2)(terser@5.51.2)(typescript@6.0.3)
@@ -2137,9 +2134,10 @@ packages:
     peerDependencies:
       browserslist: '>= 4.21.0'
 
-  vite-plugin-sveltekit-legacy@0.1.0:
-    resolution: {integrity: sha512-op0pNn2xi6BFF6eBpVJfydSaxU26Tx6Xdu1VUbGMKGkB1vA5pGCgnvwv40lvm/vFJ/7wmBARBPMZItd4LAzseA==}
+  vite-plugin-sveltekit-legacy@0.1.1:
+    resolution: {integrity: sha512-14RlvhwsZ0F+zPjTWsHvD2d7Yc3BaNtt3g1B/k1qUl8QuivzqnqlssOY4pSnskyaNB//oX+D/A0/Vk587iX6FQ==}
     peerDependencies:
+      '@sveltejs/kit': ^2.0.0 || ^3.0.0
       '@vitejs/plugin-legacy': ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0
       vite: ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0
 
@@ -3943,8 +3941,9 @@ snapshots:
       escalade: 3.2.0
       picocolors: 1.1.1
 
-  vite-plugin-sveltekit-legacy@0.1.0(patch_hash=840fd0d8aedaec37e4e0a066168a5d5128bb68a8fa7be296d7a857ed3fb19d50)(@vitejs/plugin-legacy@8.2.3(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3))(terser@5.51.2))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3)):
+  vite-plugin-sveltekit-legacy@0.1.1(@sveltejs/kit@3.0.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.3.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3))(svelte@5.57.2))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3))(svelte@5.57.2)(typescript@6.0.3))(@vitejs/plugin-legacy@8.2.3(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3))(terser@5.51.2))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3)):
     dependencies:
+      '@sveltejs/kit': 3.0.1(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@7.3.1(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3))(svelte@5.57.2))(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3))(svelte@5.57.2)(typescript@6.0.3)
       '@vitejs/plugin-legacy': 8.2.3(@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3))(terser@5.51.2)
       vite: '@voidzero-dev/vite-plus-core@1.0.0(@types/node@24.19.2)(terser@5.51.2)(typescript@6.0.3)'
 

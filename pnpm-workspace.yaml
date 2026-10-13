@@ -5,6 +5,7 @@ minimumReleaseAgeExclude:
   - '@effect/sql-sqlite-node@4.0.4'
   - effect@4.0.4
   - sveltekit-effect@0.2.0
+  - vite-plugin-sveltekit-legacy@0.1.1
 overrides:
   vite@*: 'catalog:'
 peerDependencyRules:
@@ -15,5 +16,3 @@ peerDependencyRules:
 
 allowBuilds:
   core-js: false
-patchedDependencies:
-  vite-plugin-sveltekit-legacy@0.1.0: patches/vite-plugin-sveltekit-legacy@0.1.0.patch
