@@ -1,0 +1,18 @@
+:root {
+	--canvas: #f5f3ef;
+	--surface: #faf9f7;
+	--text: #242728;
+	--muted: #73797e;
+	--border: #dfdfdc;
+	--border-strong: #c8ccca;
+	--camera: #ecebe8;
+	--accent: #36756e;
+	--accent-hover: #29645c;
+	--accent-soft: #e5eeeb;
+	--accent-border: #adc9c3;
+	--success: #16875e;
+	--danger: #bc3837;
+	--danger-border: #df8883;
+	--warning: #b57b1c;
+	--warning-soft: #f6eddc;
+}
