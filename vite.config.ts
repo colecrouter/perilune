@@ -11,7 +11,8 @@ export default defineConfig({
 		sveltekit({
 			adapter: adapter(),
 			experimental: { remoteFunctions: true },
-			compilerOptions: { experimental: { async: true } }
+			compilerOptions: { experimental: { async: true } },
+			inspector: true
 		}),
 		legacy({ modernTargets: ['Safari >= 16.4', 'Chrome >= 110', 'Firefox >= 115'] })
 	]),

@@ -2,5 +2,6 @@
 	"typescript.tsdk": "node_modules/typescript/lib",
 	"typescript.enablePromptUseWorkspaceTsdk": true,
 	"editor.insertSpaces": false,
-	"editor.tabSize": 2
+	"editor.tabSize": 2,
+	"editor.defaultFormatter": "oxc.oxc-vscode"
 }
