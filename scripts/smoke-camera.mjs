@@ -120,6 +120,7 @@ app.stderr.on('data', (chunk) => {
 	logs += chunk;
 });
 let browser;
+const initialMediaGate = Promise.withResolvers();
 try {
 	for (let attempt = 0; ; attempt++) {
 		try {
@@ -141,7 +142,19 @@ try {
 	const browserRequests = [];
 	page.on('pageerror', (error) => errors.push(error.message));
 	page.on('request', (request) => browserRequests.push(request.url()));
-	await page.goto(base);
+	await page.route('**/api/camera/stream.mp4', async (route) => {
+		await initialMediaGate.promise;
+		await route.continue();
+	});
+	await page.goto(base, { waitUntil: 'domcontentloaded' });
+	await page.getByRole('heading', { name: 'Connecting to camera', exact: true }).waitFor();
+	await mkdir('test-results', { recursive: true });
+	await page.screenshot({ path: 'test-results/camera-fixture-loading.png', fullPage: true });
+	assert.ok(
+		await page.locator('.camera-fallback').isVisible(),
+		'Loading placeholder remains visible before media arrives'
+	);
+	initialMediaGate.resolve();
 	await page.waitForFunction(() => {
 		const video = document.querySelector('video');
 		return video && video.videoWidth === 320 && video.currentTime > 0;
@@ -227,8 +240,12 @@ try {
 		false,
 		'Camera controls fit narrow mobile'
 	);
+	await page.getByRole('button', { name: 'Pause view' }).hover();
+	await page.getByRole('tooltip').filter({ hasText: 'Pause view' }).waitFor();
 	await page.getByRole('button', { name: 'Pause view' }).click();
-	await page.getByText('Camera playback paused.', { exact: true }).waitFor();
+	await page.getByRole('heading', { name: 'Camera playback paused', exact: true }).waitFor();
+	assert.ok(await page.locator('.camera-fallback').isVisible());
+	await page.screenshot({ path: 'test-results/camera-fixture-paused.png', fullPage: true });
 	const frameCount = await page.evaluate(() => document.querySelector('video').currentTime);
 	await page.getByRole('button', { name: 'Resume view' }).click();
 	await page.waitForFunction(
@@ -252,6 +269,7 @@ try {
 		'Camera production smoke passed: H.264 decoding, two viewers, capture, same-origin URLs, clean EOF/reconnect, source change, old-session invalidation, orientation, drafts,320px layout, pause/resume.'
 	);
 } finally {
+	initialMediaGate.resolve();
 	await browser?.close();
 	app.kill('SIGTERM');
 	await new Promise((resolve) => {

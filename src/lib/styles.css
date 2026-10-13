@@ -932,3 +932,69 @@ progress::-moz-progress-bar {
 	width: 100vh;
 	height: 100vw;
 }
+
+.camera-video .camera-fallback {
+	position: absolute;
+	inset: 0;
+	aspect-ratio: auto;
+	min-height: 0;
+	border: 0;
+	border-radius: 0;
+	z-index: 1;
+	padding: 16px;
+}
+.camera-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-shrink: 0;
+}
+.button.icon-button {
+	width: 44px;
+	height: 44px;
+	padding: 0;
+	display: grid;
+	place-items: center;
+}
+.icon-tooltip {
+	z-index: 1000;
+	padding: 7px 10px;
+	border-radius: 6px;
+	background: var(--rail);
+	color: var(--rail-text);
+	font-size: 12px;
+	box-shadow: 0 3px 12px #10131c26;
+}
+@media (max-width: 480px) {
+	.camera-tools small {
+		flex-basis: auto;
+		min-width: 0;
+	}
+}
+
+@media (max-width: 480px) {
+	.camera-fallback {
+		gap: 6px;
+	}
+	.camera-fallback svg {
+		width: 32px;
+		height: 32px;
+		margin-bottom: 0;
+	}
+	.camera-fallback h3 {
+		font-size: 14px;
+	}
+	.camera-fallback p {
+		font-size: 12px;
+	}
+}
+
+.camera-video .camera-fallback::before {
+	width: min(65%, 300px);
+	height: auto;
+	aspect-ratio: 1;
+}
+.camera-video .camera-fallback::after {
+	width: min(85%, 400px);
+	height: 60%;
+}

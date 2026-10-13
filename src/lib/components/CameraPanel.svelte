@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import type { CameraDescriptor } from '#lib/domain/camera.js';
 	import Icon from './Icon.svelte';
+	import IconButton from './IconButton.svelte';
 	import { playCamera } from '#lib/client/camera-player.js';
 	let { camera }: { camera: CameraDescriptor } = $props();
 	let video = $state<HTMLVideoElement>();
@@ -16,6 +17,16 @@
 	let failures = 0;
 	let pausedByUser = $state(false);
 	let canFullscreen = $state(false);
+	const showFallback = $derived(!visible || pausedByUser || status !== 'live');
+	const fallbackTitle = $derived(
+		!visible || pausedByUser
+			? 'Camera playback paused'
+			: status === 'reconnecting'
+				? 'Reconnecting to camera'
+				: status === 'unsupported'
+					? 'Camera video unavailable'
+					: 'Connecting to camera'
+	);
 	const transform = $derived(
 		`translate(-50%, -50%) rotate(${camera.rotation}deg) scale(${camera.flipHorizontal ? -1 : 1}, ${camera.flipVertical ? -1 : 1})`
 	);
@@ -155,34 +166,48 @@
 			<video bind:this={video} style:transform autoplay muted playsinline aria-label={camera.name}
 				><track kind="captions" /></video
 			>
+			{#if showFallback}<div class="camera-empty camera-fallback" role="status">
+					<Icon name="camera" size={52} />
+					<h3>{fallbackTitle}</h3>
+					<p>Your camera will appear here through a secure app URL.</p>
+				</div>{/if}
 		</div>
 		<div class="camera-tools">
-			<small class="muted">{camera.name}</small><button
-				class="button secondary"
-				onclick={() => {
-					pausedByUser = !pausedByUser;
-				}}>{pausedByUser ? 'Resume view' : 'Pause view'}</button
-			>{#if canFullscreen}<button class="button secondary" onclick={fullscreen}>Fullscreen</button
-				>{/if}<button class="button secondary" onclick={capture} disabled={capturing}
-				>{capturing ? 'Capturing…' : 'Capture image'}</button
-			>
+			<small class="muted">{camera.name}</small>
+			<div class="camera-actions">
+				<IconButton
+					icon={pausedByUser ? 'play' : 'pause'}
+					label={pausedByUser ? 'Resume view' : 'Pause view'}
+					onclick={() => {
+						pausedByUser = !pausedByUser;
+					}}
+				/>
+				{#if canFullscreen}<IconButton
+						icon="fullscreen"
+						label="Fullscreen"
+						onclick={fullscreen}
+					/>{/if}
+				<IconButton
+					icon="capture"
+					label={capturing ? 'Capturing…' : 'Capture image'}
+					onclick={capture}
+					disabled={capturing}
+					busy={capturing}
+				/>
+			</div>
 		</div>
-		{#if pausedByUser}<p class="muted" role="status">
-				Camera playback paused.
-			</p>{:else if !visible}<p class="muted" role="status">
-				Playback pauses while this tab is hidden.
-			</p>{:else if message}<div class="camera-message" role="status">
-				<span>{message}</span>{#if status !== 'unsupported'}<button
-						class="button secondary"
-						onclick={play}>Play camera</button
-					>{/if}
-				{#if status !== 'unsupported'}<button
-						class="button secondary"
-						onclick={() => {
-							failures = 0;
-							retry++;
-						}}>Retry now</button
-					>{/if}
+		{#if !pausedByUser && visible && message}<div class="camera-message" role="status">
+				<span>{message}</span>
+				{#if status !== 'unsupported'}<div class="camera-actions">
+						<IconButton icon="play" label="Play camera" onclick={play} /><IconButton
+							icon="retry"
+							label="Retry now"
+							onclick={() => {
+								failures = 0;
+								retry++;
+							}}
+						/>
+					</div>{/if}
 			</div>{/if}
 		{#if captureError}<p class="error-text" role="alert">{captureError}</p>{/if}
 	{:else}
