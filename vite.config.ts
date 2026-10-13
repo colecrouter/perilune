@@ -30,7 +30,7 @@ export default defineConfig({
 			},
 			{
 				extends: true,
-				optimizeDeps: { include: ['vite-plus/test/browser', 'vitest-browser-svelte'] },
+				optimizeDeps: { include: ['vite-plus/test/browser', 'vitest-browser-svelte', 'effect'] },
 				test: {
 					name: 'browser',
 					include: ['src/**/*.browser.test.ts'],

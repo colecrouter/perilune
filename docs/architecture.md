@@ -210,3 +210,27 @@ continuous response. Safari hardware passkey/media checks remain outstanding.
 Better Auth’s published peer range still declares Kit 2, despite its Kit 3 integration
 documentation. This dependency warning is retained; production Kit 3 password and
 passkey flows pass the automated tests. No peer override hides it.
+
+## Motion controls: simulator increment
+
+The Controls page provides an XY travel map with an explicit preview/Move here
+step, immediate center and axis-minimum shortcuts, bounded fine jogging, separate
+Z destinations, and homing. Drafts survive telemetry updates; a changed position
+invalidates the preview until the operator refreshes it. Near-bed lowering below
+5 mm requires a clearance acknowledgement. This threshold is an initial UI policy,
+not collision detection.
+
+The shared backend rejects motion while printing, paused, disconnected, unhomed,
+calibrating, busy, or missing required telemetry. It checks configured bounds and
+all preserved coordinates at admission and again at execution. Pending actions
+reserve movement across users; idempotent retries return the original action.
+Terminal failures and unknown outcomes remain visible in the controls panel.
+
+Live mode subscribes to toolhead position, travel limits, homed axes, idle timeout,
+and manual-probe state, but rejects all movement and homing. The map uses the
+[Klipper toolhead coordinate system](https://www.klipper3d.org/Status_Reference.html#toolhead).
+Its rectangle represents reported travel extent, not guaranteed reachable bed
+geometry or a collision-free path. Kinematic profiles, fixtures, physical command
+acknowledgements, and coordinated owner testing are required before live operation.
+Temperature history/LayerChart, extrusion, fan controls, and guided calibration
+remain subsequent increments.

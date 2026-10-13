@@ -285,3 +285,41 @@ describe('Moonraker read-only protocol', () => {
 		expect(snapshot.job.progress).toBe(100);
 	});
 });
+
+describe('motion telemetry normalization', () => {
+	it('uses configured-coordinate positions and actual reported bounds', () => {
+		const snapshot = normalizeMoonrakerStatus(
+			{
+				toolhead: {
+					position: [15, 30, 12, 9],
+					axis_minimum: [-10, 0, 0, 0],
+					axis_maximum: [220, 230, 250, 0],
+					homed_axes: 'xy'
+				},
+				idle_timeout: { state: 'Ready' },
+				manual_probe: { is_active: true }
+			},
+			emptyMoonrakerSnapshot()
+		);
+		expect(snapshot.motion.position).toEqual({ x: 15, y: 30, z: 12 });
+		expect(snapshot.motion.limits.x).toEqual({ min: -10, max: 220 });
+		expect(snapshot.motion.homed).toEqual(['x', 'y']);
+		expect(snapshot.motion.busy).toBe(false);
+		expect(snapshot.motion.calibration).toBe(true);
+	});
+	it('keeps missing/invalid coordinates, bounds, and readiness unknown', () => {
+		const snapshot = normalizeMoonrakerStatus(
+			{
+				toolhead: {
+					position: [NaN, Infinity],
+					axis_minimum: [0, 0, 0],
+					axis_maximum: [0, -1, '250']
+				}
+			},
+			emptyMoonrakerSnapshot()
+		);
+		expect(snapshot.motion.position).toEqual({ x: null, y: null, z: null });
+		expect(snapshot.motion.limits).toEqual({ x: null, y: null, z: null });
+		expect(snapshot.motion.busy).toBeNull();
+	});
+});

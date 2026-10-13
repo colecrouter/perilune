@@ -16,7 +16,8 @@ export const MoonrakerBridgeLive = Layer.effectDiscard(
 					availableObjects: telemetry.availableObjects,
 					job:
 						telemetry.updatedAt === null ? { ...telemetry.job, state: 'unknown' } : telemetry.job,
-					heaters: telemetry.heaters
+					heaters: telemetry.heaters,
+					motion: telemetry.motion
 				})
 			),
 			Effect.forkScoped

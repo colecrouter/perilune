@@ -10,6 +10,7 @@ import {
 	type ActionStatus,
 	type PrinterSnapshot
 } from '#lib/domain/printer.js';
+import { motionReason } from '#lib/domain/motion.js';
 import { ActionStore } from './action-store.js';
 
 export class ActionRejected extends Data.TaggedError('ActionRejected')<{
@@ -27,7 +28,8 @@ export class PrinterService extends Context.Service<
 			telemetry: Pick<
 				PrinterSnapshot,
 				'connection' | 'klippy' | 'telemetryAt' | 'availableObjects' | 'job' | 'heaters'
-			>
+			> &
+				Partial<Pick<PrinterSnapshot, 'motion'>>
 		) => Effect.Effect<void>;
 	}
 >()('perilune/PrinterService') {}
@@ -223,6 +225,29 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 											})
 										);
 									return existing.action;
+								}
+								if (request.command.type === 'move' || request.command.type === 'home') {
+									const required =
+										request.command.type === 'move'
+											? (Object.keys(request.command.target) as ('x' | 'y' | 'z')[])
+											: request.command.axes === 'xy'
+												? (['x', 'y'] as const)
+												: request.command.axes === 'z'
+													? (['z'] as const)
+													: (['x', 'y', 'z'] as const);
+									const reason = motionReason(current, required, request.command.type === 'home');
+									if (reason) return yield* Effect.fail(new ActionRejected({ message: reason }));
+									const validation = yield* Effect.try({
+										try: () => applyCommand(current, request.command),
+										catch: (cause) =>
+											new ActionRejected({
+												message:
+													cause instanceof CommandRejected
+														? cause.message
+														: 'Invalid movement command'
+											})
+									}).pipe(Effect.result);
+									if (validation._tag === 'Failure') return yield* Effect.fail(validation.failure);
 								}
 								if (pending.size >= 20)
 									return yield* Effect.fail(

@@ -258,3 +258,52 @@ describe('live read-only printer service', () => {
 		expect(result.connectionGeneration).toBe(2);
 	});
 });
+
+describe('shared motion reservation', () => {
+	it('accepts one conflicting move, deduplicates its retry, and rejects a second user', async () => {
+		const { runtime, service, snapshot } = await create();
+		await runtime.runPromise(
+			SubscriptionRef.update(service.state, (state) => ({
+				...state,
+				job: { ...state.job, state: 'cancelled' as const }
+			}))
+		);
+		const request = {
+			id: randomUUID(),
+			command: { type: 'move', target: { x: 0 }, expectedPosition: { x: 110, y: 110, z: 20 } }
+		} as const;
+		await runtime.runPromise(service.submit(request));
+		expect((await runtime.runPromise(service.submit(request))).id).toBe(request.id);
+		await expect(
+			runtime.runPromise(service.submit({ ...request, id: randomUUID() }))
+		).rejects.toThrow('pending');
+		await expect.poll(async () => (await snapshot()).actions[0]?.status).toBe('completed');
+		expect((await snapshot()).motion.position).toEqual({ x: 0, y: 110, z: 20 });
+	});
+	it('rechecks busy state at execution instead of applying an accepted unsafe move', async () => {
+		const { runtime, service, snapshot } = await create();
+		await runtime.runPromise(
+			SubscriptionRef.update(service.state, (state) => ({
+				...state,
+				job: { ...state.job, state: 'cancelled' as const }
+			}))
+		);
+		await runtime.runPromise(
+			service.submit({
+				id: randomUUID(),
+				command: { type: 'move', target: { x: 0 }, expectedPosition: { x: 110, y: 110, z: 20 } }
+			})
+		);
+		await expect
+			.poll(async () => (await snapshot()).actions[0]?.status, { interval: 10 })
+			.toBe('sending');
+		await runtime.runPromise(
+			SubscriptionRef.update(service.state, (state) => ({
+				...state,
+				motion: { ...state.motion, calibration: true }
+			}))
+		);
+		await expect.poll(async () => (await snapshot()).actions[0]?.status).toBe('failed');
+		expect((await snapshot()).motion.position.x).toBe(110);
+	});
+});
