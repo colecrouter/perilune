@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 process.env.PROTOCOL_HEADER = 'x-perilune-protocol';
 process.env.HOST_HEADER = 'x-perilune-host';
 process.env.PORT_HEADER = '';
+process.env.ADDRESS_HEADER = 'x-perilune-client-ip';
 const canonical = process.env.PERILUNE_ORIGIN ? new URL(process.env.PERILUNE_ORIGIN) : undefined;
 if (
 	canonical &&
@@ -29,6 +30,7 @@ const server = createServer((request, response) => {
 	}
 	request.headers['x-perilune-protocol'] = origin.protocol.slice(0, -1);
 	request.headers['x-perilune-host'] = origin.host;
+	request.headers['x-perilune-client-ip'] = request.socket.remoteAddress ?? '127.0.0.1';
 	handler(request, response, () => {
 		response.writeHead(404);
 		response.end('Not found');

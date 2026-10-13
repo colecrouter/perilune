@@ -1,3 +1,4 @@
+import { authService } from './auth/index.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Layer, ManagedRuntime } from 'effect';
@@ -73,6 +74,7 @@ export const requestEffect = integration.effect;
 const lifecycle = {
 	dispose: async () => {
 		shutdownSignal.abort();
+		authService?.close();
 		await integration.dispose();
 		await runtime.dispose();
 	}

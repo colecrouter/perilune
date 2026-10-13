@@ -128,12 +128,12 @@ and patched during prepare so its diagnostics also appear in checks.
 1. Completed: protocol-level Moonraker simulator and persistent read-only WebSocket adapter.
 2. Real command policies, reconciliation, cancellation macro behavior, priority stop.
 3. Completed: go2rtc camera gateway and source-change propagation; broader media protocols follow.
-4. Built-in authentication and validated external identity.
+4. Completed: built-in authentication; external identity remains optional future work.
 5. File/slicer workflows, calibration, and explained configuration editing.
 6. Installability, configurable push notifications, and layout preferences.
 
-Authentication is not implemented. Compose binds only to loopback by default.
-Remote development instances must stay behind existing authentication. No real
+Built-in authentication protects browser-facing state, actions, and media. Compose
+binds only to loopback by default. Internet exposure requires a configured HTTPS origin. No real
 printer commands, migrations, configuration writes, heating, or motion are performed
 by live mode. Simulator commands only alter demo state.
 
@@ -156,3 +156,57 @@ progressive-MP4 playback for the owner's main stream. go2rtc's MediaSource playe
 worked; feeding the same fMP4 through Perilune's HTTP gateway into MediaSource
 then successfully decoded the main video without transcoding. The native HLS
 fallback remains unverified on Safari hardware.
+
+## Local authentication
+
+Better Auth 1.7.7 uses Node SQLite directly, with password and optional passkey
+credentials, revocable seven-day sessions, and cookie caching disabled. Its schema
+is generated into `src/lib/server/auth/001.sql` and applied once under a versioned
+transaction. Auth/enrollment tables share the database file with Effect SQL action
+storage. Runtime and CLI migrations recheck their version after acquiring SQLite's
+write lock. The private signing secret persists beside SQLite with mode 0600.
+
+Enrollment is server-controlled. A local CLI mints a hashed, expiring setup token;
+first enrollment reserves it atomically before asynchronous account creation. Public
+Better Auth signup and user creation reject callers without an AsyncLocalStorage
+capability. Role fields are server-only. Invitations use the same one-winner claim
+with owner-selected roles; raw tokens only appear in the issued link's fragment.
+Reservations remain consumed on failure/crash to avoid ambiguous replay. The local
+setup-reset command requires stopping an account-free installation first.
+
+Every remote function and camera route checks a current session and required role.
+Account mutations revalidate after body parsing. Same-origin checks protect account
+POSTs and Better Auth's own origin checks protect auth endpoints. Rate limiting
+uses a dedicated header overwritten from the socket by the Node server, and from
+Kit's client address by the hook; caller-supplied forwarding headers are ignored.
+Behind a proxy, this intentionally shares a rate bucket among that proxy's users.
+
+Continuous camera bodies and live query generators hold separate session leases.
+A one-second database sweep catches expiry, account removal, and role changes; local logout/revocation triggers a sweep immediately. Revocation
+cancels pending media reads and generators, and leases release on EOF, cancellation,
+failed acquisition, or shutdown. Finite operations revalidate session state at
+execution. The public health route reveals readiness only.
+
+Recovery requires a stopped server and an explicit `--server-stopped` maintenance
+flag. SQLite process ownership rejects a running local server and overlapping
+startup/recovery in the supported single process/OS namespace. One process owns
+each installation; concurrent hosts/containers sharing a volume are unsupported.
+Stopping the server prevents awaited passkey/password mutations overlapping recovery.
+The CLI disables the old credential password, deletes sessions and
+passkeys, invalidates prior recovery links, and creates a single-use 30-minute
+password-reset verification. Password reset also revokes sessions/passkeys. A persisted recovery epoch is
+snapshotted before credential verification and attached to new sessions, preventing
+an in-flight old-password login from completing after recovery/reset. An auth endpoint allowlist exposes only implemented flows and validates session
+epochs before passkey mutations. No
+public email-reset sender or open registration is provided. Existing physical
+command prohibitions remain enforced independently of account roles.
+
+Headless production tests cover password enrollment/login, roles, CSRF, account
+revocation, virtual-authenticator passkey registration/sign-in, and owner recovery.
+Domain tests cover signup bypass, role assignment, token races/expiry/replay, and
+session lease cancellation. Camera smoke verifies logout closes an already-returned
+continuous response. Safari hardware passkey/media checks remain outstanding.
+
+Better Auth’s published peer range still declares Kit 2, despite its Kit 3 integration
+documentation. This dependency warning is retained; production Kit 3 password and
+passkey flows pass the automated tests. No peer override hides it.

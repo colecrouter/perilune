@@ -1,3 +1,4 @@
+import { authenticate } from './smoke-auth-helper.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
@@ -136,6 +137,7 @@ try {
 		viewport: { width: 1505, height: 1045 },
 		colorScheme: 'light'
 	});
+	await authenticate(context, base, join(directory, 'state.sqlite'));
 	const page = await context.newPage();
 	page.setDefaultTimeout(15_000);
 	const errors = [];
@@ -185,9 +187,12 @@ try {
 		});
 	await page.locator('.camera-panel .tag').getByText('Live', { exact: true }).waitFor();
 	const beforeForbidden = requests;
-	assert.equal((await fetch(`${base}/api/camera/stream.m3u8?src=other`)).status, 400);
+	assert.equal(
+		(await context.request.get(`${base}/api/camera/stream.m3u8?src=other`)).status(),
+		400
+	);
 	assert.equal(requests, beforeForbidden, 'Browser cannot override the source');
-	const oldMaster = await (await fetch(`${base}/api/camera/stream.m3u8`)).text();
+	const oldMaster = await (await context.request.get(`${base}/api/camera/stream.m3u8`)).text();
 	const oldPlaylist = oldMaster.split('\n').find((line) => line && !line.startsWith('#'));
 	await page.getByRole('spinbutton', { name: 'Bed target' }).fill('85');
 	source = 'replacement_camera';
@@ -206,7 +211,7 @@ try {
 		'Configuration change reaches gateway'
 	);
 	assert.equal(
-		(await fetch(new URL(oldPlaylist, base))).status,
+		(await context.request.get(new URL(oldPlaylist, base).href)).status(),
 		404,
 		'Old media session invalidated'
 	);
@@ -264,6 +269,47 @@ try {
 		),
 		'Registered upstream names stay server-side'
 	);
+	const cookie = (await context.cookies())
+		.map((value) => `${value.name}=${value.value}`)
+		.join('; ');
+	const continuous = await fetch(`${base}/api/camera/stream.mp4`, { headers: { Cookie: cookie } });
+	assert.equal(continuous.status, 200);
+	const reader = continuous.body.getReader();
+	await reader.read();
+	const liveURLs = [
+		...new Set(browserRequests.filter((url) => new URL(url).pathname.includes('/_app/remote/')))
+	];
+	assert.equal(liveURLs.length, 2, 'Printer and camera each have a live query');
+	const liveReaders = await Promise.all(
+		liveURLs.map(async (url) => {
+			const response = await fetch(url, { headers: { Cookie: cookie } });
+			assert.equal(response.status, 200);
+			const liveReader = response.body.getReader();
+			await liveReader.read();
+			return liveReader;
+		})
+	);
+	const logout = await context.request.post(`${base}/api/auth/sign-out`, {
+		headers: { Origin: base },
+		data: {}
+	});
+	assert.equal(logout.status(), 200);
+	const drain = Promise.all(
+		[reader, ...liveReaders].map(async (streamReader) => {
+			try {
+				while (!(await streamReader.read()).done) {}
+			} catch (cause) {
+				if (!(cause instanceof TypeError)) throw cause;
+			}
+			return true;
+		})
+	);
+	assert.deepEqual(
+		await Promise.race([drain, new Promise((resolve) => setTimeout(() => resolve([]), 3000))]),
+		[true, true, true],
+		'Logout closes already-returned camera and idle live query bodies'
+	);
+	assert.equal((await context.request.get(`${base}/api/camera/snapshot`)).status(), 401);
 	assert.deepEqual(errors, [], 'No camera browser errors');
 	console.log(
 		'Camera production smoke passed: H.264 decoding, two viewers, capture, same-origin URLs, clean EOF/reconnect, source change, old-session invalidation, orientation, drafts,320px layout, pause/resume.'

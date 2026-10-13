@@ -97,21 +97,14 @@ small {
 	flex-direction: column;
 	gap: 34px;
 }
-/* Sparse, static stars live only in the navigation rail, away from printer data. */
+/* Sparse, static stars stay behind navigation and account entry, away from printer data. */
 .sidebar::before {
 	content: '';
 	position: absolute;
 	inset: 0;
 	z-index: -1;
 	pointer-events: none;
-	background-image:
-		radial-gradient(circle at 88% 4%, #ffffff80 1px, transparent 1.5px),
-		radial-gradient(circle at 70% 11%, #ffffff40 0.7px, transparent 1.2px),
-		radial-gradient(circle at 18% 43%, #ffffff50 0.8px, transparent 1.4px),
-		radial-gradient(circle at 82% 54%, #ffffff50 1px, transparent 1.5px),
-		radial-gradient(circle at 42% 63%, #ffffff30 0.7px, transparent 1.2px),
-		radial-gradient(circle at 14% 76%, #ffffff70 1px, transparent 1.5px),
-		radial-gradient(circle at 67% 84%, #ffffff50 0.8px, transparent 1.4px);
+	background-image: var(--stars);
 }
 .brand-mark {
 	width: 26px;

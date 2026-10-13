@@ -9,7 +9,7 @@
 		"#lib/*": "./src/lib/*"
 	},
 	"scripts": {
-		"dev": "vp dev",
+		"dev": "vp dev --port 4181",
 		"build": "vp build",
 		"preview": "vp preview",
 		"prepare": "effect-language-service patch && svelte-kit sync",
@@ -20,17 +20,20 @@
 		"lint": "vp lint",
 		"format": "vp fmt && prettier --write \"src/**/*.svelte\"",
 		"format:check": "vp fmt --check && prettier --check \"src/**/*.svelte\"",
-		"validate": "vp run format:check && vp run lint && vp run check && vp run test && vp run build && vp run test:smoke && vp run test:smoke:live && vp run test:smoke:camera",
+		"validate": "vp run format:check && vp run lint && vp run check && vp run test && vp run build && vp run test:smoke && vp run test:smoke:live && vp run test:smoke:camera && vp run test:smoke:auth",
 		"test:smoke": "node scripts/smoke.mjs",
 		"test:compose": "node scripts/check-compose.mjs",
 		"test:smoke:live": "node scripts/smoke-live.mjs",
-		"test:smoke:camera": "node scripts/smoke-camera.mjs"
+		"test:smoke:camera": "node scripts/smoke-camera.mjs",
+		"test:smoke:auth": "node scripts/smoke-auth.mjs"
 	},
 	"dependencies": {
+		"@better-auth/passkey": "1.7.7",
 		"@effect/sql-sqlite-node": "4.0.4",
 		"@fontsource-variable/inter": "^5.3.0",
 		"@fontsource-variable/newsreader": "^5.3.0",
 		"@opentelemetry/api": "1.9.0",
+		"better-auth": "1.7.7",
 		"bits-ui": "^2.19.5",
 		"effect": "4.0.4",
 		"sveltekit-effect": "0.2.0"

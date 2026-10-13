@@ -1,3 +1,4 @@
+import { authenticate } from './smoke-auth-helper.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -50,6 +51,7 @@ try {
 		viewport: { width: 1505, height: 1045 },
 		colorScheme: 'light'
 	});
+	await authenticate(context, base, join(directory, 'state.sqlite'));
 	const first = await context.newPage();
 	failurePage = first;
 	first.setDefaultTimeout(5000);

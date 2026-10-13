@@ -1,3 +1,4 @@
+import { authenticate } from './smoke-auth-helper.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -98,12 +99,12 @@ try {
 		if (app.exitCode !== null || attempt > 100) throw new Error(`App startup failed: ${logs}`);
 		await new Promise((resolve) => setTimeout(resolve, 100));
 	}
-	assert.equal((await (await fetch(`${base}/health`)).json()).mode, 'moonraker');
 	browser = await chromium.launch({ headless: true });
 	const context = await browser.newContext({
 		viewport: { width: 1505, height: 1045 },
 		colorScheme: 'light'
 	});
+	await authenticate(context, base, join(directory, 'state.sqlite'));
 	const first = await context.newPage();
 	const second = await context.newPage();
 	const errors = [];

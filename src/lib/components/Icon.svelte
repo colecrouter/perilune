@@ -4,6 +4,7 @@
 		size = 20
 	}: {
 		name:
+			| 'account'
 			| 'overview'
 			| 'jobs'
 			| 'calibration'
@@ -21,6 +22,7 @@
 		size?: number;
 	} = $props();
 	const paths = {
+		account: 'M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M4 21v-2a8 8 0 0 1 16 0v2',
 		overview: 'M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z',
 		jobs: 'M6 3h8l5 5v13H6z M14 3v6h5',
 		calibration: 'M14 5a5 5 0 0 0-6 6L3 16a3 3 0 0 0 5 5l5-5a5 5 0 0 0 6-6l-4 3-3-3 3-4z',

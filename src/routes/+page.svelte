@@ -14,6 +14,7 @@
 		resetSimulator
 	} from './printer.remote.js';
 
+	let { data } = $props();
 	const printer = getPrinter();
 	const camera = getCamera();
 	const [initial, initialCamera] = await Promise.all([printer, camera]);
@@ -26,7 +27,8 @@
 	const pending = $derived(
 		snapshot.actions.some((action) => action.status === 'queued' || action.status === 'sending')
 	);
-	const readOnly = $derived(snapshot.mode === 'moonraker');
+	const live = $derived(snapshot.mode === 'moonraker');
+	const readOnly = $derived(live || data.user?.role === 'viewer');
 	const connectionLabel = $derived(
 		snapshot.connection.charAt(0).toUpperCase() + snapshot.connection.slice(1)
 	);
@@ -96,16 +98,21 @@
 						>{connected ? 'Disconnect' : 'Reconnect'}</button
 					><button
 						class="button subtle"
-						disabled={busy}
+						disabled={busy || data.user?.role === 'viewer'}
 						onclick={() => control(() => resetSimulator())}>Reset demo</button
 					>
 				</div>
-			</section>{:else}<section class="simulator-banner" aria-label="Live printer mode">
+			</section>{:else}<section
+				class="simulator-banner"
+				aria-label={live ? 'Live printer mode' : 'Viewer mode'}
+			>
 				<div>
 					<Icon name="monitor" size={24} />
 					<p>
-						<strong>Live printer</strong><span>
-							· Read-only connection; controls are not enabled yet</span
+						<strong>{live ? 'Live printer' : 'Simulator'}</strong><span>
+							· {live
+								? 'Read-only connection; controls are not enabled yet'
+								: 'Viewer access; printer controls require an operator'}</span
 						>
 					</p>
 				</div>
@@ -119,7 +126,7 @@
 						? 'Reconnecting to Perilune'
 						: snapshot.connection === 'connected'
 							? `Klipper ${snapshot.klippy}`
-							: readOnly
+							: live
 								? `${connectionLabel} to Moonraker`
 								: 'Printer disconnected'}</strong
 				><span>Last known values remain visible. Your inputs are preserved.</span
@@ -150,7 +157,7 @@
 									(snapshot.telemetryAt === null
 										? 'Waiting for printer status'
 										: 'No file selected')}</strong
-							><small>{readOnly ? 'Live printer status' : 'Simulated print'}</small>
+							><small>{live ? 'Live printer status' : 'Simulated print'}</small>
 						</div>
 					</div>
 					<div class="progress-row">
@@ -163,7 +170,7 @@
 					</div>
 					<div class="job-metrics">
 						<div>
-							<span>{readOnly ? 'Remaining (estimate)' : 'Remaining'}</span><strong
+							<span>{live ? 'Remaining (estimate)' : 'Remaining'}</span><strong
 								>{snapshot.job.remainingMinutes === null
 									? '—'
 									: `${snapshot.job.remainingMinutes} min`}</strong
@@ -246,7 +253,7 @@
 						</div>
 					</dl>
 					<small class="snapshot-meta"
-						>{readOnly ? 'Live state' : 'Simulated state'} · revision {snapshot.revision}{#if readOnly}<br
+						>{live ? 'Live state' : 'Simulated state'} · revision {snapshot.revision}{#if live}<br
 							/>{snapshot.telemetryAt === null
 								? 'Awaiting telemetry'
 								: `Last telemetry ${new Date(snapshot.telemetryAt).toLocaleTimeString()}`} · {snapshot
@@ -275,7 +282,7 @@
 									class:failed={action.status === 'failed' || action.status === 'unknown'}
 									>{action.status}</span
 								>
-							</div>{:else}{#if readOnly}<p class="muted">
+							</div>{:else}{#if live}<p class="muted">
 									No Perilune actions. This printer connection is read-only.
 								</p>{:else}<div class="activity-row">
 									<Icon name="play" />
