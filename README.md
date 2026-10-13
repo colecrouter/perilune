@@ -16,7 +16,7 @@ pnpm install
 pnpm dev
 ```
 
-Open http://localhost:5173. By default this is **simulator mode**: no physical printer is
+Open http://localhost:4181. By default this is **simulator mode**: no physical printer is
 connected or controlled. Pause, stop, temperature changes, and disconnects affect
 shared demo state. The header toggle compares serif and sans-serif headings.
 
@@ -24,7 +24,7 @@ For a production build:
 
 ```sh
 pnpm build
-pnpm start
+PERILUNE_ORIGIN=http://localhost:3000 pnpm start
 ```
 
 Open http://localhost:3000. Set `PERILUNE_ORIGIN` to the browser-visible origin when
@@ -37,8 +37,62 @@ docker compose up --build
 ```
 
 Compose binds to localhost:3000 and persists the SQLite database in a volume.
-Built-in login is a later milestone; keep remote previews behind an authenticated
-proxy. Physical printer controls are not implemented yet.
+Built-in login protects printer state, controls, and media. Physical printer controls
+are not implemented yet. Use an HTTPS reverse proxy when exposing Perilune remotely.
+
+## Accounts and first setup
+
+The first visitor cannot claim an installation. Generate a one-time token on the
+server, then enter it at `/setup` with your name, email, and a password of at least
+12 characters. Email is a login identifier; no email service is required.
+
+```sh
+node scripts/auth.mjs setup
+# Docker:
+docker compose exec perilune node scripts/auth.mjs setup
+```
+
+Use the same `PERILUNE_DATABASE` environment as the server. Tokens expire after
+30 minutes. Setup closes after the first account. A failed or interrupted signup
+consumes its token; for a fresh installation with no accounts, stop the server,
+run `node scripts/auth.mjs setup-reset --server-stopped`, generate a new setup token, then restart.
+
+Owners invite others from **Account**, selecting viewer, operator, or owner.
+Invitation links are single-use and expire after 24 hours. Viewers can watch
+status and camera; operators can use available controls; owners also manage
+accounts and invitations. All roles currently have read-only access to real
+printers. Owners can revoke invitations and other accounts. Revocation closes
+active live updates and camera streams; checks across processes run every second.
+
+Signed-in users can add a passkey from Account. Passkeys need an HTTPS hostname
+(or `localhost` for development), and are tied to that hostname. Passwords remain
+available when developing on a loopback IP. Set `PERILUNE_ORIGIN` explicitly for
+production and whenever changing the dev server origin. Non-loopback HTTP origins
+are rejected. Keep Moonraker and go2rtc private behind the Perilune server.
+
+For owner recovery, stop Perilune first, then run this on the server:
+
+```sh
+node scripts/auth.mjs recover owner@example.com --server-stopped
+# Restart the server after generating the link.
+# Docker:
+docker compose stop perilune
+docker compose run --rm perilune node scripts/auth.mjs recover owner@example.com --server-stopped
+docker compose up -d perilune
+```
+
+The CLI requires explicit maintenance mode and refuses recovery while the local
+server process is running. Run one Perilune process per database; do not share a
+data volume between concurrent hosts or containers.
+
+Recovery disables the old password, revokes sessions and passkeys, and
+prints a single-use password reset link that expires in 30 minutes. A newly
+issued recovery link invalidates older links. No reset email is sent.
+
+SQLite and a generated private `*.auth-secret` file persist together in the data
+volume. Back up both. An optional `PERILUNE_AUTH_SECRET` of at least 32 characters
+can supply the secret instead; preserve it across restarts. No ORM is needed:
+Better Auth uses its SQLite adapter, and app state continues to use Effect SQL.
 
 ## Connect a real printer (read-only)
 
@@ -62,8 +116,7 @@ and the backend rejects all actions in live mode, including simulator commands.
 No physical commands are sent. Remove the URL to return to simulator mode.
 
 The backend connects directly to Moonraker; existing browser-facing Cloudflare
-Access protection does not authenticate this connection. Keep the app behind your
-existing authenticated proxy until built-in login ships.
+Access protection does not authenticate this connection. Perilune authenticates browser access independently of Moonraker.
 
 ## Camera gateway
 
@@ -96,8 +149,7 @@ changes invalidate old media sessions and refresh the player. Media responses us
 
 Pass these variables to the Node process or through Compose's `.env`/shell settings.
 The go2rtc address must be reachable from inside the container; container localhost
-refers to the container itself. Keep Perilune behind an authenticated proxy until
-built-in login ships. Native HLS fallback has more buffering latency; WebRTC and
+refers to the container itself. Use Perilune’s built-in login with an HTTPS origin. Native HLS fallback has more buffering latency; WebRTC and
 additional codecs are future work.
 
 ## Verify
@@ -122,7 +174,7 @@ and [milestones](https://github.com/colecrouter/perilune/milestones).
 - SQLite persistence with Effect SQL.
 - Live remote queries backed by process-owned services.
 - Mobile-friendly controls, guided calibration, and explained printer configuration.
-- Built-in authentication, slicer compatibility, notifications, and camera gateway
+- Slicer compatibility, notifications, and broader camera protocols
   integration follow as explicit milestones.
 
 Licensed under GPL-3.0-only. See [LICENSE](LICENSE).

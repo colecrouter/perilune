@@ -1,0 +1,227 @@
+import assert from 'node:assert/strict';
+import { spawn, execFileSync } from 'node:child_process';
+import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { chromium } from 'playwright';
+import { authenticate } from './smoke-auth-helper.mjs';
+const directory = await mkdtemp(join(tmpdir(), 'perilune-auth-smoke-'));
+const filename = join(directory, 'state.sqlite');
+const base = 'http://localhost:4184';
+const env = {
+	...process.env,
+	HOST: '127.0.0.1',
+	PORT: '4184',
+	PERILUNE_ORIGIN: base,
+	PERILUNE_DATABASE: filename,
+	PERILUNE_MOONRAKER_URL: '',
+	PERILUNE_CAMERA_BASE_URL: '',
+	PERILUNE_CAMERA_SOURCE: ''
+};
+let server = spawn(process.execPath, ['scripts/server.mjs'], {
+	env,
+	stdio: ['ignore', 'pipe', 'pipe']
+});
+let logs = '';
+server.stdout.on('data', (chunk) => (logs += chunk));
+server.stderr.on('data', (chunk) => (logs += chunk));
+let browser;
+try {
+	for (let i = 0; ; i++) {
+		try {
+			if ((await fetch(`${base}/health`)).ok) break;
+		} catch {}
+		if (i > 100 || server.exitCode !== null)
+			throw new Error(`Auth fixture failed to start: ${logs}`);
+		await new Promise((resolve) => setTimeout(resolve, 100));
+	}
+	assert.equal((await fetch(`${base}/api/camera/snapshot`)).status, 401);
+	assert.equal((await fetch(`${base}/`, { redirect: 'manual' })).headers.get('location'), '/setup');
+	browser = await chromium.launch({ headless: true });
+	const owner = await browser.newContext();
+	await authenticate(owner, base, filename);
+	const page = await owner.newPage();
+	const errors = [];
+	page.on('pageerror', (error) => errors.push(error.message));
+	await page.goto(`${base}/account`);
+	await page.getByRole('heading', { name: 'Your account' }).waitFor();
+	const cdp = await owner.newCDPSession(page);
+	await cdp.send('WebAuthn.enable');
+	await cdp.send('WebAuthn.addVirtualAuthenticator', {
+		options: {
+			protocol: 'ctap2',
+			transport: 'internal',
+			hasResidentKey: true,
+			hasUserVerification: true,
+			isUserVerified: true,
+			automaticPresenceSimulation: true
+		}
+	});
+	await page.getByRole('button', { name: 'Add a passkey', exact: true }).click();
+	await page.getByRole('status').waitFor();
+	assert.match(await page.getByRole('status').innerText(), /Passkey added/);
+	await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+	await page.getByRole('heading', { name: 'Welcome back' }).waitFor();
+	await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
+	await page.getByRole('heading', { name: 'Overview', exact: true }).waitFor();
+	const commandRequest = page.waitForRequest(
+		(request) => request.method() === 'POST' && request.url().includes('/_app/remote/')
+	);
+	await page.getByRole('button', { name: 'Reset demo', exact: true }).click();
+	const command = await commandRequest;
+	const invite = await owner.request.post(`${base}/api/account/invite`, {
+		headers: { Origin: base },
+		data: { role: 'viewer' }
+	});
+	assert.equal(invite.status(), 200);
+	const { url } = await invite.json();
+	const viewer = await browser.newContext();
+	const viewerPage = await viewer.newPage();
+	await viewerPage.goto(url);
+	await viewerPage.getByLabel('Your name').fill('Fixture viewer');
+	await viewerPage.getByLabel('Email', { exact: true }).fill('viewer@example.test');
+	await viewerPage.getByLabel('Password', { exact: true }).fill('fixture-viewer-password');
+	await viewerPage.getByRole('button', { name: 'Create account' }).click();
+	await viewerPage.getByRole('heading', { name: 'Welcome back' }).waitFor();
+	await viewerPage.getByLabel('Email', { exact: true }).fill('viewer@example.test');
+	await viewerPage.getByLabel('Password', { exact: true }).fill('fixture-viewer-password');
+	await viewerPage.getByRole('button', { name: 'Sign in', exact: true }).click();
+	await viewerPage.getByRole('button', { name: 'Pause print', exact: true }).waitFor();
+	assert.equal(
+		await viewerPage.getByRole('button', { name: 'Pause print', exact: true }).isDisabled(),
+		true
+	);
+	const replay = await viewer.request.post(command.url(), {
+		headers: { Origin: base, 'Content-Type': command.headers()['content-type'] },
+		data: command.postData()
+	});
+	const rejection = await replay.json();
+	assert.equal(rejection.type, 'error');
+	assert.equal(
+		rejection.error.status,
+		403,
+		'Viewer cannot bypass controls through the remote command protocol'
+	);
+	assert.equal(
+		(
+			await viewer.request.post(`${base}/api/account/invite`, {
+				headers: { Origin: base },
+				data: { role: 'owner' }
+			})
+		).status(),
+		403
+	);
+	assert.equal(
+		(
+			await owner.request.post(`${base}/api/account/invite`, {
+				headers: { Origin: 'https://evil.example' },
+				data: { role: 'owner' }
+			})
+		).status(),
+		403
+	);
+	const accounts = await (await owner.request.get(`${base}/api/account/manage`)).json();
+	const target = accounts.accounts.find((account) => account.email === 'viewer@example.test');
+	await owner.request.post(`${base}/api/account/revoke-account`, {
+		headers: { Origin: base },
+		data: { id: target.id }
+	});
+	assert.equal((await viewer.request.get(`${base}/api/account/manage`)).status(), 401);
+	await page.goto(`${base}/account`);
+	await mkdir('test-results', { recursive: true });
+	await page.screenshot({ path: 'test-results/auth-account.png', fullPage: true });
+	assert.throws(
+		() =>
+			execFileSync(
+				process.execPath,
+				['scripts/auth.mjs', 'recover', 'owner@example.test', '--server-stopped'],
+				{ env, stdio: 'pipe' }
+			),
+		'Recovery refuses a running server'
+	);
+	server.kill('SIGTERM');
+	await new Promise((resolve) => server.once('exit', resolve));
+	const recovery = execFileSync(
+		process.execPath,
+		['scripts/auth.mjs', 'recover', 'owner@example.test', '--server-stopped'],
+		{ env, encoding: 'utf8' }
+	)
+		.trim()
+		.split('\n')
+		.at(-1);
+	server = spawn(process.execPath, ['scripts/server.mjs'], {
+		env,
+		stdio: ['ignore', 'pipe', 'pipe']
+	});
+	server.stdout.on('data', (chunk) => (logs += chunk));
+	server.stderr.on('data', (chunk) => (logs += chunk));
+	for (let i = 0; ; i++) {
+		try {
+			if ((await fetch(`${base}/health`)).ok) break;
+		} catch {}
+		if (i > 100 || server.exitCode !== null) throw new Error('Recovered server failed to start.');
+		await new Promise((resolve) => setTimeout(resolve, 100));
+	}
+	assert.equal((await owner.request.get(`${base}/api/account/manage`)).status(), 401);
+	const bad = await owner.request.post(`${base}/api/auth/sign-in/email`, {
+		headers: { Origin: base },
+		data: { email: 'owner@example.test', password: 'fixture-owner-password' }
+	});
+	assert.equal(bad.status(), 401);
+	await page.goto(recovery);
+	await page.getByLabel('Password', { exact: true }).fill('new-owner-fixture-password');
+	await page.getByRole('button', { name: 'Update password' }).click();
+	await page.getByRole('alert').filter({ hasText: 'Password updated' }).waitFor();
+	await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
+	await page.getByLabel('Password', { exact: true }).fill('new-owner-fixture-password');
+	// Exercise the real throttle, then let its ten-second window expire.
+	await new Promise((resolve) => setTimeout(resolve, 11000));
+	const recoveryLogin = page.waitForResponse((response) =>
+		response.url().endsWith('/api/auth/sign-in/email')
+	);
+	await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+	assert.equal((await recoveryLogin).status(), 200, 'Recovered password permits sign-in');
+	await page
+		.getByRole('button', { name: 'Pause print', exact: true })
+		.waitFor()
+		.catch(async (cause) => {
+			console.error(await page.locator('body').innerText());
+			throw cause;
+		});
+	await page.goto(`${base}/login`);
+	await page.setViewportSize({ width: 320, height: 844 });
+	await page.screenshot({ path: 'test-results/auth-login-mobile.png', fullPage: true });
+	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+	let throttled;
+	for (let i = 0; i < 4; i++)
+		throttled = await owner.request.post(`${base}/api/auth/sign-in/email`, {
+			headers: {
+				Origin: base,
+				'X-Forwarded-For': `192.0.2.${i + 1}`,
+				'X-Perilune-Client-IP': `192.0.2.${i + 1}`
+			},
+			data: { email: 'owner@example.test', password: 'incorrect-password' }
+		});
+	assert.equal(
+		throttled.status(),
+		429,
+		'Spoofed forwarding/client-IP headers cannot evade login throttling'
+	);
+	assert.deepEqual(errors, []);
+	console.log(
+		'Auth smoke passed: setup, invitations, roles, CSRF, revocation, passkey enrollment/sign-in, owner recovery, mobile.'
+	);
+} finally {
+	await browser?.close();
+	server.kill('SIGTERM');
+	await Promise.race([
+		new Promise((resolve) => server.once('exit', resolve)),
+		new Promise((resolve) =>
+			setTimeout(() => {
+				server.kill('SIGKILL');
+				resolve();
+			}, 3000)
+		)
+	]);
+	await rm(directory, { recursive: true, force: true });
+}

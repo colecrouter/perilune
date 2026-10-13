@@ -3,7 +3,9 @@
 declare global {
 	namespace App {
 		// interface Error {}
-		// interface Locals {}
+		interface Locals {
+			identity?: import('./lib/server/auth/service.js').Identity | null;
+		}
 		// interface PageData {}
 		// interface PageState {}
 		// interface Platform {}

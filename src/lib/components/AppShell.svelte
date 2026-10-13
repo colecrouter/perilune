@@ -6,7 +6,8 @@
 		{ label: 'Overview', icon: 'overview', href: '/' },
 		{ label: 'Jobs', icon: 'jobs', href: '/roadmap#jobs' },
 		{ label: 'Calibration', icon: 'calibration', href: '/roadmap#calibration' },
-		{ label: 'Configuration', icon: 'configuration', href: '/roadmap#configuration' }
+		{ label: 'Configuration', icon: 'configuration', href: '/roadmap#configuration' },
+		{ label: 'Account', icon: 'account', href: '/account' }
 	] as const;
 </script>
 

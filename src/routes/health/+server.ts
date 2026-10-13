@@ -7,8 +7,5 @@ export async function GET() {
 	const state = await runtime.runPromise(
 		Effect.flatMap(PrinterService, (service) => SubscriptionRef.get(service.state))
 	);
-	return json(
-		{ status: 'ok', mode: state.mode, revision: state.revision },
-		{ headers: { 'Cache-Control': 'no-store' } }
-	);
+	return json({ status: state ? 'ok' : 'starting' }, { headers: { 'Cache-Control': 'no-store' } });
 }
