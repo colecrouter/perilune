@@ -46,8 +46,10 @@ Comparison ledger:
 | Copy       | Main overview, camera, job, heater, and connection labels retained; simulator/history/roadmap deviations listed above. |
 
 The initial concept established the structure. Following user feedback, the next
-iteration extends serif typography to section headings and adds a deep green rail,
-lime selections, stronger borders, warmer surfaces, and subtle orbital linework.
+iteration extends serif typography to section headings and keeps orbital linework.
+After the all-green palette was rejected, the original warm neutrals and teal were
+restored. A midnight-blue rail, sparse static stars, a crescent brand mark, and pale
+lavender selections add lunar identity without tinting the printer workspace.
 These are intentional refinements to the accepted direction. The screenshots above
 show the current implementation, while `overview-concept.png` preserves the initial
 reference. T3 preview and production captures were checked for desktop/mobile

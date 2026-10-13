@@ -87,6 +87,8 @@ small {
 	min-height: 100vh;
 }
 .sidebar {
+	position: relative;
+	isolation: isolate;
 	background: var(--rail);
 	color: var(--rail-text);
 	padding: 26px 14px;
@@ -95,7 +97,32 @@ small {
 	flex-direction: column;
 	gap: 34px;
 }
+/* Sparse, static stars live only in the navigation rail, away from printer data. */
+.sidebar::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	pointer-events: none;
+	background-image:
+		radial-gradient(circle at 88% 4%, #ffffff80 1px, transparent 1.5px),
+		radial-gradient(circle at 70% 11%, #ffffff40 0.7px, transparent 1.2px),
+		radial-gradient(circle at 18% 43%, #ffffff50 0.8px, transparent 1.4px),
+		radial-gradient(circle at 82% 54%, #ffffff50 1px, transparent 1.5px),
+		radial-gradient(circle at 42% 63%, #ffffff30 0.7px, transparent 1.2px),
+		radial-gradient(circle at 14% 76%, #ffffff70 1px, transparent 1.5px),
+		radial-gradient(circle at 67% 84%, #ffffff50 0.8px, transparent 1.4px);
+}
+.brand-mark {
+	width: 26px;
+	height: 26px;
+	flex-shrink: 0;
+}
+
 .brand {
+	display: flex;
+	align-items: center;
+	gap: 10px;
 	color: var(--rail-text);
 	text-decoration: none;
 	font-size: 32px;
@@ -283,7 +310,7 @@ small {
 	gap: 16px;
 }
 .panel {
-	box-shadow: 0 2px 0 #203b3308;
+	box-shadow: 0 2px 0 #20243808;
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: 10px;
@@ -810,18 +837,18 @@ progress::-moz-progress-bar {
 }
 @media (prefers-color-scheme: dark) {
 	:root {
-		--rail: #102319;
-		--canvas: #172820;
-		--surface: #22382e;
-		--text: #f5f3df;
-		--muted: #b9c7b9;
-		--border: #425647;
-		--border-strong: #708575;
-		--camera: #1c3026;
-		--accent: #aad0a0;
-		--accent-hover: #91bc84;
-		--accent-soft: #2c4434;
-		--accent-border: #708f70;
+		--rail: #15182a;
+		--canvas: #20232b;
+		--surface: #292d36;
+		--text: #edece8;
+		--muted: #a9b1bf;
+		--border: #414754;
+		--border-strong: #657080;
+		--camera: #242834;
+		--accent: #6baea3;
+		--accent-hover: #83c1b6;
+		--accent-soft: #293e3e;
+		--accent-border: #567b78;
 		--success: #7fc7a0;
 		--danger: #f48c86;
 		--danger-border: #af6663;
