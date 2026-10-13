@@ -387,62 +387,21 @@
 						});
 				}}>{pending ? 'Submitting…' : 'Move here'}</button
 			>
-			<div class="shortcuts">
-				<button
-					class="button secondary"
-					disabled={!!reason || pending}
-					onclick={() => {
-						if (limits.x && limits.y)
-							void direct({
-								x: (limits.x.min + limits.x.max) / 2,
-								y: (limits.y.min + limits.y.max) / 2
-							});
-					}}>Center</button
-				><button
-					class="button secondary"
-					disabled={!!reason || pending}
-					onclick={() => {
-						if (limits.x) void direct({ x: limits.x.min });
-					}}>X minimum ({limits.x?.min ?? '?'})</button
-				><button
-					class="button secondary"
-					disabled={!!reason || pending}
-					onclick={() => {
-						if (limits.y) void direct({ y: limits.y.min });
-					}}>Y minimum ({limits.y?.min ?? '?'})</button
-				>{#if limits.x && limits.x.min < 0 && limits.x.max >= 0}<button
-						class="button secondary"
-						disabled={!!reason || pending}
-						onclick={() => direct({ x: 0 })}>Move X to 0</button
-					>{/if}
-				{#if limits.y && limits.y.min < 0 && limits.y.max >= 0}<button
-						class="button secondary"
-						disabled={!!reason || pending}
-						onclick={() => direct({ y: 0 })}>Move Y to 0</button
-					>{/if}
-				{#if limits.z && limits.z.min <= 0 && limits.z.max >= 0}<button
-						class="button secondary"
-						disabled={!!reason || pending}
-						onclick={() => {
-							begin();
-							z = 0;
-						}}>Preview Z=0</button
-					>{/if}
-			</div>
-			<p class="help">
-				Center and X/Y shortcuts move immediately. Z=0 only previews; use Move here after checking
-				clearance. Jog steps stop at the configured travel boundary.
-			</p>
 			<div class="motion-tools">
 				<div>
 					<h3>Fine movement</h3>
-					<label
-						>Step <select bind:value={step}
-							><option value={0.1}>0.1 mm</option><option value={1}>1 mm</option><option value={10}
-								>10 mm</option
-							></select
-						></label
-					>
+					<fieldset class="step-switch">
+						<legend>Step</legend>
+						<div class="step-options">
+							{#each [0.1, 1, 10] as amount}<label
+									><input type="radio" name="movement-step" value={amount} bind:group={step} /><span
+										>{amount} mm</span
+									></label
+								>{/each}
+						</div>
+					</fieldset>
+					<p class="help">Jog steps stop at the configured travel boundary.</p>
+
 					<div class="jog-buttons">
 						{#each [['X −', 'x', -1], ['X +', 'x', 1], ['Y −', 'y', -1], ['Y +', 'y', 1], ['Lower Z', 'z', -1], ['Raise Z', 'z', 1]] as [name, axis, direction]}<button
 								class="button secondary"
@@ -468,6 +427,60 @@
 </section>
 
 <style>
+	.destination-form > .primary {
+		width: 100%;
+		margin-top: 0.75rem;
+	}
+	.step-switch {
+		border: 0;
+		padding: 0;
+		margin: 0.75rem 0;
+		min-width: 0;
+	}
+	.step-switch legend {
+		font-size: 0.85rem;
+		margin-bottom: 0.4rem;
+	}
+	.step-options {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		padding: 4px;
+		background: var(--canvas);
+		border: 1px solid var(--border-strong);
+		border-radius: 10px;
+		gap: 4px;
+	}
+	.step-options label {
+		position: relative;
+		cursor: pointer;
+	}
+	.step-options input {
+		position: absolute;
+		opacity: 0;
+		width: 100%;
+		height: 100%;
+		z-index: 1;
+		cursor: pointer;
+		min-height: 0;
+		padding: 0;
+	}
+	.step-options span {
+		display: grid;
+		place-items: center;
+		min-height: 44px;
+		border-radius: 6px;
+		font-variant-numeric: tabular-nums;
+	}
+	.step-options input:checked + span {
+		background: var(--highlight);
+		color: var(--highlight-text);
+		font-weight: 600;
+	}
+	.step-options input:focus-visible + span {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+
 	.setup-controls {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
@@ -654,8 +667,7 @@
 		font-size: 0.85rem;
 		font-weight: 500;
 	}
-	input,
-	select {
+	input {
 		width: 100%;
 		min-height: 44px;
 		padding: 0.6rem;
@@ -665,7 +677,6 @@
 		color: var(--text);
 		font: inherit;
 	}
-	.shortcuts,
 	.jog-buttons {
 		display: flex;
 		flex-wrap: wrap;

@@ -8,13 +8,15 @@ const idle = () => {
 	state.job.state = 'cancelled';
 	return state;
 };
-test('a single X minimum action preserves other axes', async () => {
+test('the segmented step selector controls fine jogging while preserving other axes', async () => {
 	const onSubmit = vi.fn().mockResolvedValue(undefined);
 	await render(MotionControls, { snapshot: idle(), onSubmit });
-	await page.getByRole('button', { name: 'X minimum (0)', exact: true }).click();
+	await page.getByRole('radio', { name: '10 mm', exact: true }).click();
+	await expect.element(page.getByRole('radio', { name: '10 mm', exact: true })).toBeChecked();
+	await page.getByRole('button', { name: 'X −', exact: true }).click();
 	expect(onSubmit).toHaveBeenCalledWith({
 		type: 'move',
-		target: { x: 0 },
+		target: { x: 100 },
 		expectedPosition: { x: 110, y: 110, z: 20 }
 	});
 });
@@ -58,12 +60,12 @@ test('printing, reconnecting and viewer permissions disable physical controls wi
 	const component = await render(MotionControls, { snapshot: initialSnapshot(), onSubmit });
 	await expect.element(page.getByRole('button', { name: 'Home All', exact: true })).toBeDisabled();
 	await component.rerender({ snapshot: idle(), transportConnected: false });
-	await expect.element(page.getByRole('button', { name: 'Center', exact: true })).toBeDisabled();
+	await expect.element(page.getByRole('button', { name: 'X +', exact: true })).toBeDisabled();
 	await expect
 		.element(page.getByText('Reconnecting to Perilune. Wait for live updates.').first())
 		.toBeVisible();
 	await component.rerender({ transportConnected: true, canOperate: false });
-	await expect.element(page.getByRole('button', { name: 'Center', exact: true })).toBeDisabled();
+	await expect.element(page.getByRole('button', { name: 'X +', exact: true })).toBeDisabled();
 	expect(onSubmit).not.toHaveBeenCalled();
 });
 test('terminal failures stay visible and Z jogs disable at their boundary', async () => {
@@ -104,28 +106,4 @@ test('the vertical Z scale previews without executing movement', async () => {
 	await page.getByRole('slider', { name: 'Z height preview', exact: true }).click();
 	expect(onSubmit).not.toHaveBeenCalled();
 	await expect.element(page.getByRole('button', { name: 'Move here', exact: true })).toBeEnabled();
-});
-
-test('zero shortcuts distinguish origins from negative travel limits and preview Z safely', async () => {
-	const onSubmit = vi.fn().mockResolvedValue(undefined);
-	const state = idle();
-	state.motion.limits.x = { min: -10, max: 220 };
-	state.motion.limits.y = { min: -5, max: 220 };
-	await render(MotionControls, { snapshot: state, onSubmit });
-	await expect
-		.element(page.getByRole('button', { name: 'Move X to 0', exact: true }))
-		.toBeEnabled();
-	await page.getByRole('button', { name: 'Move Y to 0', exact: true }).click();
-	expect(onSubmit).toHaveBeenCalledWith({
-		type: 'move',
-		target: { y: 0 },
-		expectedPosition: { x: 110, y: 110, z: 20 }
-	});
-	onSubmit.mockClear();
-	await page.getByRole('button', { name: 'Preview Z=0', exact: true }).click();
-	expect(onSubmit).not.toHaveBeenCalled();
-	await expect
-		.element(page.getByRole('spinbutton', { name: 'Z (mm)', exact: true }))
-		.toHaveValue(0);
-	await expect.element(page.getByRole('button', { name: 'Move here', exact: true })).toBeDisabled();
 });

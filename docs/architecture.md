@@ -214,14 +214,14 @@ passkey flows pass the automated tests. No peer override hides it.
 ## Motion controls: simulator increment
 
 The Controls page provides an XY travel map with an explicit preview/Move here
-step, immediate center and axis-minimum shortcuts, bounded fine jogging, a unified XYZ destination form with a vertical Z preview scale, and top-level Home All/Disengage motors actions.
+step, bounded fine jogging, a unified XYZ destination form with a vertical Z preview scale, and top-level Home All/Disengage motors actions.
 Home All establishes all axes in one action. Confirmed motor disengagement invalidates
 all positions and homed state; releasing Z calls out gantry support. Drafts survive telemetry updates; a changed position
 invalidates the preview until the operator refreshes it. Near-bed lowering below
 5 mm requires a clearance acknowledgement. This threshold is an initial UI policy,
-not collision detection. X/Y zero shortcuts appear when the origin differs from
-a negative travel minimum. Z=0 always previews and uses the shared confirmation
-path; it never executes as an immediate shortcut.
+not collision detection. Exact destinations use number fields or the interactive
+XY/Z previews and a single full-width Move here action. Fine jog distance uses
+a keyboard-accessible segmented radio group (0.1, 1, and 10 mm).
 
 The shared backend rejects motion while printing, paused, disconnected, unhomed,
 calibrating, busy, or missing required telemetry. It checks configured bounds and

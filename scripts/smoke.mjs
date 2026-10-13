@@ -103,7 +103,8 @@ try {
 	await first.getByRole('button', { name: 'Move here', exact: true }).click();
 	await second.locator('.position-strip').getByText('30.00 mm', { exact: true }).waitFor();
 	await second.getByRole('spinbutton', { name: 'X (mm)', exact: true }).fill('75');
-	await first.getByRole('button', { name: 'X minimum (0)', exact: true }).click();
+	await first.getByRole('spinbutton', { name: 'X (mm)', exact: true }).fill('0');
+	await first.getByRole('button', { name: 'Move here', exact: true }).click();
 	await second.getByText('The printer moved after this preview.', { exact: false }).waitFor();
 	assert.equal(
 		await second.getByRole('button', { name: 'Move here', exact: true }).isDisabled(),
@@ -118,10 +119,10 @@ try {
 	await first.getByRole('spinbutton', { name: 'X (mm)', exact: true }).fill('2');
 	await first.getByRole('button', { name: 'Move here', exact: true }).click();
 	await first.locator('.position-strip').getByText('2.00 mm', { exact: true }).waitFor();
-	await first.getByRole('combobox', { name: /^Step/ }).selectOption('10');
+	await first.getByRole('radio', { name: '10 mm', exact: true }).check();
 	await first.getByRole('button', { name: 'X −', exact: true }).click();
 	await first.locator('.position-strip').getByText('0.00 mm', { exact: true }).waitFor();
-	await first.getByRole('button', { name: 'Preview Z=0', exact: true }).click();
+	await first.getByRole('spinbutton', { name: 'Z (mm)', exact: true }).fill('0');
 	assert.equal(
 		await first.getByRole('button', { name: 'Move here', exact: true }).isDisabled(),
 		true
