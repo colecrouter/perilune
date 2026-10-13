@@ -55,3 +55,8 @@ show the current implementation, while `overview-concept.png` preserves the init
 reference. T3 preview and production captures were checked for desktop/mobile
 layout, typography, palette, control states, and overflow. Mobile aspect-ratio
 and grid minimum widths were repaired after the smoke test caught overflow.
+
+Configured cameras keep the orbital placeholder and its supporting copy while
+connecting, reconnecting, or paused. Camera actions use 44px icon buttons with hover
+and keyboard tooltips plus accessible labels; the mobile placeholder scales its
+orbital linework to fit the video frame.
