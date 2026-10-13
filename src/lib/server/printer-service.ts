@@ -226,16 +226,22 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 										);
 									return existing.action;
 								}
-								if (request.command.type === 'move' || request.command.type === 'home') {
+								if (
+									request.command.type === 'move' ||
+									request.command.type === 'home' ||
+									request.command.type === 'releaseMotors'
+								) {
 									const required =
 										request.command.type === 'move'
 											? (Object.keys(request.command.target) as ('x' | 'y' | 'z')[])
-											: request.command.axes === 'xy'
-												? (['x', 'y'] as const)
-												: request.command.axes === 'z'
-													? (['z'] as const)
-													: (['x', 'y', 'z'] as const);
-									const reason = motionReason(current, required, request.command.type === 'home');
+											: request.command.type === 'releaseMotors'
+												? []
+												: request.command.axes === 'xy'
+													? (['x', 'y'] as const)
+													: request.command.axes === 'z'
+														? (['z'] as const)
+														: (['x', 'y', 'z'] as const);
+									const reason = motionReason(current, required, request.command.type !== 'move');
 									if (reason) return yield* Effect.fail(new ActionRejected({ message: reason }));
 									const validation = yield* Effect.try({
 										try: () => applyCommand(current, request.command),

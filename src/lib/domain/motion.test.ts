@@ -100,3 +100,33 @@ describe('manual movement policy', () => {
 			).toThrow();
 	});
 });
+
+describe('motor release', () => {
+	it('requires acknowledgement and invalidates only released positions and homing', () => {
+		const state = idle();
+		expect(() =>
+			applyCommand(state, { type: 'releaseMotors', axes: 'xy', confirmed: false })
+		).toThrow('Confirm');
+		const released = applyCommand(state, { type: 'releaseMotors', axes: 'xy', confirmed: true });
+		expect(released.motion.position).toEqual({ x: null, y: null, z: 20 });
+		expect(released.motion.homed).toEqual(['z']);
+		expect(motionReason(released, ['x'])).toContain('Home X');
+		expect(applyCommand(released, { type: 'home', axes: 'all' }).motion.homed).toEqual([
+			'z',
+			'x',
+			'y'
+		]);
+	});
+	it.each(['printing', 'paused'] as const)('rejects release during %s', (job) => {
+		const state = idle();
+		state.job.state = job;
+		expect(() =>
+			applyCommand(state, { type: 'releaseMotors', axes: 'all', confirmed: true })
+		).toThrow();
+	});
+	it('rejects live release', () => {
+		expect(() =>
+			applyCommand(initialLiveSnapshot(), { type: 'releaseMotors', axes: 'all', confirmed: true })
+		).toThrow('read-only');
+	});
+});

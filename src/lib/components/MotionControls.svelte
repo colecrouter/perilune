@@ -21,20 +21,23 @@
 	let error = $state('');
 	let dragging = $state(false);
 	let clearance = $state(false);
+	let release = $state<'xy' | 'z' | 'all' | null>(null);
+	const operatorReason = $derived(
+		!transportConnected
+			? 'Reconnecting to Perilune. Wait for live updates.'
+			: !canOperate
+				? 'An operator account is required.'
+				: null
+	);
+	const homeAllReason = $derived(operatorReason ?? motionReason(snapshot, ['x', 'y', 'z'], true));
+	const releaseReason = $derived(operatorReason ?? motionReason(snapshot, [], true));
 	const limits = $derived(snapshot.motion.limits);
 	const reason = $derived(
 		!transportConnected
 			? 'Reconnecting to Perilune. Wait for live updates.'
 			: !canOperate
 				? 'An operator account is required to move the printer.'
-				: motionReason(snapshot, ['x', 'y'])
-	);
-	const zReason = $derived(
-		!transportConnected
-			? 'Reconnecting to Perilune. Wait for live updates.'
-			: !canOperate
-				? 'An operator account is required to move the printer.'
-				: motionReason(snapshot, ['z'])
+				: motionReason(snapshot, ['x', 'y', 'z'])
 	);
 	const homeXYReason = $derived(
 		!transportConnected
@@ -169,7 +172,12 @@
 	}
 	const recent = $derived(
 		snapshot.actions
-			.filter((action) => action.label.startsWith('Move ') || action.label.startsWith('Home '))
+			.filter(
+				(action) =>
+					action.label.startsWith('Move ') ||
+					action.label.startsWith('Home ') ||
+					action.label.startsWith('Release ')
+			)
 			.slice(0, 3)
 	);
 	const invalidZ = $derived(
@@ -195,9 +203,84 @@
 		>
 	</div>
 	<p class="intro">
-		Choose a point on the bed, review the destination, then move. XY movement stays at the current Z
-		height; check that the path is clear.
+		Choose XY on the bed map and Z on the height scale, review the destination, then move. Changing
+		XY alone preserves Z. Check that the path is clear.
 	</p>
+	<div class="setup-controls">
+		<div>
+			<h3>Home the printer</h3>
+			<div class="jog-buttons">
+				<button
+					class="button primary home-all"
+					disabled={!!homeAllReason || pending}
+					title={homeAllReason ?? undefined}
+					onclick={() => submit({ type: 'home', axes: 'all' })}>Home All</button
+				>
+				<button
+					class="button secondary"
+					disabled={!!homeXYReason || pending}
+					title={homeXYReason ?? undefined}
+					onclick={() => submit({ type: 'home', axes: 'xy' })}>Home X and Y</button
+				>
+				<button
+					class="button secondary"
+					disabled={!!homeZReason || pending}
+					title={homeZReason ?? undefined}
+					onclick={() => submit({ type: 'home', axes: 'z' })}>Home Z</button
+				>
+			</div>
+			<p class="help">
+				Homing establishes the printer's position.{homeAllReason ? ` ${homeAllReason}` : ''}
+			</p>
+		</div>
+		<div>
+			<h3>Release motors</h3>
+			<div class="jog-buttons">
+				{#each ['all', 'xy', 'z'] as group}<button
+						class="button secondary"
+						disabled={!!releaseReason || pending}
+						title={releaseReason ?? undefined}
+						onclick={() => (release = group as 'all' | 'xy' | 'z')}
+						>{group === 'all'
+							? 'Release All'
+							: group === 'xy'
+								? 'Release X and Y'
+								: 'Release Z'}</button
+					>{/each}
+			</div>
+			<p class="help">
+				Move axes by hand after release. Home them again before using movement controls.{releaseReason
+					? ` ${releaseReason}`
+					: ''}
+			</p>
+		</div>
+	</div>
+	{#if release}<div class="release-confirm" role="group" aria-label="Confirm motor release">
+			<p>
+				Release {release === 'all'
+					? 'all motors'
+					: release === 'xy'
+						? 'X and Y motors'
+						: 'the Z motor'}? Position will become unknown.{release !== 'xy'
+					? ' Support the gantry: releasing Z can let it fall.'
+					: ''}
+			</p>
+			<div class="jog-buttons">
+				<button class="button secondary" onclick={() => (release = null)}
+					>Keep motors engaged</button
+				><button
+					class="button primary"
+					disabled={!!releaseReason || pending}
+					onclick={() => {
+						if (release) {
+							void submit({ type: 'releaseMotors', axes: release, confirmed: true });
+							release = null;
+						}
+					}}>Confirm release</button
+				>
+			</div>
+		</div>{/if}
+
 	<div class="position-strip">
 		{#each ['x', 'y', 'z'] as axis}<div>
 				<span>{axis.toUpperCase()}</span><strong
@@ -209,83 +292,109 @@
 	{#if active}<p class="notice" role="status">Pending: {active.label} · {active.status}</p>{/if}
 	<div class="motion-grid">
 		<div class="bed-area">
-			{#if limits.x && limits.y}
-				<svg
-					class="bed-map"
-					viewBox={`0 0 300 ${mapHeight + 40}`}
-					role="button"
-					tabindex="0"
-					aria-label="Bed map: preview an XY destination"
-					aria-describedby="map-help"
-					onkeydown={key}
-					onpointerdown={(event) => {
-						dragging = true;
-						event.currentTarget.setPointerCapture(event.pointerId);
-						select(event);
-					}}
-					onpointermove={(event) => {
-						if (dragging) select(event);
-					}}
-					onpointerup={() => (dragging = false)}
-					onpointercancel={() => (dragging = false)}
-				>
-					<defs
-						><pattern id="bed-grid" width="26" height="26" patternUnits="userSpaceOnUse"
-							><path
-								d="M 26 0 L 0 0 0 26"
-								fill="none"
-								stroke="currentColor"
-								opacity=".14"
-							/></pattern
-						></defs
-					>
-					<rect x="20" y="20" width="260" height={mapHeight} rx="10" class="bed-surface" /><rect
-						x="20"
-						y="20"
-						width="260"
-						height={mapHeight}
-						fill="url(#bed-grid)"
-					/>
-					<text x="20" y={mapHeight + 35}>{limits.x.min}</text><text
-						x="280"
-						y={mapHeight + 35}
-						text-anchor="end">X {limits.x.max} mm</text
-					><text x="23" y="14">Y {limits.y.max} mm</text>
-					{#if snapshot.motion.position.x !== null && snapshot.motion.position.y !== null}<circle
-							cx={project('x', snapshot.motion.position.x)}
-							cy={20 + mapHeight - (project('y', snapshot.motion.position.y) - 20)}
-							r="6"
-							class="current-point"
-						/>{/if}
-					{#if base && x !== undefined && y !== undefined && !invalidXY}<circle
-							cx={project('x', x)}
-							cy={20 + mapHeight - (project('y', y) - 20)}
-							r="11"
-							class="destination-point"
-						/><path
-							d={`M${project('x', x) - 6},${20 + mapHeight - (project('y', y) - 20)}h12 M${project('x', x)},${20 + mapHeight - (project('y', y) - 20) - 6}v12`}
-							class="crosshair"
-						/>{/if}
-				</svg>
-				<p id="map-help" class="help">
-					Tap or drag to preview. Arrow keys adjust the preview by {step} mm.
-					<span class="legend-current">● Reported position</span>
-					· <span class="legend-target">◎ Destination</span>
-				</p>
-			{:else}<div class="map-empty">
-					<h3>Waiting for travel limits</h3>
-					<p>The printer has not reported its reachable area. No bed dimensions are assumed.</p>
-				</div>{/if}
+			<div class="axis-visuals">
+				<div class="xy-area">
+					{#if limits.x && limits.y}
+						<svg
+							class="bed-map"
+							viewBox={`0 0 300 ${mapHeight + 40}`}
+							role="button"
+							tabindex="0"
+							aria-label="Bed map: preview an XY destination"
+							aria-describedby="map-help"
+							onkeydown={key}
+							onpointerdown={(event) => {
+								dragging = true;
+								event.currentTarget.setPointerCapture(event.pointerId);
+								select(event);
+							}}
+							onpointermove={(event) => {
+								if (dragging) select(event);
+							}}
+							onpointerup={() => (dragging = false)}
+							onpointercancel={() => (dragging = false)}
+						>
+							<defs
+								><pattern id="bed-grid" width="26" height="26" patternUnits="userSpaceOnUse"
+									><path
+										d="M 26 0 L 0 0 0 26"
+										fill="none"
+										stroke="currentColor"
+										opacity=".14"
+									/></pattern
+								></defs
+							>
+							<rect x="20" y="20" width="260" height={mapHeight} rx="10" class="bed-surface" /><rect
+								x="20"
+								y="20"
+								width="260"
+								height={mapHeight}
+								fill="url(#bed-grid)"
+							/>
+							<text x="20" y={mapHeight + 35}>{limits.x.min}</text><text
+								x="280"
+								y={mapHeight + 35}
+								text-anchor="end">X {limits.x.max} mm</text
+							><text x="23" y="14">Y {limits.y.max} mm</text>
+							{#if snapshot.motion.position.x !== null && snapshot.motion.position.y !== null}<circle
+									cx={project('x', snapshot.motion.position.x)}
+									cy={20 + mapHeight - (project('y', snapshot.motion.position.y) - 20)}
+									r="6"
+									class="current-point"
+								/>{/if}
+							{#if base && x !== undefined && y !== undefined && !invalidXY}<circle
+									cx={project('x', x)}
+									cy={20 + mapHeight - (project('y', y) - 20)}
+									r="11"
+									class="destination-point"
+								/><path
+									d={`M${project('x', x) - 6},${20 + mapHeight - (project('y', y) - 20)}h12 M${project('x', x)},${20 + mapHeight - (project('y', y) - 20) - 6}v12`}
+									class="crosshair"
+								/>{/if}
+						</svg>
+						<p id="map-help" class="help">
+							Tap or drag to preview. Arrow keys adjust the preview by {step} mm.
+							<span class="legend-current">● Reported position</span>
+							· <span class="legend-target">◎ Destination</span>
+						</p>
+					{:else}<div class="map-empty">
+							<h3>Waiting for travel limits</h3>
+							<p>The printer has not reported its reachable area. No bed dimensions are assumed.</p>
+						</div>{/if}
+				</div>
+				<div class="z-area">
+					{#if limits.z}<label class="z-scale-label"
+							>Z height preview <span>{limits.z.max} mm</span><input
+								class="z-scale"
+								type="range"
+								min={limits.z.min}
+								max={limits.z.max}
+								step="0.1"
+								bind:value={z}
+								oninput={begin}
+								aria-label="Z height preview"
+							/><span>{limits.z.min} mm</span></label
+						>{:else}<p class="help">Z travel limits unavailable.</p>{/if}
+				</div>
+			</div>
 		</div>
 		<div class="destination-form">
-			<h3>XY destination</h3>
+			<h3>Destination</h3>
 			<div class="coordinate-fields">
 				<label>X (mm)<input type="number" step="0.01" bind:value={x} oninput={begin} /></label
-				><label>Y (mm)<input type="number" step="0.01" bind:value={y} oninput={begin} /></label>
+				><label>Y (mm)<input type="number" step="0.01" bind:value={y} oninput={begin} /></label
+				><label>Z (mm)<input type="number" step="0.1" bind:value={z} oninput={begin} /></label>
 			</div>
 			{#if base && invalidXY}<p class="warning">
 					{invalidXY} Enter a valid value; typed destinations are never clamped.
 				</p>{/if}
+			{#if base && invalidZ}<p class="warning">
+					{invalidZ} Typed destinations are never clamped.
+				</p>{/if}
+			{#if lowering}<label class="clearance"
+					><input type="checkbox" bind:checked={clearance} /> I checked bed clearance before lowering</label
+				>{/if}
+
 			{#if stale}<p class="warning" role="status">
 					The printer moved after this preview. Review it using the current position.
 				</p>
@@ -293,10 +402,21 @@
 			{#if reason}<p class="help">{reason}</p>{/if}
 			<button
 				class="button primary"
-				disabled={!!reason || pending || !base || stale || !!invalidXY}
+				disabled={!!reason ||
+					pending ||
+					!base ||
+					stale ||
+					!!invalidXY ||
+					!!invalidZ ||
+					(lowering && !clearance)}
 				onclick={() => {
-					if (base && x !== undefined && y !== undefined)
-						void submit({ type: 'move', target: { x, y }, expectedPosition: base });
+					if (base && x !== undefined && y !== undefined && z !== undefined)
+						void submit({
+							type: 'move',
+							target: { x, y, z },
+							expectedPosition: base,
+							confirmedLowering: clearance
+						});
 				}}>{pending ? 'Submitting…' : 'Move here'}</button
 			>
 			<div class="shortcuts">
@@ -331,95 +451,28 @@
 			<p class="help">
 				Shortcuts move immediately. Jog steps stop at the configured travel boundary.
 			</p>
-		</div>
-	</div>
-	<div class="motion-tools">
-		<div>
-			<h3>Fine movement</h3>
-			<label
-				>Step <select bind:value={step}
-					><option value={0.1}>0.1 mm</option><option value={1}>1 mm</option><option value={10}
-						>10 mm</option
-					></select
-				></label
-			>
-			<div class="jog-buttons">
-				{#each [['X −', 'x', -1], ['X +', 'x', 1], ['Y −', 'y', -1], ['Y +', 'y', 1]] as [name, axis, direction]}<button
-						class="button secondary"
-						disabled={!!reason ||
-							pending ||
-							jogDestination(snapshot.motion, axis as Axis, Number(direction) * step) ===
-								snapshot.motion.position[axis as Axis]}
-						onclick={() => jog(axis as Axis, Number(direction) * step)}>{name}</button
-					>{/each}
+			<div class="motion-tools">
+				<div>
+					<h3>Fine movement</h3>
+					<label
+						>Step <select bind:value={step}
+							><option value={0.1}>0.1 mm</option><option value={1}>1 mm</option><option value={10}
+								>10 mm</option
+							></select
+						></label
+					>
+					<div class="jog-buttons">
+						{#each [['X −', 'x', -1], ['X +', 'x', 1], ['Y −', 'y', -1], ['Y +', 'y', 1], ['Lower Z', 'z', -1], ['Raise Z', 'z', 1]] as [name, axis, direction]}<button
+								class="button secondary"
+								disabled={!!reason ||
+									pending ||
+									jogDestination(snapshot.motion, axis as Axis, Number(direction) * step) ===
+										snapshot.motion.position[axis as Axis]}
+								onclick={() => jog(axis as Axis, Number(direction) * step)}>{name}</button
+							>{/each}
+					</div>
+				</div>
 			</div>
-		</div>
-		<div>
-			<h3>Z height</h3>
-			<label
-				>Z destination (mm)<input type="number" step="0.1" bind:value={z} oninput={begin} /></label
-			>{#if lowering}<label class="clearance"
-					><input type="checkbox" bind:checked={clearance} /> I checked bed clearance before lowering</label
-				>{/if}{#if base && invalidZ}<p class="warning">
-					{invalidZ} Typed destinations are never clamped.
-				</p>{/if}{#if zReason}<p class="help">{zReason}</p>{/if}
-			<div class="jog-buttons">
-				<button
-					class="button secondary"
-					disabled={!!zReason ||
-						pending ||
-						jogDestination(snapshot.motion, 'z', step) === snapshot.motion.position.z}
-					onclick={() => jog('z', step)}>Raise Z</button
-				><button
-					class="button secondary"
-					disabled={!!zReason ||
-						pending ||
-						jogDestination(snapshot.motion, 'z', -step) === snapshot.motion.position.z}
-					onclick={() => jog('z', -step)}>Lower Z</button
-				><button
-					class="button primary"
-					disabled={!!zReason ||
-						pending ||
-						!base ||
-						stale ||
-						z === undefined ||
-						!limits.z ||
-						z < limits.z.min ||
-						z > limits.z.max ||
-						(lowering && !clearance)}
-					onclick={() => {
-						if (base && z !== undefined)
-							void submit({
-								type: 'move',
-								target: { z },
-								expectedPosition: base,
-								confirmedLowering: clearance
-							});
-					}}>Move Z</button
-				>
-			</div>
-		</div>
-		<div>
-			<h3>Homing</h3>
-			<p class="help">
-				Establish each axis position before moving. Homing is unavailable during a print.
-			</p>
-			<div class="jog-buttons">
-				<button
-					class="button secondary"
-					disabled={!!homeXYReason || pending}
-					title={homeXYReason ?? undefined}
-					onclick={() => submit({ type: 'home', axes: 'xy' })}>Home X and Y</button
-				><button
-					class="button secondary"
-					disabled={!!homeZReason || pending}
-					title={homeZReason ?? undefined}
-					onclick={() => submit({ type: 'home', axes: 'z' })}>Home Z</button
-				>
-			</div>
-			{#if homeXYReason}<p class="help">{homeXYReason}</p>{:else if homeZReason}<p class="help">
-					{homeZReason}
-				</p>{/if}
 		</div>
 	</div>
 	{#if error}<p class="warning" role="alert">{error}</p>{/if}
@@ -433,6 +486,60 @@
 </section>
 
 <style>
+	.setup-controls {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1.5rem;
+		padding: 1rem 0;
+		border-bottom: 1px solid var(--border);
+	}
+	.home-all {
+		min-width: 140px;
+		min-height: 54px;
+		font-size: 1rem;
+	}
+	.release-confirm {
+		padding: 1rem;
+		background: var(--highlight);
+		border-radius: 12px;
+	}
+	.axis-visuals {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 80px;
+		gap: 1rem;
+	}
+	.z-scale-label {
+		justify-items: center;
+		font-size: 0.75rem;
+	}
+	input.z-scale {
+		writing-mode: vertical-lr;
+		direction: rtl;
+		appearance: auto;
+		height: 220px;
+		width: 44px;
+		padding: 0;
+		accent-color: var(--accent);
+	}
+	@media (max-width: 1000px) {
+		.motion-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+	@media (max-width: 700px) {
+		.setup-controls {
+			grid-template-columns: 1fr;
+			gap: 0.5rem;
+		}
+		.axis-visuals {
+			grid-template-columns: minmax(0, 1fr) 64px;
+			gap: 0.6rem;
+		}
+		input.z-scale {
+			height: 150px;
+		}
+	}
+
 	.recent-movement {
 		margin-top: 1.5rem;
 		padding-top: 1rem;
@@ -556,7 +663,7 @@
 	}
 	.coordinate-fields {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 0.75rem;
 	}
 	label {
@@ -589,7 +696,7 @@
 	}
 	.motion-tools {
 		display: grid;
-		grid-template-columns: 1fr 1.2fr 1fr;
+		grid-template-columns: 1fr;
 		gap: 1.5rem;
 		margin-top: 1.5rem;
 		padding-top: 1.5rem;

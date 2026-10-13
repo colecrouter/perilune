@@ -23,6 +23,11 @@ export const PrinterCommand = Schema.Union([
 		confirmedLowering: Schema.optional(Schema.Boolean)
 	}),
 	Schema.Struct({ type: Schema.Literal('home'), axes: Schema.Literals(['xy', 'z', 'all']) }),
+	Schema.Struct({
+		type: Schema.Literal('releaseMotors'),
+		axes: Schema.Literals(['xy', 'z', 'all']),
+		confirmed: Schema.Boolean
+	}),
 	Schema.Struct({ type: Schema.Literal('pause') }),
 	Schema.Struct({ type: Schema.Literal('resume') }),
 	Schema.Struct({
@@ -103,6 +108,8 @@ export function actionLabel(command: PrinterCommand): string {
 			return `Move ${Object.entries(command.target)
 				.map(([axis, value]) => `${axis.toUpperCase()} ${value} mm`)
 				.join(' · ')}`;
+		case 'releaseMotors':
+			return `Release ${command.axes === 'all' ? 'all motors' : command.axes === 'xy' ? 'X and Y motors' : 'Z motor'}`;
 		case 'home':
 			return `Home ${command.axes === 'xy' ? 'X and Y' : command.axes === 'z' ? 'Z' : 'all axes'}`;
 		case 'pause':
@@ -138,6 +145,15 @@ export function applyCommand(state: PrinterSnapshot, command: PrinterCommand): P
 			next.motion.position[axis] = next.motion.limits[axis]!.min;
 			if (!next.motion.homed.includes(axis)) next.motion.homed.push(axis);
 		}
+	} else if (command.type === 'releaseMotors') {
+		const reason = motionReason(state, [], true, false);
+		if (reason) throw new CommandRejected({ message: reason });
+		if (!command.confirmed)
+			throw new CommandRejected({ message: 'Confirm motor release and loss of homing first.' });
+		const selected =
+			command.axes === 'all' ? ['x', 'y', 'z'] : command.axes === 'xy' ? ['x', 'y'] : ['z'];
+		next.motion.homed = next.motion.homed.filter((axis) => !selected.includes(axis));
+		for (const axis of selected as ('x' | 'y' | 'z')[]) next.motion.position[axis] = null;
 	} else if (command.type === 'temperature') {
 		const maximum = command.heater === 'bed' ? 120 : 300;
 		if (command.target < 0 || command.target > maximum)

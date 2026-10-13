@@ -39,19 +39,19 @@ test('typing previews movement and rejects stale destinations without clearing t
 test('near-bed lowering needs clearance and typed Z limits explain rejection', async () => {
 	const onSubmit = vi.fn().mockResolvedValue(undefined);
 	await render(MotionControls, { snapshot: idle(), onSubmit });
-	await page.getByRole('spinbutton', { name: 'Z destination (mm)', exact: true }).fill('0');
-	await expect.element(page.getByRole('button', { name: 'Move Z', exact: true })).toBeDisabled();
+	await page.getByRole('spinbutton', { name: 'Z (mm)', exact: true }).fill('0');
+	await expect.element(page.getByRole('button', { name: 'Move here', exact: true })).toBeDisabled();
 	await page.getByRole('checkbox', { name: 'I checked bed clearance before lowering' }).click();
-	await page.getByRole('button', { name: 'Move Z', exact: true }).click();
+	await page.getByRole('button', { name: 'Move here', exact: true }).click();
 	expect(onSubmit).toHaveBeenCalledWith({
 		type: 'move',
-		target: { z: 0 },
+		target: { x: 110, y: 110, z: 0 },
 		expectedPosition: { x: 110, y: 110, z: 20 },
 		confirmedLowering: true
 	});
-	await page.getByRole('spinbutton', { name: 'Z destination (mm)', exact: true }).fill('300');
+	await page.getByRole('spinbutton', { name: 'Z (mm)', exact: true }).fill('300');
 	await expect.element(page.getByText('Z must be 0–250 mm.', { exact: false })).toBeVisible();
-	await expect.element(page.getByRole('button', { name: 'Move Z', exact: true })).toBeDisabled();
+	await expect.element(page.getByRole('button', { name: 'Move here', exact: true })).toBeDisabled();
 });
 test('printing, reconnecting and viewer permissions disable physical controls with reasons', async () => {
 	const onSubmit = vi.fn();
@@ -85,4 +85,25 @@ test('terminal failures stay visible and Z jogs disable at their boundary', asyn
 	await expect
 		.element(page.getByText('Connection lost during sending. This action will not be retried.'))
 		.toBeVisible();
+});
+
+test('Home All and confirmed motor release have explicit commands', async () => {
+	const onSubmit = vi.fn().mockResolvedValue(undefined);
+	await render(MotionControls, { snapshot: idle(), onSubmit });
+	await page.getByRole('button', { name: 'Home All', exact: true }).click();
+	expect(onSubmit).toHaveBeenCalledWith({ type: 'home', axes: 'all' });
+	onSubmit.mockClear();
+	await page.getByRole('button', { name: 'Release All', exact: true }).click();
+	expect(onSubmit).not.toHaveBeenCalled();
+	await expect.element(page.getByText('Support the gantry:', { exact: false })).toBeVisible();
+	await page.getByRole('button', { name: 'Confirm release', exact: true }).click();
+	expect(onSubmit).toHaveBeenCalledWith({ type: 'releaseMotors', axes: 'all', confirmed: true });
+});
+
+test('the vertical Z scale previews without executing movement', async () => {
+	const onSubmit = vi.fn().mockResolvedValue(undefined);
+	await render(MotionControls, { snapshot: idle(), onSubmit });
+	await page.getByRole('slider', { name: 'Z height preview', exact: true }).click();
+	expect(onSubmit).not.toHaveBeenCalled();
+	await expect.element(page.getByRole('button', { name: 'Move here', exact: true })).toBeEnabled();
 });

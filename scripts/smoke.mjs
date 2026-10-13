@@ -121,10 +121,13 @@ try {
 	await first.getByRole('combobox', { name: /^Step/ }).selectOption('10');
 	await first.getByRole('button', { name: 'X −', exact: true }).click();
 	await first.locator('.position-strip').getByText('0.00 mm', { exact: true }).waitFor();
-	await first.getByRole('spinbutton', { name: 'Z destination (mm)', exact: true }).fill('0');
-	assert.equal(await first.getByRole('button', { name: 'Move Z', exact: true }).isDisabled(), true);
+	await first.getByRole('spinbutton', { name: 'Z (mm)', exact: true }).fill('0');
+	assert.equal(
+		await first.getByRole('button', { name: 'Move here', exact: true }).isDisabled(),
+		true
+	);
 	await first.getByRole('checkbox', { name: 'I checked bed clearance before lowering' }).check();
-	await first.getByRole('button', { name: 'Move Z', exact: true }).click();
+	await first.getByRole('button', { name: 'Move here', exact: true }).click();
 	await first
 		.locator('.position-strip > div')
 		.nth(2)
@@ -134,6 +137,19 @@ try {
 		.getByRole('region', { name: 'Recent movement', exact: true })
 		.getByText('completed', { exact: true })
 		.first()
+		.waitFor();
+	await first.getByRole('button', { name: 'Release All', exact: true }).click();
+	await first.getByRole('button', { name: 'Confirm release', exact: true }).click();
+	await first.locator('.position-strip').getByText('Unknown mm', { exact: true }).first().waitFor();
+	assert.equal(
+		await first.getByRole('button', { name: 'Move here', exact: true }).isDisabled(),
+		true
+	);
+	await first.getByRole('button', { name: 'Home All', exact: true }).click();
+	await first
+		.locator('.position-strip > div')
+		.nth(2)
+		.getByText('0.00 mm', { exact: true })
 		.waitFor();
 	await first.screenshot({ path: 'test-results/controls-desktop.png', fullPage: true });
 	await first.setViewportSize({ width: 320, height: 844 });
