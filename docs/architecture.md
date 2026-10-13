@@ -219,7 +219,9 @@ Home All establishes all axes in one action. Confirmed motor disengagement inval
 all positions and homed state; releasing Z calls out gantry support. Drafts survive telemetry updates; a changed position
 invalidates the preview until the operator refreshes it. Near-bed lowering below
 5 mm requires a clearance acknowledgement. This threshold is an initial UI policy,
-not collision detection.
+not collision detection. X/Y zero shortcuts appear when the origin differs from
+a negative travel minimum. Z=0 always previews and uses the shared confirmation
+path; it never executes as an immediate shortcut.
 
 The shared backend rejects motion while printing, paused, disconnected, unhomed,
 calibrating, busy, or missing required telemetry. It checks configured bounds and

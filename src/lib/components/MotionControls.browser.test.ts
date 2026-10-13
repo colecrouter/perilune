@@ -105,3 +105,27 @@ test('the vertical Z scale previews without executing movement', async () => {
 	expect(onSubmit).not.toHaveBeenCalled();
 	await expect.element(page.getByRole('button', { name: 'Move here', exact: true })).toBeEnabled();
 });
+
+test('zero shortcuts distinguish origins from negative travel limits and preview Z safely', async () => {
+	const onSubmit = vi.fn().mockResolvedValue(undefined);
+	const state = idle();
+	state.motion.limits.x = { min: -10, max: 220 };
+	state.motion.limits.y = { min: -5, max: 220 };
+	await render(MotionControls, { snapshot: state, onSubmit });
+	await expect
+		.element(page.getByRole('button', { name: 'Move X to 0', exact: true }))
+		.toBeEnabled();
+	await page.getByRole('button', { name: 'Move Y to 0', exact: true }).click();
+	expect(onSubmit).toHaveBeenCalledWith({
+		type: 'move',
+		target: { y: 0 },
+		expectedPosition: { x: 110, y: 110, z: 20 }
+	});
+	onSubmit.mockClear();
+	await page.getByRole('button', { name: 'Preview Z=0', exact: true }).click();
+	expect(onSubmit).not.toHaveBeenCalled();
+	await expect
+		.element(page.getByRole('spinbutton', { name: 'Z (mm)', exact: true }))
+		.toHaveValue(0);
+	await expect.element(page.getByRole('button', { name: 'Move here', exact: true })).toBeDisabled();
+});

@@ -413,11 +413,25 @@
 				>{#if limits.x && limits.x.min < 0 && limits.x.max >= 0}<button
 						class="button secondary"
 						disabled={!!reason || pending}
-						onclick={() => direct({ x: 0 })}>X zero</button
+						onclick={() => direct({ x: 0 })}>Move X to 0</button
+					>{/if}
+				{#if limits.y && limits.y.min < 0 && limits.y.max >= 0}<button
+						class="button secondary"
+						disabled={!!reason || pending}
+						onclick={() => direct({ y: 0 })}>Move Y to 0</button
+					>{/if}
+				{#if limits.z && limits.z.min <= 0 && limits.z.max >= 0}<button
+						class="button secondary"
+						disabled={!!reason || pending}
+						onclick={() => {
+							begin();
+							z = 0;
+						}}>Preview Z=0</button
 					>{/if}
 			</div>
 			<p class="help">
-				Shortcuts move immediately. Jog steps stop at the configured travel boundary.
+				Center and X/Y shortcuts move immediately. Z=0 only previews; use Move here after checking
+				clearance. Jog steps stop at the configured travel boundary.
 			</p>
 			<div class="motion-tools">
 				<div>

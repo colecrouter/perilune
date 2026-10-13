@@ -121,7 +121,7 @@ try {
 	await first.getByRole('combobox', { name: /^Step/ }).selectOption('10');
 	await first.getByRole('button', { name: 'X −', exact: true }).click();
 	await first.locator('.position-strip').getByText('0.00 mm', { exact: true }).waitFor();
-	await first.getByRole('spinbutton', { name: 'Z (mm)', exact: true }).fill('0');
+	await first.getByRole('button', { name: 'Preview Z=0', exact: true }).click();
 	assert.equal(
 		await first.getByRole('button', { name: 'Move here', exact: true }).isDisabled(),
 		true
