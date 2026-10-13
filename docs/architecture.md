@@ -214,9 +214,9 @@ passkey flows pass the automated tests. No peer override hides it.
 ## Motion controls: simulator increment
 
 The Controls page provides an XY travel map with an explicit preview/Move here
-step, immediate center and axis-minimum shortcuts, bounded fine jogging, a unified XYZ destination form with a vertical Z preview scale, and top-level homing/motor groups.
-Home All establishes all axes in one action. Confirmed motor release invalidates
-the selected position and homed state; releasing Z calls out gantry support. Drafts survive telemetry updates; a changed position
+step, immediate center and axis-minimum shortcuts, bounded fine jogging, a unified XYZ destination form with a vertical Z preview scale, and top-level Home All/Disengage motors actions.
+Home All establishes all axes in one action. Confirmed motor disengagement invalidates
+all positions and homed state; releasing Z calls out gantry support. Drafts survive telemetry updates; a changed position
 invalidates the preview until the operator refreshes it. Near-bed lowering below
 5 mm requires a clearance acknowledgement. This threshold is an initial UI policy,
 not collision detection.

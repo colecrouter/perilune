@@ -138,7 +138,7 @@ try {
 		.getByText('completed', { exact: true })
 		.first()
 		.waitFor();
-	await first.getByRole('button', { name: 'Release All', exact: true }).click();
+	await first.getByRole('button', { name: 'Disengage motors', exact: true }).click();
 	await first.getByRole('button', { name: 'Confirm release', exact: true }).click();
 	await first.locator('.position-strip').getByText('Unknown mm', { exact: true }).first().waitFor();
 	assert.equal(

@@ -39,20 +39,6 @@
 				? 'An operator account is required to move the printer.'
 				: motionReason(snapshot, ['x', 'y', 'z'])
 	);
-	const homeXYReason = $derived(
-		!transportConnected
-			? 'Reconnecting to Perilune. Wait for live updates.'
-			: !canOperate
-				? 'An operator account is required to home the printer.'
-				: motionReason(snapshot, ['x', 'y'], true)
-	);
-	const homeZReason = $derived(
-		!transportConnected
-			? 'Reconnecting to Perilune. Wait for live updates.'
-			: !canOperate
-				? 'An operator account is required to home the printer.'
-				: motionReason(snapshot, ['z'], true)
-	);
 	const stale = $derived(
 		base !== null &&
 			(['x', 'y', 'z'] as const).some((axis) => snapshot.motion.position[axis] !== base![axis])
@@ -216,42 +202,24 @@
 					title={homeAllReason ?? undefined}
 					onclick={() => submit({ type: 'home', axes: 'all' })}>Home All</button
 				>
-				<button
-					class="button secondary"
-					disabled={!!homeXYReason || pending}
-					title={homeXYReason ?? undefined}
-					onclick={() => submit({ type: 'home', axes: 'xy' })}>Home X and Y</button
-				>
-				<button
-					class="button secondary"
-					disabled={!!homeZReason || pending}
-					title={homeZReason ?? undefined}
-					onclick={() => submit({ type: 'home', axes: 'z' })}>Home Z</button
-				>
 			</div>
 			<p class="help">
 				Homing establishes the printer's position.{homeAllReason ? ` ${homeAllReason}` : ''}
 			</p>
 		</div>
 		<div>
-			<h3>Release motors</h3>
+			<h3>Disengage motors</h3>
 			<div class="jog-buttons">
-				{#each ['all', 'xy', 'z'] as group}<button
-						class="button secondary"
-						disabled={!!releaseReason || pending}
-						title={releaseReason ?? undefined}
-						onclick={() => (release = group as 'all' | 'xy' | 'z')}
-						>{group === 'all'
-							? 'Release All'
-							: group === 'xy'
-								? 'Release X and Y'
-								: 'Release Z'}</button
-					>{/each}
+				<button
+					class="button secondary"
+					disabled={!!releaseReason || pending}
+					title={releaseReason ?? undefined}
+					onclick={() => (release = 'all')}>Disengage motors</button
+				>
 			</div>
 			<p class="help">
-				Move axes by hand after release. Home them again before using movement controls.{releaseReason
-					? ` ${releaseReason}`
-					: ''}
+				Releases every motor, regardless of printer kinematics. Home again before using movement
+				controls.{releaseReason ? ` ${releaseReason}` : ''}
 			</p>
 		</div>
 	</div>

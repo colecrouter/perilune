@@ -56,9 +56,7 @@ test('near-bed lowering needs clearance and typed Z limits explain rejection', a
 test('printing, reconnecting and viewer permissions disable physical controls with reasons', async () => {
 	const onSubmit = vi.fn();
 	const component = await render(MotionControls, { snapshot: initialSnapshot(), onSubmit });
-	await expect
-		.element(page.getByRole('button', { name: 'Home X and Y', exact: true }))
-		.toBeDisabled();
+	await expect.element(page.getByRole('button', { name: 'Home All', exact: true })).toBeDisabled();
 	await component.rerender({ snapshot: idle(), transportConnected: false });
 	await expect.element(page.getByRole('button', { name: 'Center', exact: true })).toBeDisabled();
 	await expect
@@ -93,7 +91,7 @@ test('Home All and confirmed motor release have explicit commands', async () => 
 	await page.getByRole('button', { name: 'Home All', exact: true }).click();
 	expect(onSubmit).toHaveBeenCalledWith({ type: 'home', axes: 'all' });
 	onSubmit.mockClear();
-	await page.getByRole('button', { name: 'Release All', exact: true }).click();
+	await page.getByRole('button', { name: 'Disengage motors', exact: true }).click();
 	expect(onSubmit).not.toHaveBeenCalled();
 	await expect.element(page.getByText('Support the gantry:', { exact: false })).toBeVisible();
 	await page.getByRole('button', { name: 'Confirm release', exact: true }).click();
