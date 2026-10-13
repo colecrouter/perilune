@@ -60,6 +60,10 @@ try {
 	await page.getByRole('button', { name: 'Add a passkey', exact: true }).click();
 	await page.getByRole('status').waitFor();
 	assert.match(await page.getByRole('status').innerText(), /Passkey added/);
+	await page.emulateMedia({ colorScheme: 'dark' });
+	await mkdir('test-results', { recursive: true });
+	await page.screenshot({ path: 'test-results/auth-account-dark.png', fullPage: true });
+	await page.emulateMedia({ colorScheme: 'light' });
 	await page.getByRole('button', { name: 'Sign out', exact: true }).click();
 	await page.getByRole('heading', { name: 'Welcome back' }).waitFor();
 	await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
@@ -78,6 +82,9 @@ try {
 	const viewer = await browser.newContext();
 	const viewerPage = await viewer.newPage();
 	await viewerPage.goto(url);
+	await viewerPage.emulateMedia({ colorScheme: 'dark' });
+	await viewerPage.screenshot({ path: 'test-results/auth-registration-dark.png', fullPage: true });
+	await viewerPage.emulateMedia({ colorScheme: 'light' });
 	await viewerPage.getByLabel('Your name').fill('Fixture viewer');
 	await viewerPage.getByLabel('Email', { exact: true }).fill('viewer@example.test');
 	await viewerPage.getByLabel('Password', { exact: true }).fill('fixture-viewer-password');
@@ -192,6 +199,8 @@ try {
 	await page.setViewportSize({ width: 320, height: 844 });
 	await page.screenshot({ path: 'test-results/auth-login-mobile.png', fullPage: true });
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+	await page.emulateMedia({ colorScheme: 'dark' });
+	await page.screenshot({ path: 'test-results/auth-login-mobile-dark.png', fullPage: true });
 	let throttled;
 	for (let i = 0; i < 4; i++)
 		throttled = await owner.request.post(`${base}/api/auth/sign-in/email`, {

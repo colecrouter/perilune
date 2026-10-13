@@ -78,7 +78,11 @@
 >
 <div class="entry-sky serif">
 	<section class="entry-card">
-		<a class="entry-brand" href="/">☾ <span>Perilune</span></a>
+		<a class="entry-brand" href="/"
+			><svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"
+				><path d="M21 6a11 11 0 1 0 5 18A11 11 0 0 1 21 6" /></svg
+			><span>Perilune</span></a
+		>
 		<p class="eyebrow">Your printer, in orbit</p>
 		<h1>
 			{reset
@@ -160,7 +164,18 @@
 		display: grid;
 		place-items: center;
 		padding: 2rem 1rem;
-		background: radial-gradient(ellipse at 85% 10%, #353454 0, transparent 45%), #131d32;
+		position: relative;
+		isolation: isolate;
+		background: var(--rail);
+	}
+	.entry-sky::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		pointer-events: none;
+		background-image: var(--stars);
+		background-size: 242px 720px;
 	}
 	.entry-card {
 		width: min(100%, 460px);
@@ -174,9 +189,14 @@
 		align-items: center;
 		gap: 0.6rem;
 		font-size: 2rem;
-		color: #22354c;
+		color: var(--text);
 		text-decoration: none;
 		margin-bottom: 2rem;
+	}
+	.entry-brand svg {
+		width: 30px;
+		height: 30px;
+		flex-shrink: 0;
 	}
 	.entry-brand span {
 		font-family: 'Newsreader Variable', serif;
@@ -202,16 +222,16 @@
 	input {
 		width: 100%;
 		min-height: 46px;
-		border: 1px solid #c9ccc8;
+		border: 1px solid var(--border-strong);
 		border-radius: 10px;
 		padding: 0.7rem;
-		background: white;
-		color: #22354c;
+		background: var(--canvas);
+		color: var(--text);
 		font: inherit;
 	}
 	.entry-help {
 		font-size: 0.8rem;
-		color: #626c75;
+		color: var(--muted);
 		margin: 0;
 		overflow-wrap: anywhere;
 	}
@@ -219,15 +239,15 @@
 		width: 100%;
 		margin: 1rem 0;
 		min-height: 46px;
-		border: 1px solid #b8c8c3;
+		border: 1px solid var(--accent-border);
 		border-radius: 10px;
 		background: transparent;
-		color: #24564c;
+		color: var(--accent);
 		font: inherit;
 		cursor: pointer;
 	}
 	.entry-message {
-		color: #963f45;
+		color: var(--danger);
 	}
 	code {
 		font-size: 0.8rem;

@@ -134,8 +134,8 @@
 		padding: clamp(1rem, 4vw, 3rem);
 	}
 	.account-card {
-		background: white;
-		border: 1px solid #e2e3da;
+		background: var(--surface);
+		border: 1px solid var(--border);
 		border-radius: 16px;
 		padding: 1.5rem;
 		margin: 1.5rem 0;
@@ -154,7 +154,7 @@
 	input {
 		min-height: 44px;
 		border-radius: 8px;
-		border: 1px solid #bcc7c2;
+		border: 1px solid var(--border-strong);
 		padding: 0.6rem 0.9rem;
 		font: inherit;
 	}
@@ -166,7 +166,7 @@
 	}
 	small {
 		display: block;
-		color: #667077;
+		color: var(--muted);
 		margin-top: 0.3rem;
 	}
 	.crew-row {
@@ -175,7 +175,7 @@
 		justify-content: space-between;
 		gap: 1rem;
 		padding: 1rem 0;
-		border-bottom: 1px solid #edf0e8;
+		border-bottom: 1px solid var(--border);
 		overflow-wrap: anywhere;
 	}
 	.invite-link {
