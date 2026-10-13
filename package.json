@@ -20,9 +20,10 @@
 		"lint": "vp lint",
 		"format": "vp fmt && prettier --write \"src/**/*.svelte\"",
 		"format:check": "vp fmt --check && prettier --check \"src/**/*.svelte\"",
-		"validate": "vp run format:check && vp run lint && vp run check && vp run test && vp run build && vp run test:smoke",
+		"validate": "vp run format:check && vp run lint && vp run check && vp run test && vp run build && vp run test:smoke && vp run test:smoke:live",
 		"test:smoke": "node scripts/smoke.mjs",
-		"test:compose": "node scripts/check-compose.mjs"
+		"test:compose": "node scripts/check-compose.mjs",
+		"test:smoke:live": "node scripts/smoke-live.mjs"
 	},
 	"dependencies": {
 		"@effect/sql-sqlite-node": "4.0.4",
@@ -39,6 +40,7 @@
 		"@sveltejs/kit": "^3.0.0",
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",
 		"@types/node": "^24.19.2",
+		"@types/ws": "^8.18.2",
 		"@vitejs/plugin-legacy": "^8.2.3",
 		"@vitest/browser-playwright": "5.0.1",
 		"playwright": "^1.64.0",
@@ -50,7 +52,8 @@
 		"vite": "catalog:",
 		"vite-plugin-sveltekit-legacy": "0.1.1",
 		"vite-plus": "catalog:",
-		"vitest-browser-svelte": "^3.1.0"
+		"vitest-browser-svelte": "^3.1.0",
+		"ws": "^8.22.0"
 	},
 	"devEngines": {
 		"packageManager": {

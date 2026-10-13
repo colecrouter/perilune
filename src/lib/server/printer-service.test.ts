@@ -7,7 +7,7 @@ import { Effect, Layer, ManagedRuntime, SubscriptionRef } from 'effect';
 import { ConnectionError, SqlError } from 'effect/sql/SqlError';
 import * as SqliteClient from '@effect/sql-sqlite-node/SqliteClient';
 import { ActionStore, ActionStoreLive } from './action-store.js';
-import { PrinterService, PrinterServiceLive } from './printer-service.js';
+import { PrinterService, PrinterServiceLive, makePrinterService } from './printer-service.js';
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -15,13 +15,14 @@ afterEach(async () => {
 });
 async function create(
 	filename = ':memory:',
-	wrap?: (store: typeof ActionStore.Service) => typeof ActionStore.Service
+	wrap?: (store: typeof ActionStore.Service) => typeof ActionStore.Service,
+	mode: 'simulator' | 'moonraker' = 'simulator'
 ) {
 	const storeLayer = wrap
 		? Layer.effect(ActionStore, Effect.map(ActionStore, wrap)).pipe(Layer.provide(ActionStoreLive))
 		: ActionStoreLive;
 	const runtime = ManagedRuntime.make(
-		PrinterServiceLive.pipe(
+		(mode === 'simulator' ? PrinterServiceLive : makePrinterService(mode)).pipe(
 			Layer.provideMerge(storeLayer),
 			Layer.provide(SqliteClient.layer({ filename }))
 		)
@@ -208,5 +209,52 @@ describe('process-owned action service', () => {
 		expect((await runtime.runPromise(store.find(request.id)))?.action.status).toBe('unknown');
 		expect((await runtime.runPromise(service.submit(request))).status).toBe('unknown');
 		expect((await snapshot()).job.state).toBe('printing');
+	});
+});
+
+describe('live read-only printer service', () => {
+	it('starts without fabricated values and rejects every physical command', async () => {
+		const { runtime, service, snapshot } = await create(':memory:', undefined, 'moonraker');
+		expect((await snapshot()).heaters.bed.current).toBeNull();
+		expect((await snapshot()).job.state).toBe('unknown');
+		for (const command of [
+			{ type: 'pause' },
+			{ type: 'resume' },
+			{ type: 'cancel', coolBed: true, coolNozzle: true },
+			{ type: 'temperature', heater: 'bed', target: 60 }
+		] as const) {
+			await expect(
+				runtime.runPromise(service.submit({ id: randomUUID(), command }))
+			).rejects.toThrow('read-only');
+		}
+		expect((await snapshot()).actions).toHaveLength(0);
+	});
+	it('preserves last telemetry during reconnection and ignores simulator controls', async () => {
+		const { runtime, service, snapshot } = await create(':memory:', undefined, 'moonraker');
+		const telemetry = {
+			connection: 'connected',
+			klippy: 'ready',
+			telemetryAt: Date.now(),
+			availableObjects: ['heater_bed'],
+			job: { ...(await snapshot()).job, state: 'standby' },
+			heaters: { nozzle: { current: null, target: null }, bed: { current: 42, target: 0 } }
+		} as const;
+		await runtime.runPromise(
+			service.ingest({ ...telemetry, availableObjects: [...telemetry.availableObjects] })
+		);
+		await runtime.runPromise(
+			service.ingest({
+				...telemetry,
+				availableObjects: [...telemetry.availableObjects],
+				connection: 'reconnecting',
+				klippy: 'unknown'
+			})
+		);
+		await runtime.runPromise(service.reset);
+		await runtime.runPromise(service.setConnection(true));
+		const result = await snapshot();
+		expect(result.connection).toBe('reconnecting');
+		expect(result.heaters.bed.current).toBe(42);
+		expect(result.connectionGeneration).toBe(2);
 	});
 });

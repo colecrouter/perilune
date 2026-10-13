@@ -22,6 +22,10 @@
 	const pending = $derived(
 		snapshot.actions.some((action) => action.status === 'queued' || action.status === 'sending')
 	);
+	const readOnly = $derived(snapshot.mode === 'moonraker');
+	const connectionLabel = $derived(
+		snapshot.connection.charAt(0).toUpperCase() + snapshot.connection.slice(1)
+	);
 	const connected = $derived(snapshot.connection === 'connected');
 	const transportConnected = $derived(printer.connected);
 	const busy = $derived(submitting || pending || snapshot.storage === 'degraded');
@@ -67,7 +71,7 @@
 						? 'Reconnecting'
 						: connected
 							? 'Connected'
-							: 'Disconnected'}</span
+							: connectionLabel}</span
 				><label for="serif-switch">Serif headings</label><Switch.Root
 					id="serif-switch"
 					aria-label="Serif headings"
@@ -76,25 +80,44 @@
 				>
 			</div>
 		</header>
-		<section class="simulator-banner" aria-label="Simulator controls">
-			<div>
-				<Icon name="monitor" size={24} />
-				<p><strong>Simulator</strong><span> · No physical printer is controlled</span></p>
-			</div>
-			<div class="banner-actions">
-				<button
-					class="button secondary"
-					onclick={() => control(() => setSimulatorConnection(!connected))}
-					>{connected ? 'Disconnect' : 'Reconnect'}</button
-				><button
-					class="button subtle"
-					disabled={busy}
-					onclick={() => control(() => resetSimulator())}>Reset demo</button
-				>
-			</div>
-		</section>
-		{#if !transportConnected || !connected}<div class="reconnect-banner" role="status">
-				<strong>{!transportConnected ? 'Reconnecting to Perilune' : 'Printer disconnected'}</strong
+		{#if !readOnly}<section class="simulator-banner" aria-label="Simulator controls">
+				<div>
+					<Icon name="monitor" size={24} />
+					<p><strong>Simulator</strong><span> · No physical printer is controlled</span></p>
+				</div>
+				<div class="banner-actions">
+					<button
+						class="button secondary"
+						onclick={() => control(() => setSimulatorConnection(!connected))}
+						>{connected ? 'Disconnect' : 'Reconnect'}</button
+					><button
+						class="button subtle"
+						disabled={busy}
+						onclick={() => control(() => resetSimulator())}>Reset demo</button
+					>
+				</div>
+			</section>{:else}<section class="simulator-banner" aria-label="Live printer mode">
+				<div>
+					<Icon name="monitor" size={24} />
+					<p>
+						<strong>Live printer</strong><span>
+							· Read-only connection; controls are not enabled yet</span
+						>
+					</p>
+				</div>
+			</section>{/if}
+		{#if !transportConnected || !connected || snapshot.klippy !== 'ready'}<div
+				class="reconnect-banner"
+				role="status"
+			>
+				<strong
+					>{!transportConnected
+						? 'Reconnecting to Perilune'
+						: snapshot.connection === 'connected'
+							? `Klipper ${snapshot.klippy}`
+							: readOnly
+								? `${connectionLabel} to Moonraker`
+								: 'Printer disconnected'}</strong
 				><span>Last known values remain visible. Your inputs are preserved.</span
 				>{#if !transportConnected}<button
 						class="button secondary"
@@ -112,7 +135,7 @@
 				<section class="panel camera-panel">
 					<div class="section-header">
 						<h2>Camera</h2>
-						<span class="tag">Simulator</span>
+						<span class="tag">Not connected</span>
 					</div>
 					<div class="camera-empty">
 						<Icon name="camera" size={52} />
@@ -127,25 +150,45 @@
 					</div>
 					<div class="job-file">
 						<Icon name="jobs" size={30} />
-						<div><strong>{snapshot.job.filename}</strong><small>Simulated print</small></div>
+						<div>
+							<strong
+								>{snapshot.job.filename ||
+									(snapshot.telemetryAt === null
+										? 'Waiting for printer status'
+										: 'No file selected')}</strong
+							><small>{readOnly ? 'Live printer status' : 'Simulated print'}</small>
+						</div>
 					</div>
 					<div class="progress-row">
-						<progress max="100" value={snapshot.job.progress} aria-label="Print progress"
-						></progress><strong>{snapshot.job.progress}%</strong>
+						<progress max="100" value={snapshot.job.progress ?? 0} aria-label="Print progress"
+						></progress><strong
+							>{snapshot.job.progress === null
+								? '—'
+								: `${Math.round(snapshot.job.progress)}%`}</strong
+						>
 					</div>
 					<div class="job-metrics">
-						<div><span>Remaining</span><strong>{snapshot.job.remainingMinutes} min</strong></div>
 						<div>
-							<span>Layer</span><strong>{snapshot.job.layer} / {snapshot.job.totalLayers}</strong>
+							<span>{readOnly ? 'Remaining (estimate)' : 'Remaining'}</span><strong
+								>{snapshot.job.remainingMinutes === null
+									? '—'
+									: `${snapshot.job.remainingMinutes} min`}</strong
+							>
+						</div>
+						<div>
+							<span>Layer</span><strong
+								>{snapshot.job.layer ?? '—'} / {snapshot.job.totalLayers ?? '—'}</strong
+							>
 						</div>
 					</div>
 					<div class="job-actions">
 						<button
 							class="button primary"
-							disabled={busy ||
+							disabled={readOnly ||
+								busy ||
 								!connected ||
 								!transportConnected ||
-								snapshot.job.state === 'cancelled'}
+								(snapshot.job.state !== 'printing' && snapshot.job.state !== 'paused')}
 							onclick={() =>
 								control(() => send({ type: snapshot.job.state === 'paused' ? 'resume' : 'pause' }))}
 							><Icon name={snapshot.job.state === 'paused' ? 'play' : 'pause'} size={18} />{busy
@@ -155,10 +198,11 @@
 									: 'Pause print'}</button
 						><button
 							class="button danger-outline"
-							disabled={busy ||
+							disabled={readOnly ||
+								busy ||
 								!connected ||
 								!transportConnected ||
-								snapshot.job.state === 'cancelled'}
+								(snapshot.job.state !== 'printing' && snapshot.job.state !== 'paused')}
 							onclick={() => (cancelOpen = true)}><Icon name="stop" size={16} />Stop print</button
 						>
 					</div>
@@ -171,12 +215,14 @@
 						heater="nozzle"
 						current={snapshot.heaters.nozzle.current}
 						target={snapshot.heaters.nozzle.target}
+						{readOnly}
 						pending={busy || !transportConnected}
 						onSet={(target) => send({ type: 'temperature', heater: 'nozzle', target })}
 					/><HeaterControl
 						heater="bed"
 						current={snapshot.heaters.bed.current}
 						target={snapshot.heaters.bed.target}
+						{readOnly}
 						pending={busy || !transportConnected}
 						onSet={(target) => send({ type: 'temperature', heater: 'bed', target })}
 					/>
@@ -187,17 +233,14 @@
 						<div>
 							<dt>Moonraker</dt>
 							<dd>
-								<span class="status-dot" class:offline={!connected}></span>{connected
-									? 'Connected'
-									: 'Disconnected'}
+								<span class="status-dot" class:offline={!connected}></span>{connectionLabel}
 							</dd>
 						</div>
 						<div>
 							<dt>Klipper</dt>
 							<dd>
-								<span class="status-dot" class:offline={!connected}></span>{connected
-									? 'Ready'
-									: 'Unknown'}
+								<span class="status-dot" class:offline={!connected || snapshot.klippy !== 'ready'}
+								></span>{snapshot.klippy.charAt(0).toUpperCase() + snapshot.klippy.slice(1)}
 							</dd>
 						</div>
 						<div>
@@ -208,7 +251,13 @@
 							</dd>
 						</div>
 					</dl>
-					<small class="snapshot-meta">Simulated state · revision {snapshot.revision}</small>
+					<small class="snapshot-meta"
+						>{readOnly ? 'Live state' : 'Simulated state'} · revision {snapshot.revision}{#if readOnly}<br
+							/>{snapshot.telemetryAt === null
+								? 'Awaiting telemetry'
+								: `Last telemetry ${new Date(snapshot.telemetryAt).toLocaleTimeString()}`} · {snapshot
+								.availableObjects.length} available objects{/if}</small
+					>
 				</section>
 				<section class="panel activity-panel">
 					<div class="section-header">
@@ -232,18 +281,20 @@
 									class:failed={action.status === 'failed' || action.status === 'unknown'}
 									>{action.status}</span
 								>
-							</div>{:else}<div class="activity-row">
-								<Icon name="play" />
-								<div><strong>Print started</strong><small>Simulator demonstration</small></div>
-							</div>
-							<div class="activity-row">
-								<Icon name="bed" />
-								<div><strong>Bed reached target</strong><small>60°C · simulated</small></div>
-							</div>
-							<div class="activity-row">
-								<Icon name="jobs" />
-								<div><strong>File uploaded</strong><small>orbital-bracket.gcode</small></div>
-							</div>{/each}
+							</div>{:else}{#if readOnly}<p class="muted">
+									No Perilune actions. This printer connection is read-only.
+								</p>{:else}<div class="activity-row">
+									<Icon name="play" />
+									<div><strong>Print started</strong><small>Simulator demonstration</small></div>
+								</div>
+								<div class="activity-row">
+									<Icon name="bed" />
+									<div><strong>Bed reached target</strong><small>60°C · simulated</small></div>
+								</div>
+								<div class="activity-row">
+									<Icon name="jobs" />
+									<div><strong>File uploaded</strong><small>orbital-bracket.gcode</small></div>
+								</div>{/if}{/each}
 					</div>
 				</section>
 			</div>

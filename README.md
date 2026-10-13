@@ -16,7 +16,7 @@ pnpm install
 pnpm dev
 ```
 
-Open http://localhost:5173. This is **simulator mode only**: no physical printer is
+Open http://localhost:5173. By default this is **simulator mode**: no physical printer is
 connected or controlled. Pause, stop, temperature changes, and disconnects affect
 shared demo state. The header toggle compares serif and sans-serif headings.
 
@@ -38,7 +38,32 @@ docker compose up --build
 
 Compose binds to localhost:3000 and persists the SQLite database in a volume.
 Built-in login is a later milestone; keep remote previews behind an authenticated
-proxy. Camera playback and real printer integration are not implemented yet.
+proxy. Camera playback and physical printer controls are not implemented yet.
+
+## Connect a real printer (read-only)
+
+Set a direct Moonraker WebSocket endpoint on the **backend**:
+
+```sh
+PERILUNE_MOONRAKER_URL=ws://printer.local:7125/websocket pnpm dev
+```
+
+The URL stays on the server. Use `wss://` where TLS is available. If Moonraker
+requires authentication, set `PERILUNE_MOONRAKER_API_KEY` separately. Do not put
+credentials or query parameters in the URL. For production, pass these variables
+to the Node process; Compose reads them from your shell or local `.env` file.
+Plain `pnpm dev` and `pnpm start` read process environment variables, not `.env`.
+
+Live mode discovers available objects and displays job state and temperatures.
+Missing readings appear as unknown. Perilune and Moonraker reconnect independently;
+last telemetry and editable drafts remain visible. Klipper startup, shutdown, and
+unavailable states are separate from the Moonraker connection. Controls are disabled
+and the backend rejects all actions in live mode, including simulator commands.
+No physical commands are sent. Remove the URL to return to simulator mode.
+
+The backend connects directly to Moonraker; existing browser-facing Cloudflare
+Access protection does not authenticate this connection. Keep the app behind your
+existing authenticated proxy until built-in login ships.
 
 ## Verify
 

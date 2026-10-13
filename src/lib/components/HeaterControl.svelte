@@ -6,12 +6,14 @@
 		current,
 		target,
 		pending,
+		readOnly = false,
 		onSet
 	}: {
 		heater: 'nozzle' | 'bed';
-		current: number;
-		target: number;
+		current: number | null;
+		target: number | null;
 		pending: boolean;
+		readOnly?: boolean;
 		onSet: (target: number) => Promise<void>;
 	} = $props();
 	// A draft belongs to this input, not to the incoming printer snapshot.
@@ -22,7 +24,7 @@
 		event.preventDefault();
 		error = '';
 		try {
-			await onSet(draft);
+			await onSet(draft ?? 0);
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'Could not set temperature';
 		}
@@ -34,8 +36,8 @@
 		<Icon name={heater} size={28} />
 		<div>
 			<span class="muted">{title}</span><strong
-				>{current.toFixed(0)}<span class="unit"> °C</span></strong
-			><small>Target {target}°C</small>
+				>{current?.toFixed(0) ?? '—'}<span class="unit"> °C</span></strong
+			><small>Target {target === null ? '—' : `${target}°C`}</small>
 		</div>
 	</div>
 	<form onsubmit={submit}>
@@ -50,8 +52,8 @@
 				step="1"
 				required
 				bind:value={draft}
-			/><button class="button primary" disabled={pending} type="submit"
-				>{pending ? 'Pending…' : 'Set'}</button
+			/><button class="button primary" disabled={pending || readOnly} type="submit"
+				>{readOnly ? 'Read-only' : pending ? 'Pending…' : 'Set'}</button
 			>
 		</div>
 	</form>
