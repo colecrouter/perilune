@@ -76,8 +76,41 @@ are disabled when connectivity is insufficient; temperature actions can queue
 while the simulated printer is disconnected. Stop offers independent bed/nozzle
 cooldown choices. Bits UI supplies the dialog and typography toggle primitives.
 
-The camera is an explicit empty state; no media gateway is shipped yet. Proposed
-processing order is passthrough, remux, then shared on-demand native transcoding.
+## Camera gateway
+
+A process-scoped CameraService maintains the public descriptor, generation,
+allowlisted media sessions, and in-flight request controllers. Configure a trusted
+HTTP(S) go2rtc base server-side. Select a registered source explicitly, or discover
+it from the first enabled Moonraker webcam's `src` query. Dynamic source URLs and
+FFmpeg directives are rejected. Discovery runs on backend heartbeat/change
+notifications and never exposes raw webcam URLs to the browser.
+
+The gateway proxies continuous H.264-only fMP4 to MediaSource browsers, and requests
+go2rtc HLS/fMP4 for native-HLS fallback. It rewrites playlist and init/segment references
+to fixed Perilune endpoints with opaque session tokens. Upstream origins, headers,
+redirects, errors, and source identifiers remain private. Routes accept only known
+resources and parameter shapes. Requests are bounded by deadlines, response sizes,
+session count, and concurrency; caller abort, Effect interruption, source changes,
+and runtime disposal cancel upstream work. All media responses are `no-store`.
+
+H.264 passes through go2rtc's remuxer; audio is excluded and Perilune starts no
+transcoder. Continuous HTTP response bodies retain upstream controllers until
+cancelled or ended, respect backpressure, cap individual chunks, and use startup
+and renewable read-inactivity deadlines. MediaSource playback appends bytes
+sequentially and prunes old buffers, keeping playback near the live edge. Native
+HLS is a fallback where MediaSource is unavailable.
+The player rebuilds on descriptor generation changes, retries failures with backoff,
+and releases resources when hidden or explicitly paused. Rotation/flips affect video
+display, with swapped portrait dimensions for quarter turns and untransformed UI
+controls. Source JPEG downloads use a separate bounded endpoint and can fail without
+interrupting video. No captures are persisted.
+
+Native HLS buffering latency remains a tradeoff. Direct camera protocols, WebRTC, automatic
+codec fallback/transcoding, multiple cameras, and notification capture retention
+are future work. The synthetic production fixture verifies H.264 decode, two
+viewers, source changes, old-session invalidation, snapshots, orientation, narrow
+mobile layouts, clean EOF/reconnect, and preserved drafts. Real-camera validation does not commit private
+footage. Safari 16.4 device verification remains outstanding.
 
 ## Dependencies
 
@@ -94,7 +127,7 @@ and patched during prepare so its diagnostics also appear in checks.
 
 1. Completed: protocol-level Moonraker simulator and persistent read-only WebSocket adapter.
 2. Real command policies, reconciliation, cancellation macro behavior, priority stop.
-3. Camera gateway and source-change propagation.
+3. Completed: go2rtc camera gateway and source-change propagation; broader media protocols follow.
 4. Built-in authentication and validated external identity.
 5. File/slicer workflows, calibration, and explained configuration editing.
 6. Installability, configurable push notifications, and layout preferences.
@@ -113,3 +146,13 @@ by live mode. Simulator commands only alter demo state.
 This milestone maps the primary extruder and heated bed. Multiple toolheads,
 additional temperature sensors, richer capability controls, and slicer-derived
 remaining-time estimates are future work.
+
+Camera references: [go2rtc HLS](https://github.com/AlexxIT/go2rtc/tree/master/internal/hls),
+[go2rtc MP4](https://github.com/AlexxIT/go2rtc/tree/master/internal/mp4), and
+[Moonraker webcam API](https://moonraker.readthedocs.io/en/latest/external_api/webcams/).
+
+Real-source testing caught Chromium incompatibility with go2rtc's HLS and native
+progressive-MP4 playback for the owner's main stream. go2rtc's MediaSource player
+worked; feeding the same fMP4 through Perilune's HTTP gateway into MediaSource
+then successfully decoded the main video without transcoding. The native HLS
+fallback remains unverified on Safari hardware.

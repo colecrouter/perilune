@@ -16,7 +16,7 @@ Intentional deviations from the concept:
 - Activity becomes real simulator action history after the first command.
 - A small revision indicator helps verify live state during initial development.
 - Icons are code-native, consistent outlines. The favicon is a simple vector crescent.
-- Camera content remains an honest empty state until actual media integration.
+- Camera shows an honest empty state without a configured gateway, and real encoded video when configured.
 - Mobile uses a compact horizontal navigation and stacked panels.
 
 Production smoke creates desktop serif/sans, stop dialog, and mobile light/dark

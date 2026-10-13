@@ -7,6 +7,8 @@ services:
       PERILUNE_ORIGIN: ${PERILUNE_ORIGIN:-http://localhost:3000}
       PERILUNE_MOONRAKER_URL: ${PERILUNE_MOONRAKER_URL:-}
       PERILUNE_MOONRAKER_API_KEY: ${PERILUNE_MOONRAKER_API_KEY:-}
+      PERILUNE_CAMERA_BASE_URL: ${PERILUNE_CAMERA_BASE_URL:-}
+      PERILUNE_CAMERA_SOURCE: ${PERILUNE_CAMERA_SOURCE:-}
     volumes:
       - perilune-data:/app/data
     restart: unless-stopped

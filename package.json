@@ -20,10 +20,11 @@
 		"lint": "vp lint",
 		"format": "vp fmt && prettier --write \"src/**/*.svelte\"",
 		"format:check": "vp fmt --check && prettier --check \"src/**/*.svelte\"",
-		"validate": "vp run format:check && vp run lint && vp run check && vp run test && vp run build && vp run test:smoke && vp run test:smoke:live",
+		"validate": "vp run format:check && vp run lint && vp run check && vp run test && vp run build && vp run test:smoke && vp run test:smoke:live && vp run test:smoke:camera",
 		"test:smoke": "node scripts/smoke.mjs",
 		"test:compose": "node scripts/check-compose.mjs",
-		"test:smoke:live": "node scripts/smoke-live.mjs"
+		"test:smoke:live": "node scripts/smoke-live.mjs",
+		"test:smoke:camera": "node scripts/smoke-camera.mjs"
 	},
 	"dependencies": {
 		"@effect/sql-sqlite-node": "4.0.4",

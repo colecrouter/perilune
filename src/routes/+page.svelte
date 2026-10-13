@@ -4,16 +4,20 @@
 	import Icon from '#lib/components/Icon.svelte';
 	import HeaterControl from '#lib/components/HeaterControl.svelte';
 	import CancelDialog from '#lib/components/CancelDialog.svelte';
+	import CameraPanel from '#lib/components/CameraPanel.svelte';
 	import type { PrinterCommand } from '#lib/domain/printer.js';
 	import {
 		getPrinter,
+		getCamera,
 		submitAction,
 		setSimulatorConnection,
 		resetSimulator
 	} from './printer.remote.js';
 
 	const printer = getPrinter();
-	const initial = await printer;
+	const camera = getCamera();
+	const [initial, initialCamera] = await Promise.all([printer, camera]);
+	const cameraSnapshot = $derived(camera.current ?? initialCamera);
 	const snapshot = $derived(printer.current ?? initial);
 	let serif = $state(true);
 	let cancelOpen = $state(false);
@@ -132,17 +136,7 @@
 		{#if errorMessage}<p class="error-text" role="alert">{errorMessage}</p>{/if}
 		<div class="dashboard-grid">
 			<div class="primary-column">
-				<section class="panel camera-panel">
-					<div class="section-header">
-						<h2>Camera</h2>
-						<span class="tag">Not connected</span>
-					</div>
-					<div class="camera-empty">
-						<Icon name="camera" size={52} />
-						<h3>Camera not connected</h3>
-						<p>Your camera will appear here through a secure app URL.</p>
-					</div>
-				</section>
+				<CameraPanel camera={cameraSnapshot} />
 				<section class="panel job-panel">
 					<div class="section-header">
 						<h2>Current job</h2>
