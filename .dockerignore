@@ -1,0 +1,11 @@
+node_modules
+.svelte-kit
+build
+data
+.git
+test-results
+.vscode
+docs/design/*.png
+
+.env
+.env.*
