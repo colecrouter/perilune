@@ -276,23 +276,38 @@ try {
 	assert.equal(continuous.status, 200);
 	const reader = continuous.body.getReader();
 	await reader.read();
+	const liveURLs = [
+		...new Set(browserRequests.filter((url) => new URL(url).pathname.includes('/_app/remote/')))
+	];
+	assert.equal(liveURLs.length, 2, 'Printer and camera each have a live query');
+	const liveReaders = await Promise.all(
+		liveURLs.map(async (url) => {
+			const response = await fetch(url, { headers: { Cookie: cookie } });
+			assert.equal(response.status, 200);
+			const liveReader = response.body.getReader();
+			await liveReader.read();
+			return liveReader;
+		})
+	);
 	const logout = await context.request.post(`${base}/api/auth/sign-out`, {
 		headers: { Origin: base },
 		data: {}
 	});
 	assert.equal(logout.status(), 200);
-	const drain = (async () => {
-		try {
-			while (!(await reader.read()).done) {}
-		} catch (cause) {
-			if (!(cause instanceof TypeError)) throw cause;
-		}
-		return true;
-	})();
-	assert.equal(
-		await Promise.race([drain, new Promise((resolve) => setTimeout(() => resolve(false), 3000))]),
-		true,
-		'Logout closes an already-returned continuous camera body'
+	const drain = Promise.all(
+		[reader, ...liveReaders].map(async (streamReader) => {
+			try {
+				while (!(await streamReader.read()).done) {}
+			} catch (cause) {
+				if (!(cause instanceof TypeError)) throw cause;
+			}
+			return true;
+		})
+	);
+	assert.deepEqual(
+		await Promise.race([drain, new Promise((resolve) => setTimeout(() => resolve([]), 3000))]),
+		[true, true, true],
+		'Logout closes already-returned camera and idle live query bodies'
 	);
 	assert.equal((await context.request.get(`${base}/api/camera/snapshot`)).status(), 401);
 	assert.deepEqual(errors, [], 'No camera browser errors');
