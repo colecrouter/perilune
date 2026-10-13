@@ -96,6 +96,7 @@ try {
 		if (app.exitCode !== null || attempt > 100) throw new Error(`App startup failed: ${logs}`);
 		await new Promise((resolve) => setTimeout(resolve, 100));
 	}
+	assert.equal((await (await fetch(`${base}/health`)).json()).mode, 'moonraker');
 	browser = await chromium.launch({ headless: true });
 	const context = await browser.newContext({
 		viewport: { width: 1505, height: 1045 },

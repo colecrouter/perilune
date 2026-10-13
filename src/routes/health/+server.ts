@@ -8,7 +8,7 @@ export async function GET() {
 		Effect.flatMap(PrinterService, (service) => SubscriptionRef.get(service.state))
 	);
 	return json(
-		{ status: 'ok', mode: 'simulator', revision: state.revision },
+		{ status: 'ok', mode: state.mode, revision: state.revision },
 		{ headers: { 'Cache-Control': 'no-store' } }
 	);
 }
