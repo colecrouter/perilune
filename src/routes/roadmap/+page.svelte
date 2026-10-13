@@ -34,8 +34,8 @@
 		<section>
 			<h2>Camera and authentication</h2>
 			<p>
-				Stable camera URLs and intelligent media processing, followed by built-in accounts and
-				external authentication support.
+				The go2rtc camera gateway now provides stable app URLs and encoded video playback. Broader
+				media protocols, built-in accounts, and external authentication support follow.
 			</p>
 		</section>
 		<a class="button primary" href="https://github.com/colecrouter/perilune/milestones"

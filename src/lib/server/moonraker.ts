@@ -7,6 +7,7 @@ export interface MoonrakerSettings {
 	heartbeatMs?: number;
 	reconnectMinMs?: number;
 	reconnectMaxMs?: number;
+	discoverWebcams?: boolean;
 }
 export class MoonrakerConfig extends Context.Service<MoonrakerConfig, MoonrakerSettings>()(
 	'perilune/MoonrakerConfig'
@@ -18,6 +19,7 @@ export interface MoonrakerSnapshot {
 	generation: number;
 	updatedAt: number | null;
 	availableObjects: string[];
+	webcams: unknown[];
 	job: {
 		filename: string;
 		state: 'standby' | 'printing' | 'paused' | 'complete' | 'cancelled' | 'error';
@@ -56,6 +58,7 @@ export const emptyMoonrakerSnapshot = (): MoonrakerSnapshot => ({
 	generation: 0,
 	updatedAt: null,
 	availableObjects: [],
+	webcams: [],
 	job: {
 		filename: '',
 		state: 'standby',
@@ -221,6 +224,8 @@ export const MoonrakerServiceLive = Layer.effect(
 							}
 							mergeStatus(status, delta);
 							void publish(normalizeMoonrakerStatus(status, current));
+						} else if (message.method === 'notify_webcams_changed') {
+							wake?.();
 						} else if (message.method === 'notify_klippy_ready') {
 							readinessVersion++;
 							subscribed = false;
@@ -278,6 +283,14 @@ export const MoonrakerServiceLive = Layer.effect(
 						const server = record(await request('server.info'));
 						if (closed || signal.aborted) break;
 						if (version !== readinessVersion) continue;
+						if (config.discoverWebcams) {
+							const webcams = await request('server.webcams.list')
+								.then((value) => record(value).webcams)
+								.catch(() => undefined);
+							if (closed || signal.aborted) break;
+							if (Array.isArray(webcams)) await publish({ ...current, webcams });
+							if (version !== readinessVersion) continue;
+						}
 						const klippy = klippyState(server.klippy_state);
 						await publish({ ...current, connection: 'connected', klippy });
 						if (klippy === 'ready' && !subscribed) {

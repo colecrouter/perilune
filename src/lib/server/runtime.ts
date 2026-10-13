@@ -9,9 +9,21 @@ import { ActionStoreLive } from './action-store.js';
 import { PrinterServiceLive, makePrinterService } from './printer-service.js';
 import { MoonrakerConfig, MoonrakerServiceLive } from './moonraker.js';
 import { MoonrakerBridgeLive } from './moonraker-bridge.js';
+import { CameraConfig, CameraServiceLive } from './camera.js';
+import { WebcamBridgeLive } from './webcam-discovery.js';
 
 const filename = process.env.PERILUNE_DATABASE ?? './data/perilune.sqlite';
 mkdirSync(dirname(filename), { recursive: true });
+const cameraBaseUrl = process.env.PERILUNE_CAMERA_BASE_URL?.trim() ?? '';
+const cameraSource = process.env.PERILUNE_CAMERA_SOURCE?.trim();
+const cameraLayer = CameraServiceLive.pipe(
+	Layer.provide(
+		Layer.succeed(CameraConfig, {
+			baseUrl: cameraBaseUrl,
+			...(cameraSource ? { source: cameraSource } : {})
+		})
+	)
+);
 const moonrakerUrl = process.env.PERILUNE_MOONRAKER_URL?.trim();
 if (moonrakerUrl) {
 	let url: URL;
@@ -35,12 +47,14 @@ const printerLayer = (moonrakerUrl ? makePrinterService('moonraker') : PrinterSe
 	Layer.provide(ActionStoreLive),
 	Layer.provide(SqliteClient.layer({ filename }))
 );
-const liveServices = Layer.merge(
+const liveServices = Layer.mergeAll(
 	printerLayer,
+	cameraLayer,
 	MoonrakerServiceLive.pipe(
 		Layer.provide(
 			Layer.succeed(MoonrakerConfig, {
 				url: moonrakerUrl ?? '',
+				discoverWebcams: Boolean(cameraBaseUrl && !cameraSource),
 				...(process.env.PERILUNE_MOONRAKER_API_KEY
 					? { apiKey: process.env.PERILUNE_MOONRAKER_API_KEY }
 					: {})
@@ -49,7 +63,9 @@ const liveServices = Layer.merge(
 	)
 );
 export const runtime = ManagedRuntime.make(
-	moonrakerUrl ? MoonrakerBridgeLive.pipe(Layer.provideMerge(liveServices)) : printerLayer
+	moonrakerUrl
+		? Layer.merge(MoonrakerBridgeLive, WebcamBridgeLive).pipe(Layer.provideMerge(liveServices))
+		: Layer.merge(printerLayer, cameraLayer)
 );
 export const shutdownSignal = new AbortController();
 export const integration = createIntegration();

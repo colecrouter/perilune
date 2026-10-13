@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vite-plus/test';
-import { Effect, Layer, ManagedRuntime, Stream, SubscriptionRef } from 'effect';
+import { Layer, ManagedRuntime, Stream, SubscriptionRef } from 'effect';
 import * as SqliteClient from '@effect/sql-sqlite-node/SqliteClient';
 import { WebSocketServer } from 'ws';
 import { ActionStoreLive } from './action-store.js';
