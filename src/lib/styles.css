@@ -63,6 +63,7 @@ small {
 	font-size: 12px;
 }
 .serif h1,
+.serif h2,
 .brand,
 .dialog-title,
 .roadmap h1 {
@@ -71,6 +72,11 @@ small {
 .serif h1 {
 	font-size: 48px;
 	font-weight: 550;
+}
+.serif h2 {
+	font-size: 26px;
+	font-weight: 550;
+	line-height: 1.15;
 }
 .muted {
 	color: var(--muted);
@@ -81,6 +87,8 @@ small {
 	min-height: 100vh;
 }
 .sidebar {
+	background: var(--rail);
+	color: var(--rail-text);
 	padding: 26px 14px;
 	border-right: 1px solid var(--border);
 	display: flex;
@@ -88,7 +96,7 @@ small {
 	gap: 34px;
 }
 .brand {
-	color: var(--text);
+	color: var(--rail-text);
 	text-decoration: none;
 	font-size: 32px;
 	padding: 0 14px;
@@ -106,26 +114,28 @@ small {
 	min-height: 48px;
 	padding: 12px 18px;
 	text-decoration: none;
-	color: var(--muted);
+	color: var(--rail-muted);
 	font-size: 15px;
 	font-weight: 500;
 	border-radius: 8px;
 }
 .sidebar nav a.active {
-	background: var(--accent-soft);
-	color: var(--accent);
+	background: var(--highlight);
+	color: var(--highlight-text);
 }
-.sidebar nav a:hover {
-	background: var(--accent-soft);
+.sidebar nav a:not(.active):hover {
+	background: #ffffff12;
+	color: var(--rail-text);
 }
 .sidebar-footer {
 	margin-top: auto;
 	padding: 12px;
-	color: var(--muted);
+	color: var(--rail-muted);
 	text-decoration: none;
 	font-size: 13px;
 }
 .sidebar-footer small {
+	color: var(--rail-muted);
 	margin-top: 4px;
 }
 .dashboard {
@@ -273,6 +283,7 @@ small {
 	gap: 16px;
 }
 .panel {
+	box-shadow: 0 2px 0 #203b3308;
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: 10px;
@@ -286,12 +297,15 @@ small {
 	padding-bottom: 14px;
 }
 .tag {
-	background: var(--canvas);
+	background: var(--highlight);
+	color: var(--highlight-text);
 	border-radius: 5px;
 	padding: 3px 9px;
 	font-size: 11px;
 }
 .camera-empty {
+	position: relative;
+	overflow: hidden;
 	width: 100%;
 	aspect-ratio: 1.7;
 	min-height: 250px;
@@ -305,6 +319,36 @@ small {
 	gap: 10px;
 	text-align: center;
 	padding: 24px;
+}
+.camera-empty::before {
+	content: '';
+	position: absolute;
+	width: 300px;
+	height: 300px;
+	border: 1px solid var(--border-strong);
+	border-radius: 50%;
+	opacity: 0.35;
+	pointer-events: none;
+}
+.camera-empty::after {
+	content: '';
+	position: absolute;
+	width: 400px;
+	height: 240px;
+	border: 1px dashed var(--border-strong);
+	border-radius: 50%;
+	transform: rotate(-25deg);
+	opacity: 0.35;
+	pointer-events: none;
+}
+.camera-empty > * {
+	position: relative;
+	z-index: 1;
+}
+.camera-empty h3,
+.camera-empty p {
+	background: var(--camera);
+	padding: 0 8px;
 }
 .camera-empty svg {
 	color: var(--muted);
@@ -766,17 +810,18 @@ progress::-moz-progress-bar {
 }
 @media (prefers-color-scheme: dark) {
 	:root {
-		--canvas: #202526;
-		--surface: #282e2f;
-		--text: #edece8;
-		--muted: #a6afae;
-		--border: #3b4445;
-		--border-strong: #526061;
-		--camera: #242a2b;
-		--accent: #6baea3;
-		--accent-hover: #458d81;
-		--accent-soft: #2b3d3b;
-		--accent-border: #4c7770;
+		--rail: #102319;
+		--canvas: #172820;
+		--surface: #22382e;
+		--text: #f5f3df;
+		--muted: #b9c7b9;
+		--border: #425647;
+		--border-strong: #708575;
+		--camera: #1c3026;
+		--accent: #aad0a0;
+		--accent-hover: #91bc84;
+		--accent-soft: #2c4434;
+		--accent-border: #708f70;
 		--success: #7fc7a0;
 		--danger: #f48c86;
 		--danger-border: #af6663;

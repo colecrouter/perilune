@@ -15,3 +15,11 @@
 - Keep private hostnames, network addresses, credentials, printer configuration,
   and captured private media out of the public repository.
 - Docs/architecture.md records the implemented scope and outstanding milestones.
+
+- For substantial features, backend/lifecycle changes, or large batches, request
+  an independent agent code review before merging. The reviewer should inspect
+  correctness, regressions, tests, and deployment assumptions; resolve actionable
+  findings and record the review result in the PR. Small cosmetic edits need not
+  trigger a separate review.
+- Visual direction: serif headings are chosen. Preserve warm surfaces and teal,
+  with a contrasting dark rail and restrained lime accents.

@@ -4,7 +4,7 @@
 
 SvelteKit 3 and Vite+ serve a simulator-backed dashboard. A process-scoped Effect
 ManagedRuntime owns a single PrinterService, its worker, temperature ticker, and
-SQLite connection. Browser connections never own these resources.
+SQLite-backed ActionStore. Browser connections never own these resources.
 
 `query.live` adapts the service's SubscriptionRef changes into a streaming query.
 Each client receives a complete snapshot with a monotonic revision. A new stream
@@ -24,9 +24,15 @@ headers supplied by clients are not trusted. TLS/HTTP2/HTTP3 belong at the edge.
 - Reusing the same UUID and payload returns the existing action; conflicting reuse fails.
 - One worker serializes simulated execution and validates current printer state.
 - Disconnected actions remain queued for at most 30 seconds. The queue is bounded to 20.
-- Loss of connection during sending marks the outcome unknown, without replay.
+- Connection generations remember even brief disconnect/reconnect cycles during
+  sending and mark their outcome unknown, without replay.
 - A restart marks both queued and sending records unknown. Automatic durable queue
   recovery is deliberately not implemented in this first simulator slice.
+- Terminal status persistence and state application use one SubscriptionRef
+  transition, preventing stale snapshots from overwriting telemetry or connectivity.
+- Storage failures settle the affected action as unknown in memory and visibly
+  pause admission. Recovery retries status writes only, never command execution.
+- Expiry is rechecked immediately before simulated execution.
 - A simulated completion is immediate state application. Real Moonraker commands
   will need separate acknowledgement and physical completion semantics.
 
@@ -52,11 +58,10 @@ processing order is passthrough, remux, then shared on-demand native transcoding
 
 ## Dependencies
 
-The legacy plugin 0.1.0 needs a tracked patch for Kit 3's Environment API. It avoids
-rewriting during SSR and uses the client environment's resolved output directory.
-Upstream PR: https://github.com/colecrouter/vite-plugin-sveltekit-legacy/pull/1
-Remove the patch after adopting the fixed release. Production smoke tests verify
-hydration and that the stable polyfill URL is served without immutable caching.
+The published legacy plugin 0.1.1 handles both Kit 2 and Kit 3 build lifecycles;
+no local dependency patch is needed. Its required Kit peer range is
+`^2.0.0 || ^3.0.0`. Production smoke tests verify hydration and that the stable
+polyfill URL is served without immutable caching.
 
 Oxfmt handles supported files; Prettier with its Svelte plugin handles `.svelte`
 files. Tabs are the default. Effect's language service is enabled in TypeScript

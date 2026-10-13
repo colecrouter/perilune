@@ -6,7 +6,7 @@ full Perilune dashboard, warm off-white/graphite/teal palette, restrained serif
 headings, accessible sans-serif controls, left navigation, simulator strip, camera
 empty state, job controls, temperatures, connection state, and activity.
 
-The running dashboard includes a serif toggle for comparing Newsreader headings
+Serif headings are the chosen direction. The running dashboard retains a serif toggle for comparing Newsreader headings
 with Inter. Fonts are self-hosted. System light/dark appearance is supported.
 
 Intentional deviations from the concept:
@@ -45,6 +45,11 @@ Comparison ledger:
 | Media      | Honest camera empty state matches the concept; no fake printer footage.                                                |
 | Copy       | Main overview, camera, job, heater, and connection labels retained; simulator/history/roadmap deviations listed above. |
 
-The implementation follows the initial design's structure and visual direction;
-typography and product styling remain open for user review. Mobile aspect-ratio
+The initial concept established the structure. Following user feedback, the next
+iteration extends serif typography to section headings and adds a deep green rail,
+lime selections, stronger borders, warmer surfaces, and subtle orbital linework.
+These are intentional refinements to the accepted direction. The screenshots above
+show the current implementation, while `overview-concept.png` preserves the initial
+reference. T3 preview and production captures were checked for desktop/mobile
+layout, typography, palette, control states, and overflow. Mobile aspect-ratio
 and grid minimum widths were repaired after the smoke test caught overflow.

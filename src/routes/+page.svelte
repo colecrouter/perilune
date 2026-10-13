@@ -24,7 +24,7 @@
 	);
 	const connected = $derived(snapshot.connection === 'connected');
 	const transportConnected = $derived(printer.connected);
-	const busy = $derived(submitting || pending);
+	const busy = $derived(submitting || pending || snapshot.storage === 'degraded');
 	async function send(command: PrinterCommand) {
 		submitting = true;
 		errorMessage = '';
@@ -100,6 +100,11 @@
 						class="button secondary"
 						onclick={() => printer.reconnect()}>Retry connection</button
 					>{/if}
+			</div>{/if}
+		{#if snapshot.storage === 'degraded'}<div class="reconnect-banner" role="status">
+				<strong>Action history storage is recovering</strong><span
+					>Commands are paused. Uncertain actions will not be replayed.</span
+				>
 			</div>{/if}
 		{#if errorMessage}<p class="error-text" role="alert">{errorMessage}</p>{/if}
 		<div class="dashboard-grid">

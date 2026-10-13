@@ -4,7 +4,7 @@ services:
     ports:
       - '127.0.0.1:3000:3000'
     environment:
-      PERILUNE_ORIGIN: ${PERILUNE_PERILUNE_ORIGIN:-http://localhost:3000}
+      PERILUNE_ORIGIN: ${PERILUNE_ORIGIN:-http://localhost:3000}
     volumes:
       - perilune-data:/app/data
     restart: unless-stopped
