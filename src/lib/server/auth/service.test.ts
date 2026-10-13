@@ -1,6 +1,6 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { verifyPassword } from 'better-auth/crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect } from 'vite-plus/test';
@@ -41,6 +41,68 @@ async function login(service: ReturnType<typeof createAuthService>, email: strin
 	return identity!;
 }
 describe('local authentication', () => {
+	it('shows CLI help without opening a database and reports invalid usage cleanly', () => {
+		const directory = mkdtempSync(join(tmpdir(), 'perilune-cli-help-'));
+		const filename = join(directory, 'auth.sqlite');
+		try {
+			const env = { ...process.env, PERILUNE_DATABASE: filename };
+			for (const args of [[], ['--help'], ['-h']]) {
+				const result = spawnSync(process.execPath, ['scripts/auth.mjs', ...args], {
+					env,
+					encoding: 'utf8'
+				});
+				expect(result.status).toBe(0);
+				expect(result.stdout).toContain('node scripts/auth.mjs setup');
+				expect(result.stderr).toBe('');
+				expect(existsSync(filename)).toBe(false);
+			}
+			const invalid = spawnSync(process.execPath, ['scripts/auth.mjs', 'unknown'], {
+				env,
+				encoding: 'utf8'
+			});
+			expect(invalid.status).toBe(1);
+			expect(invalid.stderr).toContain('Unknown command: unknown');
+			expect(invalid.stderr).not.toContain('ModuleJob');
+			expect(existsSync(filename)).toBe(false);
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+	it('allows setup token reissue before enrollment and refuses it cleanly afterward', async () => {
+		const f = fixture();
+		try {
+			const env = { ...process.env, PERILUNE_DATABASE: f.filename };
+			const first = spawnSync(process.execPath, ['scripts/auth.mjs', 'setup'], {
+				env,
+				encoding: 'utf8'
+			});
+			const second = spawnSync(process.execPath, ['scripts/auth.mjs', 'setup'], {
+				env,
+				encoding: 'utf8'
+			});
+			expect(first.status).toBe(0);
+			expect(second.status).toBe(0);
+			const oldToken = first.stdout.trim().split('\n').at(-1)!;
+			const token = second.stdout.trim().split('\n').at(-1)!;
+			expect(token).not.toBe(oldToken);
+			await expect(
+				f.service.enroll({ token: oldToken, name: 'Owner', email: 'owner@example.test', password })
+			).rejects.toThrow();
+			await f.service.enroll({ token, name: 'Owner', email: 'owner@example.test', password });
+			const refused = spawnSync(process.execPath, ['scripts/auth.mjs', 'setup'], {
+				env,
+				encoding: 'utf8'
+			});
+			expect(refused.status).toBe(1);
+			expect(refused.stderr.trim()).toBe(
+				'Perilune: Setup is closed. Use recovery for an existing installation.'
+			);
+			expect(f.service.accounts()).toHaveLength(1);
+		} finally {
+			f.close();
+		}
+	});
+
 	it('blocks public signup and server-only role injection', async () => {
 		const f = fixture();
 		try {
