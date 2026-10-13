@@ -52,6 +52,10 @@ node scripts/auth.mjs setup
 docker compose exec perilune node scripts/auth.mjs setup
 ```
 
+Running `node scripts/auth.mjs` without a subcommand, or with `--help`, prints help
+without opening or changing the database. Invalid commands and setup refusals exit
+with a short message and a nonzero status.
+
 Use the same `PERILUNE_DATABASE` and `PERILUNE_ORIGIN` environment as the server. Tokens expire after
 30 minutes. Setup closes after the first account. A failed or interrupted signup
 consumes its token; for a fresh installation with no accounts, stop the server,
