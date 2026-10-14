@@ -60,6 +60,10 @@ export function heaterState(
 	if (Math.abs(current - target) <= 2) return 'Holding';
 	return current < target ? 'Heating' : 'Cooling';
 }
+/** Off refers to the requested targets, not the current surface temperature. */
+export function heaterTargetsOff(state: Pick<PrinterSnapshot, 'heaters'>): boolean {
+	return state.heaters.nozzle.target === 0 && state.heaters.bed.target === 0;
+}
 export function temperatureReason(
 	state: PrinterSnapshot,
 	heater?: 'nozzle' | 'bed',

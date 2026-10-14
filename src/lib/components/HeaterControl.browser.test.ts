@@ -81,3 +81,23 @@ test('an admitted cooldown keeps zero until telemetry acknowledges it', async ()
 	await screen.rerender({ target: 60 });
 	await expect.element(input).toHaveValue(60);
 });
+
+test('matching targets and already-off heaters disable no-op actions without claiming cooling is complete', async () => {
+	const onSet = vi.fn();
+	const component = await render(HeaterControl, {
+		props: { heater: 'nozzle', current: 190, target: 0, pending: false, onSet }
+	});
+	await expect.element(component.getByRole('button', { name: 'Set', exact: true })).toBeDisabled();
+	await expect
+		.element(component.getByRole('button', { name: 'Cool down nozzle', exact: true }))
+		.toBeDisabled();
+	await expect.element(component.getByText('Cooling', { exact: true })).toBeVisible();
+	await component.getByRole('spinbutton', { name: 'Nozzle target' }).fill('210');
+	await expect.element(component.getByRole('button', { name: 'Set', exact: true })).toBeEnabled();
+	await component.rerender({ target: 210 });
+	await expect.element(component.getByRole('button', { name: 'Set', exact: true })).toBeDisabled();
+	await expect
+		.element(component.getByRole('spinbutton', { name: 'Nozzle target' }))
+		.toHaveValue(210);
+	expect(onSet).not.toHaveBeenCalled();
+});

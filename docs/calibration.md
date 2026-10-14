@@ -1,8 +1,10 @@
 # Calibration workshop
 
 Open **Calibration** to rehearse Z-offset adjustments in the simulator. Stop the
-simulated job, turn off heater targets, and home all axes if needed. Review the
-preparation checklist, then begin. A real paper test requires a clean nozzle/bed
+simulated job, turn off heater targets, and home all axes if needed. Printer readiness, job state, homing and heater-target checkboxes update
+automatically. Homing and cooldown buttons explain when their conditions are
+already satisfied. Review cleanliness, physical clearance and the simulator
+acknowledgement manually, then begin. A real paper test requires a clean nozzle/bed
 at room temperature; the simulator does not verify those physical conditions.
 
 Use the segmented increment selector and **Z + · farther** / **Z − · closer**.

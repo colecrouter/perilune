@@ -407,3 +407,12 @@ Headless calibration smoke uses synthetic accounts, two owner tabs, operator and
 viewer sessions to verify ownership, stale saves, locked motion, shared state,
 temporary/saved outcomes and 320px layouts. Domain/service tests cover expiry,
 revocation, restart, before/after-commit ambiguity and no replay.
+
+Printer UI actions suppress verified no-ops: already-homed axes disable homing,
+matching heater drafts disable Set, and zero targets disable cooldown controls.
+These are UI affordances; deliberate backend command capabilities remain intact.
+Unknown/disconnected telemetry is not treated as a fulfilled condition. Calibration
+printer-state checkboxes derive automatically from fresh shared telemetry; manual
+cleanliness/clearance acknowledgements remain user-owned drafts. Stop-dialog heater
+choices retain their original intent while already-off options are annotated and
+disabled, so concurrent target changes do not silently alter cancellation intent.

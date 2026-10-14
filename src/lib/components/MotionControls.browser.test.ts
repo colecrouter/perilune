@@ -89,7 +89,9 @@ test('terminal failures stay visible and Z jogs disable at their boundary', asyn
 
 test('Home All and confirmed motor release have explicit commands', async () => {
 	const onSubmit = vi.fn().mockResolvedValue(undefined);
-	await render(MotionControls, { snapshot: idle(), onSubmit });
+	const state = idle();
+	state.motion.homed = [];
+	await render(MotionControls, { snapshot: state, onSubmit });
 	await page.getByRole('button', { name: 'Home All', exact: true }).click();
 	expect(onSubmit).toHaveBeenCalledWith({ type: 'home', axes: 'all' });
 	onSubmit.mockClear();
@@ -106,4 +108,17 @@ test('the vertical Z scale previews without executing movement', async () => {
 	await page.getByRole('slider', { name: 'Z height preview', exact: true }).click();
 	expect(onSubmit).not.toHaveBeenCalled();
 	await expect.element(page.getByRole('button', { name: 'Move here', exact: true })).toBeEnabled();
+});
+
+test('already homed axes disable homing, and motor release makes homing available again', async () => {
+	const state = idle();
+	const onSubmit = vi.fn();
+	const component = await render(MotionControls, { snapshot: state, onSubmit });
+	await expect.element(page.getByRole('button', { name: 'Home All', exact: true })).toBeDisabled();
+	await expect
+		.element(page.getByText('All axes are already homed.', { exact: false }))
+		.toBeVisible();
+	await component.rerender({ snapshot: { ...state, motion: { ...state.motion, homed: [] } } });
+	await expect.element(page.getByRole('button', { name: 'Home All', exact: true })).toBeEnabled();
+	expect(onSubmit).not.toHaveBeenCalled();
 });

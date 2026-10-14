@@ -652,6 +652,9 @@
 	></Dialog.Root
 >
 <CancelDialog
+	available={dashboard.connected &&
+		snapshot.connection === 'connected' &&
+		snapshot.klippy === 'ready'}
 	bind:open={cancelOpen}
 	bedTarget={snapshot.heaters.bed.target}
 	nozzleTarget={snapshot.heaters.nozzle.target}

@@ -37,6 +37,8 @@
 		}
 		if (!dirty) draft = target;
 	});
+	const unchanged = $derived(available && target !== null && draft === target);
+	const alreadyOff = $derived(available && target === 0);
 	const thermalState = $derived(heaterState(current, target, available));
 	const title = $derived(heater === 'bed' ? 'Bed' : 'Nozzle');
 	async function submit(event: SubmitEvent) {
@@ -81,14 +83,16 @@
 				oninput={() => (dirty = true)}
 			/><button
 				class="button primary"
-				disabled={pending || readOnly || !available || submitting}
+				disabled={pending || readOnly || !available || submitting || unchanged}
+				title={unchanged ? `Target already set to ${target}°C.` : undefined}
 				type="submit">{readOnly ? 'Read-only' : pending ? 'Pending…' : 'Set'}</button
 			>
 		</div>
 		<button
 			class="button secondary"
 			type="button"
-			disabled={pending || readOnly || !available || submitting || target === 0}
+			disabled={pending || readOnly || !available || submitting || alreadyOff}
+			title={alreadyOff ? 'Heater target is already off; it may still be cooling.' : undefined}
 			onclick={async () => {
 				error = '';
 				submitting = true;
@@ -104,11 +108,23 @@
 				}
 			}}>Cool down {title.toLowerCase()}</button
 		>
+		{#if unchanged && !alreadyOff}<small class="target-hint"
+				>Target already set to {target}°C.</small
+			>{/if}
+		{#if alreadyOff}<small class="target-hint"
+				>Target is already off; the {title.toLowerCase()} may still be cooling.</small
+			>{/if}
 	</form>
 </div>
 {#if error}<p class="error-text" role="alert">{error}</p>{/if}
 
 <style>
+	.target-hint {
+		display: block;
+		color: var(--muted);
+		font-size: 0.75rem;
+		margin-top: 0.5rem;
+	}
 	.thermal-state {
 		display: block;
 		color: var(--accent);
