@@ -106,9 +106,31 @@ try {
 			.isDisabled(),
 		true
 	);
+	await page.waitForFunction(() => document.querySelector('.prerequisites input')?.checked);
+	assert.equal(
+		await page.getByRole('checkbox', { name: 'All axes homed', exact: true }).isChecked(),
+		true
+	);
+	assert.equal(
+		await page
+			.getByRole('checkbox', { name: 'Heater targets off for this exercise', exact: true })
+			.isChecked(),
+		false
+	);
+	assert.equal(
+		await page.getByRole('button', { name: 'Home all axes', exact: true }).isDisabled(),
+		true
+	);
 	await checklist(page);
 	await page.getByRole('button', { name: 'Stop current simulation…', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
+	await page.waitForFunction(() =>
+		[...document.querySelectorAll('.prerequisites input')].every((input) => input.checked)
+	);
+	assert.equal(
+		await page.getByRole('button', { name: 'Turn heater targets off', exact: true }).isDisabled(),
+		true
+	);
 	await page.waitForFunction(
 		() =>
 			![...document.querySelectorAll('button')].find(

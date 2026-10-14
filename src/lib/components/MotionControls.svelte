@@ -1,6 +1,12 @@
 <script lang="ts">
 	import type { PrinterSnapshot, PrinterCommand } from '#lib/domain/printer.js';
-	import { motionReason, jogDestination, type Position, type Axis } from '#lib/domain/motion.js';
+	import {
+		motionReason,
+		allAxesHomed,
+		jogDestination,
+		type Position,
+		type Axis
+	} from '#lib/domain/motion.js';
 	let {
 		snapshot,
 		canOperate = true,
@@ -29,6 +35,7 @@
 				? 'An operator account is required.'
 				: null
 	);
+	const alreadyHomed = $derived(transportConnected && allAxesHomed(snapshot));
 	const homeAllReason = $derived(operatorReason ?? motionReason(snapshot, ['x', 'y', 'z'], true));
 	const releaseReason = $derived(operatorReason ?? motionReason(snapshot, [], true));
 	const limits = $derived(snapshot.motion.limits);
@@ -198,13 +205,17 @@
 			<div class="jog-buttons">
 				<button
 					class="button primary home-all"
-					disabled={!!homeAllReason || pending}
-					title={homeAllReason ?? undefined}
+					disabled={!!homeAllReason || pending || alreadyHomed}
+					title={alreadyHomed ? 'All axes are already homed.' : (homeAllReason ?? undefined)}
 					onclick={() => submit({ type: 'home', axes: 'all' })}>Home All</button
 				>
 			</div>
 			<p class="help">
-				Homing establishes the printer's position.{homeAllReason ? ` ${homeAllReason}` : ''}
+				Homing establishes the printer's position.{alreadyHomed
+					? ' All axes are already homed.'
+					: homeAllReason
+						? ` ${homeAllReason}`
+						: ''}
 			</p>
 		</div>
 		<div>

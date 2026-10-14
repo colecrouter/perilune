@@ -4,7 +4,11 @@
 	import AppShell from '#lib/components/AppShell.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import TemperatureHistory from '#lib/components/TemperatureHistory.svelte';
-	import { temperatureSensors, temperatureReason } from '#lib/domain/temperature.js';
+	import {
+		temperatureSensors,
+		heaterTargetsOff,
+		temperatureReason
+	} from '#lib/domain/temperature.js';
 	import HeaterControl from '#lib/components/HeaterControl.svelte';
 	import CancelDialog from '#lib/components/CancelDialog.svelte';
 	import CameraPanel from '#lib/components/CameraPanel.svelte';
@@ -61,6 +65,7 @@
 	const thermalReady = $derived(
 		snapshot.connection === 'connected' && snapshot.klippy === 'ready' && transportConnected
 	);
+	const alreadyOff = $derived(thermalReady && heaterTargetsOff(snapshot));
 	const thermalReason = $derived(
 		!transportConnected
 			? 'Reconnecting to Perilune. History and drafts are retained.'
@@ -260,12 +265,16 @@
 						<h2>Temperature</h2>
 						<button
 							class="button secondary"
-							disabled={busy || readOnly || !!thermalReason}
+							disabled={busy || readOnly || !!thermalReason || alreadyOff}
+							title={alreadyOff ? 'Both heater targets are already off.' : undefined}
 							onclick={() => control(() => send({ type: 'cooldown' }))}
 							>Cool down nozzle & bed</button
 						>
 					</div>
 					{#if thermalReason}<p class="muted">{thermalReason}</p>{/if}
+					{#if alreadyOff}<p class="muted">
+							Both heater targets are already off. The heaters may still be cooling.
+						</p>{/if}
 					{#if sensors.some((sensor) => sensor.id === 'extruder')}<HeaterControl
 							heater="nozzle"
 							current={snapshot.heaters.nozzle.current}
@@ -383,6 +392,7 @@
 		<footer class="page-footer">Development preview <a href="/roadmap">What’s next</a></footer>
 	</div>
 	<CancelDialog
+		available={thermalReady}
 		bind:open={cancelOpen}
 		bedTarget={snapshot.heaters.bed.target}
 		nozzleTarget={snapshot.heaters.nozzle.target}

@@ -3,11 +3,13 @@
 	import { isHttpError } from '@sveltejs/kit';
 	let {
 		open = $bindable(false),
+		available = true,
 		bedTarget,
 		nozzleTarget,
 		onConfirm
 	}: {
 		open?: boolean;
+		available?: boolean;
 		bedTarget: number | null;
 		nozzleTarget: number | null;
 		onConfirm: (coolBed: boolean, coolNozzle: boolean) => Promise<void>;
@@ -49,22 +51,38 @@
 						type="checkbox"
 						aria-label="Cool down nozzle"
 						bind:checked={coolNozzle}
-						disabled={submitting}
-					/><span>Cool down nozzle<small>Current target: {nozzleTarget}°C</small></span></label
+						disabled={submitting || !available || nozzleTarget === 0}
+					/><span
+						>Cool down nozzle<small
+							>{!available
+								? 'Waiting for current heater targets.'
+								: nozzleTarget === 0
+									? 'Target already off; the nozzle may still be cooling.'
+									: `Current target: ${nozzleTarget ?? 'unknown'}°C`}</small
+						></span
+					></label
 				>
 				<label
 					><input
 						type="checkbox"
 						aria-label="Cool down bed"
 						bind:checked={coolBed}
-						disabled={submitting}
-					/><span>Cool down bed<small>Current target: {bedTarget}°C</small></span></label
+						disabled={submitting || !available || bedTarget === 0}
+					/><span
+						>Cool down bed<small
+							>{!available
+								? 'Waiting for current heater targets.'
+								: bedTarget === 0
+									? 'Target already off; the bed may still be cooling.'
+									: `Current target: ${bedTarget ?? 'unknown'}°C`}</small
+						></span
+					></label
 				>
 			</div>
 			{#if failure}<p role="alert" class="error-text">{failure}</p>{/if}
 			<div class="dialog-actions">
 				<Dialog.Close class="button secondary" disabled={submitting}>Keep printing</Dialog.Close
-				><button class="button danger" disabled={submitting} onclick={confirm}
+				><button class="button danger" disabled={submitting || !available} onclick={confirm}
 					>{submitting ? 'Submitting…' : 'Stop print'}</button
 				>
 			</div>

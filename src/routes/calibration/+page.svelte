@@ -10,6 +10,8 @@
 		calibrationSteps,
 		type CalibrationCommand
 	} from '#lib/domain/calibration.js';
+	import { allAxesHomed } from '#lib/domain/motion.js';
+	import { heaterTargetsOff } from '#lib/domain/temperature.js';
 	import type { PrinterCommand } from '#lib/domain/printer.js';
 	import { getDashboard, submitAction } from '../printer.remote.js';
 	let { data } = $props();
@@ -47,6 +49,12 @@
 		void sessionId;
 		observation = null;
 	});
+	const ready = $derived(
+		dashboard.connected && snapshot.connection === 'connected' && snapshot.klippy === 'ready'
+	);
+	const homed = $derived(dashboard.connected && allAxesHomed(snapshot));
+	const heatersOff = $derived(ready && heaterTargetsOff(snapshot));
+	const idle = $derived(ready && ['standby', 'complete', 'cancelled'].includes(snapshot.job.state));
 	const currentJob = $derived(['printing', 'paused'].includes(snapshot.job.state));
 	const startReason = $derived(
 		!canOperate
@@ -452,24 +460,27 @@
 					A real paper test needs a clean nozzle and bed at room temperature. Here, the checklist
 					rehearses that preparation while the simulator is idle and homed.
 				</p>
-				<ul class="prerequisites">
+				<ul class="prerequisites" aria-label="Automatic printer checks">
 					<li>
-						{snapshot.connection === 'connected' && snapshot.klippy === 'ready' ? '✓' : '○'} Printer connected
-						and ready
-					</li>
-					<li>{!currentJob ? '✓' : '○'} No running or paused job</li>
-					<li>
-						{['x', 'y', 'z'].every((axis) =>
-							snapshot.motion.homed.includes(axis as 'x' | 'y' | 'z')
-						)
-							? '✓'
-							: '○'} All axes homed
+						<label
+							><input type="checkbox" checked={ready} disabled /> Printer connected and ready</label
+						>
 					</li>
 					<li>
-						{snapshot.heaters.nozzle.target === 0 && snapshot.heaters.bed.target === 0 ? '✓' : '○'} Heater
-						targets off for this exercise
+						<label><input type="checkbox" checked={idle} disabled /> No running or paused job</label
+						>
+					</li>
+					<li><label><input type="checkbox" checked={homed} disabled /> All axes homed</label></li>
+					<li>
+						<label
+							><input type="checkbox" checked={heatersOff} disabled /> Heater targets off for this exercise</label
+						>
 					</li>
 				</ul>
+				<p class="fine-hint">
+					Printer conditions check automatically. Cleanliness and physical clearance still need your
+					review.
+				</p>
 				<div class="preparation-controls">
 					{#if currentJob}<button
 							class="button secondary"
@@ -486,10 +497,12 @@
 						class="button secondary"
 						disabled={!canOperate ||
 							currentJob ||
+							homed ||
 							pending ||
 							submitting ||
 							snapshot.mode !== 'simulator' ||
 							!dashboard.connected}
+						title={homed ? 'All axes are already homed.' : undefined}
 						onclick={() => void send({ type: 'home', axes: 'all' }).catch(() => {})}
 						>Home all axes</button
 					><button
@@ -498,18 +511,24 @@
 							pending ||
 							submitting ||
 							snapshot.mode !== 'simulator' ||
-							!dashboard.connected}
+							!dashboard.connected ||
+							heatersOff}
+						title={heatersOff ? 'Both heater targets are already off.' : undefined}
 						onclick={() => void send({ type: 'cooldown' }).catch(() => {})}
 						>Turn heater targets off</button
 					>
 				</div>
+				{#if homed || heatersOff}<p class="fine-hint">
+						{homed ? 'All axes are already homed.' : ''}
+						{heatersOff ? 'Heater targets are already off; surfaces may still be cooling.' : ''}
+					</p>{/if}
 				<div class="checklist">
 					<label
 						><input type="checkbox" bind:checked={clean} disabled={!canOperate} /> I’ve reviewed clean-nozzle
 						and clean-bed preparation.</label
 					><label
-						><input type="checkbox" bind:checked={clear} disabled={!canOperate} /> I’ve reviewed bed clearance
-						and homing.</label
+						><input type="checkbox" bind:checked={clear} disabled={!canOperate} /> I’ve reviewed physical
+						bed clearance.</label
 					><label
 						><input type="checkbox" bind:checked={understand} disabled={!canOperate} /> I understand this
 						is a simulator exercise, not a probe measurement.</label
@@ -545,6 +564,7 @@
 	</div>
 </AppShell>
 <CancelDialog
+	available={ready}
 	bind:open={stopOpen}
 	bedTarget={snapshot.heaters.bed.target}
 	nozzleTarget={snapshot.heaters.nozzle.target}
@@ -853,6 +873,11 @@
 	.outcome p {
 		font-size: 0.9rem;
 		line-height: 1.6;
+	}
+	.prerequisites label {
+		display: flex;
+		gap: 0.7rem;
+		align-items: start;
 	}
 	.prerequisites {
 		list-style: none;

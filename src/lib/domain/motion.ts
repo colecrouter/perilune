@@ -25,6 +25,15 @@ export const simulatedMotion = (): MotionSnapshot => ({
 	busy: false,
 	calibration: false
 });
+export function allAxesHomed(
+	state: Pick<PrinterSnapshot, 'connection' | 'klippy' | 'motion'>
+): boolean {
+	return (
+		state.connection === 'connected' &&
+		state.klippy === 'ready' &&
+		axes.every((axis) => state.motion.homed.includes(axis))
+	);
+}
 export function motionReason(
 	state: PrinterSnapshot,
 	required: readonly Axis[],
