@@ -281,14 +281,31 @@
 				Library connection unavailable. Showing the last known files; your selection is retained.
 			</p>{/if}
 		<section class="panel current-job">
-			<div>
-				<p class="eyebrow">Current job</p>
-				<h2>{snapshot.job.filename || 'No active job'}</h2>
-				<p class="muted">
-					{snapshot.job.state} · {snapshot.job.progress === null
-						? 'Progress unavailable'
-						: `${Math.round(snapshot.job.progress)}%`}
-				</p>
+			<div class="job-identity">
+				<div class="job-kicker">
+					<span class="eyebrow">{currentActive ? 'Current job' : 'Last job'}</span><span
+						class="job-state">{snapshot.job.state}</span
+					>
+				</div>
+				<h2 title={snapshot.job.filename}>{snapshot.job.filename || 'No active job'}</h2>
+			</div>
+			<div class="job-progress">
+				<div class="job-progress-label">
+					<span class="muted"
+						>{snapshot.job.layer !== null && snapshot.job.totalLayers !== null
+							? `Layer ${snapshot.job.layer} / ${snapshot.job.totalLayers}`
+							: 'Print progress'}</span
+					><strong
+						>{snapshot.job.progress === null
+							? 'Not reported'
+							: `${Math.round(snapshot.job.progress)}%`}</strong
+					>
+				</div>
+				{#if snapshot.job.progress !== null}<progress
+						max="100"
+						value={snapshot.job.progress}
+						aria-label="Current job progress"
+					></progress>{/if}
 			</div>
 			<div class="job-actions">
 				{#if currentActive}<button
@@ -642,14 +659,46 @@
 		border-radius: 12px;
 	}
 	.current-job {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(180px, 0.6fr) auto;
+		align-items: center;
+		gap: 1.5rem;
+		padding: 0.85rem 1.15rem;
+	}
+	.job-identity {
+		min-width: 0;
+	}
+	.job-kicker {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
+		gap: 0.6rem;
+		margin-bottom: 0.35rem;
+	}
+	.job-state {
+		font-size: 0.72rem;
+		color: var(--accent);
+		text-transform: capitalize;
 	}
 	.current-job h2 {
-		font-size: 1.4rem;
-		overflow-wrap: anywhere;
+		font-size: 1.15rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.job-progress {
+		min-width: 0;
+	}
+	.job-progress-label {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.5rem;
+		font-size: 0.75rem;
+		margin-bottom: 0.5rem;
+	}
+	.job-progress progress {
+		width: 100%;
+		height: 6px;
+		display: block;
 	}
 	.job-actions {
 		display: flex;
@@ -919,8 +968,11 @@
 		.library-grid {
 			grid-template-columns: 1fr;
 		}
-		header,
 		.current-job {
+			grid-template-columns: 1fr;
+			gap: 0.9rem;
+		}
+		header {
 			align-items: flex-start;
 			flex-direction: column;
 		}

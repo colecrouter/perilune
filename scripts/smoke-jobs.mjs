@@ -220,13 +220,19 @@ try {
 	assert.equal((await fetch(base + '/server/info', { headers })).status, 401);
 	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
-	await page.waitForFunction(() =>
-		document.querySelector('.current-job').innerText.includes('cancelled')
+	await page.waitForFunction(
+		() => document.querySelector('.current-job .job-state').textContent === 'cancelled'
 	);
 	await page.getByRole('button', { name: 'Remove file…', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Remove file', exact: true }).click();
 	await page
 		.getByRole('heading', { name: 'A little preparation goes a long way.', exact: true })
+		.waitFor();
+	await page.reload();
+	await page
+		.locator('.history .run')
+		.filter({ hasText: 'fixture-bracket.gcode' })
+		.filter({ hasText: 'cancelled' })
 		.waitFor();
 	assert.deepEqual(errors, []);
 	console.log(

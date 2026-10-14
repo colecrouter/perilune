@@ -60,8 +60,19 @@ it('deduplicates uploads, refuses overwrites and persists the library across res
 			first.jobs.upload('bracket.gcode', new TextEncoder().encode('G28\nG1 X20'))
 		)
 	).rejects.toThrow('different file');
+	await first.runtime.runPromise(
+		first.printer.submit({
+			id: randomUUID(),
+			command: { type: 'cancel', coolBed: false, coolNozzle: false }
+		})
+	);
+	await expect.poll(async () => (await first.catalog()).runs[0]?.state).toBe('cancelled');
+	const cancelledId = (await first.catalog()).runs[0]!.id;
 	await first.runtime.dispose();
 	const second = await create(filename);
+	expect(
+		(await second.catalog()).runs.some((run) => run.id === cancelledId && run.state === 'cancelled')
+	).toBe(true);
 	expect((await second.catalog()).files[0]).toMatchObject({
 		id: file.id,
 		name: 'bracket.gcode',
