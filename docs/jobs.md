@@ -19,6 +19,8 @@ size and upload date. Header and pagination links, filename links, and the searc
 GET form work with JavaScript disabled. Filters, order, page and page size live in
 the URL, so views can be bookmarked and browser history works. File details retain
 the library query; mobile opens details directly with a back-to-library link.
+Sorting, page-size choices and filter forms preserve scroll and focus on surviving
+controls. File navigation and pagination retain the normal navigation reset.
 Column visibility is an enhanced, per-tab preference.
 
 Queries run on the server against the bounded process-owned catalog, before

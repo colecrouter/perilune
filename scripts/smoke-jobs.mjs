@@ -312,11 +312,26 @@ try {
 		'unfinished search'
 	);
 	await page.getByRole('searchbox', { name: 'Find a file' }).fill('catalog-');
+	// Query changes preserve the table's scroll position and the surviving control focus.
+	const sortLink = page.getByRole('columnheader', { name: 'File', exact: false }).getByRole('link');
+	await sortLink.scrollIntoViewIfNeeded();
+	await sortLink.focus();
+	const detailHref = await page
+		.getByRole('link', { name: 'catalog-00.gcode', exact: true })
+		.getAttribute('href');
+	const scrollBefore = await page.evaluate(() => window.scrollY);
+	await sortLink.click();
+	await page.waitForURL(/direction=desc/);
+	await page.waitForFunction(() => document.querySelector('th[aria-sort="descending"]'));
+	assert.ok(Math.abs((await page.evaluate(() => window.scrollY)) - scrollBefore) < 2);
+	assert.equal(await sortLink.evaluate((link) => document.activeElement === link), true);
 	await page.locator('.columns summary').click();
 	await page.getByRole('checkbox', { name: 'Size', exact: true }).uncheck();
 	assert.equal(await page.getByRole('columnheader', { name: 'Size', exact: true }).count(), 0);
 	await page.getByRole('checkbox', { name: 'Size', exact: true }).check();
 	await page.locator('.columns summary').click();
+	await page.goto(base + detailHref);
+	await page.getByRole('heading', { name: 'catalog-00.gcode', exact: true }).waitFor();
 	await page.screenshot({ path: 'test-results/jobs-table-desktop.png', fullPage: true });
 	await page.setViewportSize({ width: 320, height: 844 });
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
