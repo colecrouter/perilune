@@ -63,7 +63,7 @@ try {
 		() => document.body.innerText.includes('Updates') && document.body.innerText.includes('Live')
 	);
 	await first.evaluate(() => document.fonts.ready);
-	await first.getByRole('img', { name: /Nozzle temperatures over/ }).waitFor({ timeout: 10000 });
+	await first.getByRole('slider', { name: /Nozzle temperatures over/ }).waitFor({ timeout: 10000 });
 	await mkdir('test-results', { recursive: true });
 	await first.screenshot({ path: 'test-results/overview-serif.png', fullPage: true });
 	await first.getByRole('switch', { name: 'Serif headings' }).click();
@@ -105,7 +105,9 @@ try {
 		.getByText('Target 0°C', { exact: true })
 		.waitFor();
 	await first.getByRole('combobox', { name: 'Window', exact: true }).selectOption('5');
-	await first.getByRole('img', { name: /Nozzle temperatures over the last 5 minutes/ }).waitFor();
+	await first
+		.getByRole('slider', { name: /Nozzle temperatures over the last 5 minutes/ })
+		.waitFor();
 	await first.screenshot({ path: 'test-results/temperature-desktop.png', fullPage: true });
 	await first.setViewportSize({ width: 320, height: 844 });
 	await first.screenshot({ path: 'test-results/temperature-mobile.png', fullPage: true });

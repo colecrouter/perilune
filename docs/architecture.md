@@ -240,9 +240,12 @@ remain subsequent increments.
 
 ## Temperature monitoring and controls
 
-Overview uses LayerChart for one selected sensor at a time: solid actual temperature
-and dashed, stepped target, with 5-minute, 15-minute, and 1-hour windows. Current
-values remain visible alongside keyboard/touch sample inspection. Null readings
+Overview uses LayerChart for one selected sensor at a time: gradient area beneath the solid actual-temperature line
+and a dashed, stepped target, with 5-minute, 15-minute, and 1-hour windows. Current
+values remain visible alongside direct hover/tap inspection with a marker on the plot and keyboard
+arrow navigation. Time/domain changes use a 350 ms scale transition, disabled
+while inspecting and for reduced-motion preferences. The plot initially uses the
+available recorded span instead of an empty full-hour window. Null readings
 split paths rather than joining across unavailable intervals; dark/light comparison
 colours preserve contrast. Heater labels are inferred from actual/target difference
 (holding within 2°C; cooling after target zero while above 35°C), not PID telemetry.
