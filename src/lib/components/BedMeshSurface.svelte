@@ -74,7 +74,7 @@
 				<Axis
 					placement="left"
 					label="Y (mm)"
-					ticks={3}
+					ticks={[mesh.min[1], (mesh.min[1] + mesh.max[1]) / 2]}
 					tickLabelProps={{ viewport: true, fill: 'var(--muted)' }}
 				/>
 				<Axis
