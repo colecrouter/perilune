@@ -1,3 +1,4 @@
+import { parseJobQuery, queryJobCatalog } from '#lib/domain/job-query.js';
 import { error, json } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 import { Effect, SubscriptionRef } from 'effect';
@@ -11,7 +12,12 @@ export async function GET(event: RequestEvent) {
 	const id = event.url.searchParams.get('id') ?? '';
 	switch (event.params.operation) {
 		case 'library':
-			return json(await runtime.runPromise(SubscriptionRef.get(service.state)));
+			return json(
+				queryJobCatalog(
+					await jobOperation(SubscriptionRef.get(service.state), event),
+					parseJobQuery(event.url.searchParams)
+				)
+			);
 		case 'inspect':
 			return json({ file: await jobOperation(service.inspect(id), event) });
 		case 'keys':
