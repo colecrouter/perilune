@@ -7,7 +7,7 @@
 		{ label: 'Overview', icon: 'overview', href: '/' },
 		{ label: 'Controls', icon: 'calibration', href: '/controls' },
 		{ label: 'Jobs', icon: 'jobs', href: '/jobs' },
-		{ label: 'Calibration', icon: 'calibration', href: '/roadmap#calibration' },
+		{ label: 'Calibration', icon: 'calibration', href: '/calibration' },
 		{ label: 'Configuration', icon: 'configuration', href: '/roadmap#configuration' },
 		{ label: 'Account', icon: 'account', href: '/account' }
 	] as const;

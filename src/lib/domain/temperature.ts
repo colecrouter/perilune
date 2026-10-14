@@ -70,6 +70,8 @@ export function temperatureReason(
 	if (state.connection !== 'connected' || state.klippy !== 'ready')
 		return 'Wait for the printer to reconnect and become ready.';
 	if (state.storage !== 'healthy') return 'Action storage is recovering. Please wait.';
+	if (heater && state.motion.calibration)
+		return 'Calibration owns the heater controls. Finish or cancel it first.';
 	if (heater && (state.heaters[heater].current === null || state.heaters[heater].target === null))
 		return 'Heater telemetry is unavailable.';
 	if (

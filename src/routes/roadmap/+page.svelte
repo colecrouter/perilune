@@ -20,8 +20,9 @@
 		<section id="calibration">
 			<h2>Calibration</h2>
 			<p>
-				Guided Z calibration, understandable prerequisites, separated movement and cancellation
-				controls, and contextual documentation.
+				The simulator Z-offset workshop now includes prerequisites, separate adjustment and
+				cancellation controls, and contextual documentation. Live probing and first-layer test
+				prints remain planned.
 			</p>
 		</section>
 		<section id="configuration">

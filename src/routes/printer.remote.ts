@@ -84,11 +84,20 @@ export const getTemperatureHistory = query(async () => {
 });
 
 export const submitAction = command(Schema.toStandardSchemaV1(ActionRequest), async (request) => {
-	requireIdentity(getRequestEvent(), 'operator');
+	const identity = requireIdentity(getRequestEvent(), 'operator');
+	const actor = {
+		id: identity.user.id,
+		name: identity.user.name,
+		role: identity.user.role,
+		authorized: () =>
+			Boolean(authService!.valid(identity)) && ['owner', 'operator'].includes(identity.user.role)
+	};
 	const result = await requestEffect(
 		Effect.promise(() =>
 			runtime.runPromise(
-				Effect.flatMap(PrinterService, (service) => service.submit(request)).pipe(Effect.result)
+				Effect.flatMap(PrinterService, (service) => service.submit(request, actor)).pipe(
+					Effect.result
+				)
 			)
 		)
 	);

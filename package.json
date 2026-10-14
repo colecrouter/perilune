@@ -20,13 +20,14 @@
 		"lint": "vp lint",
 		"format": "vp fmt && prettier --write \"src/**/*.svelte\"",
 		"format:check": "vp fmt --check && prettier --check \"src/**/*.svelte\"",
-		"validate": "vp run format:check && vp run lint && vp run check && vp run test && vp run build && vp run test:smoke && vp run test:smoke:live && vp run test:smoke:camera && vp run test:smoke:auth && vp run test:smoke:jobs",
+		"validate": "vp run format:check && vp run lint && vp run check && vp run test && vp run build && vp run test:smoke && vp run test:smoke:live && vp run test:smoke:camera && vp run test:smoke:auth && vp run test:smoke:jobs && vp run test:smoke:calibration",
 		"test:smoke": "node scripts/smoke.mjs",
 		"test:compose": "node scripts/check-compose.mjs",
 		"test:smoke:live": "node scripts/smoke-live.mjs",
 		"test:smoke:camera": "node scripts/smoke-camera.mjs",
 		"test:smoke:auth": "node scripts/smoke-auth.mjs",
-		"test:smoke:jobs": "node scripts/smoke-jobs.mjs"
+		"test:smoke:jobs": "node scripts/smoke-jobs.mjs",
+		"test:smoke:calibration": "node scripts/smoke-calibration.mjs"
 	},
 	"dependencies": {
 		"@better-auth/passkey": "1.7.7",
