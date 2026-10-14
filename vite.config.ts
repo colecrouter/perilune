@@ -16,6 +16,7 @@ export default defineConfig({
 		}),
 		legacy({ modernTargets: ['Safari >= 16.4', 'Chrome >= 110', 'Firefox >= 115'] })
 	]),
+	ssr: { noExternal: ['@tanstack/svelte-table', '@tanstack/svelte-store'] },
 	test: {
 		maxWorkers: 4,
 		expect: { poll: { timeout: 3000 } },

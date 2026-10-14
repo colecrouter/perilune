@@ -3,7 +3,6 @@ import { error } from '@sveltejs/kit';
 import { Effect, Schema, Stream, SubscriptionRef } from 'effect';
 import { authService, requireIdentity } from '#lib/server/auth/index.js';
 import { ActionRequest } from '#lib/domain/printer.js';
-import { JobService } from '#lib/server/job-service.js';
 import { CameraService } from '#lib/server/camera.js';
 import { PrinterService } from '#lib/server/printer-service.js';
 import { requestEffect, runtime, shutdownSignal } from '#lib/server/runtime.js';
@@ -115,9 +114,3 @@ export const resetSimulator = command(
 		);
 	})
 );
-
-export const getJobs = query(async () => {
-	requireIdentity(getRequestEvent());
-	const service = await runtime.runPromise(JobService);
-	return runtime.runPromise(SubscriptionRef.get(service.state));
-});

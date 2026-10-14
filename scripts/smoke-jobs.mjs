@@ -94,7 +94,7 @@ try {
 		buffer: Buffer.from(gcode)
 	});
 	await page.getByRole('heading', { name: 'fixture-bracket.gcode', exact: true }).waitFor();
-	await page.getByText('1h 12m', { exact: true }).waitFor();
+	await page.locator('.inspection').getByText('1h 12m', { exact: true }).waitFor();
 	assert.equal(
 		await page.getByRole('button', { name: 'Review & start simulation', exact: true }).isDisabled(),
 		true
@@ -114,7 +114,7 @@ try {
 	);
 	const second = await context.newPage();
 	await second.goto(base + '/jobs');
-	await second.getByRole('button', { name: /fixture-bracket.gcode/ }).waitFor();
+	await second.getByRole('link', { name: 'fixture-bracket.gcode', exact: true }).waitFor();
 	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('button', { name: 'Review & start simulation', exact: true }).waitFor();
@@ -136,7 +136,7 @@ try {
 	await page.getByRole('dialog').getByRole('button', { name: 'Remove file', exact: true }).click();
 	await page.getByRole('dialog').getByRole('alert').waitFor();
 	await page.getByRole('dialog').getByRole('button', { name: 'Keep file', exact: true }).click();
-	await page.getByRole('button', { name: /fixture-bracket.gcode/ }).click();
+	await page.getByRole('link', { name: 'fixture-bracket.gcode', exact: true }).click();
 	await page.waitForFunction(() => document.querySelector('.history').innerText.includes('paused'));
 	await mkdir('test-results', { recursive: true });
 	await page.screenshot({ path: 'test-results/jobs-desktop.png', fullPage: true });
@@ -266,6 +266,64 @@ try {
 			.count(),
 		2
 	);
+	// Real GET forms/links and server HTML must work without hydration.
+	for (let index = 0; index < 12; index++) {
+		const response = await context.request.post(
+			base + '/api/jobs/upload?name=' + `catalog-${String(index).padStart(2, '0')}.gcode`,
+			{
+				headers: { Origin: base, 'Content-Type': 'application/octet-stream' },
+				data: `; filament_type = ${index % 2 ? 'PLA' : 'PETG'}\n;TIME:${60 + index}\nG28\n`
+			}
+		);
+		assert.equal(response.status(), 200);
+	}
+	const noJS = await browser.newContext({ javaScriptEnabled: false });
+	await noJS.addCookies(await context.cookies());
+	const staticPage = await noJS.newPage();
+	await staticPage.goto(base + '/jobs?q=catalog-&sort=name&direction=asc&size=10');
+	assert.equal(await staticPage.locator('tbody tr').count(), 10);
+	assert.equal(
+		await staticPage
+			.locator('tbody tr')
+			.first()
+			.innerText()
+			.then((text) => text.includes('catalog-00')),
+		true
+	);
+	await staticPage.getByRole('link', { name: 'Next', exact: true }).click();
+	assert.equal(await staticPage.locator('tbody tr').count(), 2);
+	await staticPage.getByRole('link', { name: 'catalog-10.gcode', exact: true }).click();
+	await staticPage.getByRole('heading', { name: 'catalog-10.gcode', exact: true }).waitFor();
+	assert.match(staticPage.url(), /jobs\/[^?]+\?.*page=2/);
+	await staticPage.getByRole('link', { name: 'Back to library' }).click();
+	await staticPage.getByRole('searchbox', { name: 'Find a file' }).fill('catalog-');
+	await staticPage.getByRole('combobox', { name: 'Material', exact: true }).selectOption('PLA');
+	await staticPage.getByRole('button', { name: 'Search', exact: true }).click();
+	assert.equal(await staticPage.locator('tbody tr').count(), 6);
+	await noJS.close();
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	await page.goto(base + '/jobs?q=catalog-&sort=name&direction=asc&size=10');
+	await page.getByRole('link', { name: 'catalog-00.gcode', exact: true }).click();
+	await page.getByRole('heading', { name: 'catalog-00.gcode', exact: true }).waitFor();
+	await page.getByRole('searchbox', { name: 'Find a file' }).fill('unfinished search');
+	await page.waitForTimeout(5500);
+	assert.equal(
+		await page.getByRole('searchbox', { name: 'Find a file' }).inputValue(),
+		'unfinished search'
+	);
+	await page.getByRole('searchbox', { name: 'Find a file' }).fill('catalog-');
+	await page.locator('.columns summary').click();
+	await page.getByRole('checkbox', { name: 'Size', exact: true }).uncheck();
+	assert.equal(await page.getByRole('columnheader', { name: 'Size', exact: true }).count(), 0);
+	await page.getByRole('checkbox', { name: 'Size', exact: true }).check();
+	await page.locator('.columns summary').click();
+	await page.screenshot({ path: 'test-results/jobs-table-desktop.png', fullPage: true });
+	await page.setViewportSize({ width: 320, height: 844 });
+	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+	await page.screenshot({ path: 'test-results/jobs-table-mobile-detail.png', fullPage: true });
+	await page.getByRole('link', { name: 'Back to library' }).click();
+	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+	await page.screenshot({ path: 'test-results/jobs-table-mobile.png', fullPage: true });
 	assert.deepEqual(errors, []);
 	console.log(
 		'Jobs smoke passed: uploads, PNG proxy, metadata, shared starts/pause/cancel, deletion safeguards, history, scoped slicer uploads, revocation, 320px layout.'

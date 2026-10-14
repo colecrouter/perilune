@@ -12,6 +12,25 @@ retries are safe. Rename a changed file before uploading; overwriting is not
 supported. A file in an active/pending print cannot be removed. Library contents
 and observed history persist in the configured database.
 
+## Browsing the library
+
+Desktop uses a TanStack table with optional columns for material, estimated time,
+size and upload date. Header and pagination links, filename links, and the search
+GET form work with JavaScript disabled. Filters, order, page and page size live in
+the URL, so views can be bookmarked and browser history works. File details retain
+the library query; mobile opens details directly with a back-to-library link.
+Column visibility is an enhanced, per-tab preference.
+
+Queries run on the server against the bounded process-owned catalog, before
+returning only 10, 25 or 50 rows. SQLite still stores the files; this milestone
+changes neither storage limits nor overwrite rules. Moonraker metadata loads on
+inspection. Material filtering and material/estimate sorting are disabled until
+metadata has been inspected for every mirrored file, so incomplete metadata never
+silently excludes files. Filename, size and date queries remain available.
+
+Five-second refreshes preserve search drafts, column choices and open dialogs.
+A removed file shows a friendly unavailable state; reconnects retain cached data.
+
 ## Sending from OrcaSlicer
 
 1. In Jobs, expand **Send files from your slicer** and create an upload-only key.

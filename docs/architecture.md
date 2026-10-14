@@ -302,6 +302,22 @@ request/session/shutdown interruption. PNG thumbnails are size/dimension checked
 and served through authenticated same-origin endpoints; SVG/HTML thumbnails are
 excluded. Comments provide slicer estimates only, never executable inspection.
 
+The Jobs shared layout server load and authenticated library endpoint apply
+validated URL queries to the bounded process-owned catalog. Filtering and stable
+sorting precede 10/25/50-row pagination; clients receive only that page. This is
+server-side catalog querying, not SQL pagination: the existing 100 local / 500
+mirrored-file bounds remain. Missing metadata sorts last; incomplete Moonraker
+metadata disables material filters and material/estimate sorting until inspection
+has populated the whole catalog. Large library storage/SQL indexing remain future
+work.
+
+TanStack Svelte Table 9 owns column visibility and manually paginated row markup.
+Semantic tables, real header/page/file links and GET forms support SSR/no-JS
+browsing. Enhanced navigation keeps the shared layout and desktop inspection pane;
+mobile selected routes show details directly. Missing files get an explained
+state. Svelte adapters are bundled for dev SSR via noExternal. No additional query
+client or held stream is introduced. Primitive URL dependencies prevent ordinary
+invalidation from overwriting drafts or dismissing dialogs.
 The file selection and search draft survive five-second finite library refreshes.
 The existing dashboard query remains the single held stream per tab. Simulator
 starts reference a persisted file ID through the existing idempotent action queue;
