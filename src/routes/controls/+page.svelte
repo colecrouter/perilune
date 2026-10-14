@@ -1,11 +1,11 @@
 <script lang="ts">
 	import AppShell from '#lib/components/AppShell.svelte';
 	import MotionControls from '#lib/components/MotionControls.svelte';
-	import { getPrinter, submitAction } from '../printer.remote.js';
+	import { getDashboard, submitAction } from '../printer.remote.js';
 	let { data } = $props();
-	const printer = getPrinter();
+	const printer = getDashboard();
 	const initial = await printer;
-	const snapshot = $derived(printer.current ?? initial);
+	const snapshot = $derived(printer.current?.printer ?? initial.printer);
 </script>
 
 <svelte:head><title>Printer controls · Perilune</title></svelte:head>

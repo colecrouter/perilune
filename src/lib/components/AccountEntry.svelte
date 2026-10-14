@@ -1,4 +1,5 @@
 <script lang="ts">
+	import MoonMark from './MoonMark.svelte';
 	import { onMount } from 'svelte';
 	import { authClient } from '#lib/client/auth.js';
 	let { mode }: { mode: 'login' | 'setup' | 'register' } = $props();
@@ -78,11 +79,7 @@
 >
 <div class="entry-sky serif">
 	<section class="entry-card">
-		<a class="entry-brand" href="/"
-			><svg viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"
-				><path d="M21 6a11 11 0 1 0 5 18A11 11 0 0 1 21 6" /></svg
-			><span>Perilune</span></a
-		>
+		<a class="entry-brand" href="/"><MoonMark /><span>Perilune</span></a>
 		<p class="eyebrow">Your printer, in orbit</p>
 		<h1>
 			{reset
@@ -193,7 +190,7 @@
 		text-decoration: none;
 		margin-bottom: 2rem;
 	}
-	.entry-brand svg {
+	.entry-brand :global(svg) {
 		width: 30px;
 		height: 30px;
 		flex-shrink: 0;

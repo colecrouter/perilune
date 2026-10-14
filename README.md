@@ -1,3 +1,5 @@
+<p align="center"><img src="static/brand/logo.png" width="96" alt="Perilune crescent moon" /></p>
+
 # Perilune
 
 A reliable, thoughtfully designed control interface for Klipper printers.

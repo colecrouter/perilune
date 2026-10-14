@@ -275,3 +275,16 @@ target telemetry confirms a submitted change, including after failed/unknown act
 Live heater commands and hardware-dependent limits remain a later coordinated
 command-testing milestone. History is not a persistent print archive or notification
 service; durable job records and alerts remain subsequent work.
+
+## Lunar branding
+
+A shared MoonMark uses Cole Crouter's posterized telescope photograph under a
+calculated waxing-crescent SVG mask. The rail, account entry and repository assets
+share that texture. Authenticated root layout owns one favicon link and observes
+the existing deduplicated dashboard query; Controls now also uses that query so
+navigation retains one held stream per tab. Initial favicon subscription failure
+cannot block page rendering. Whole-percent progress changes render a 64px PNG
+with projected illumination proportional to progress; pause/unavailable badges
+preserve the last phase. Guest pages and idle jobs use the static crescent.
+The brand study, PNG logo and repository social-preview card live in static/brand;
+see docs/branding.md for source attribution and usage.

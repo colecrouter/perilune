@@ -53,12 +53,23 @@ try {
 	});
 	await authenticate(context, base, join(directory, 'state.sqlite'));
 	const first = await context.newPage();
+	const heldDashboardRequests = new Set();
+	first.on('request', (request) => {
+		if (request.url().includes('/getDashboard')) heldDashboardRequests.add(request);
+	});
+	first.on('requestfinished', (request) => heldDashboardRequests.delete(request));
+	first.on('requestfailed', (request) => heldDashboardRequests.delete(request));
 	failurePage = first;
 	first.setDefaultTimeout(5000);
 	const errors = [];
 	first.on('pageerror', (error) => errors.push(error.message));
 	await first.goto(base);
 	await first.getByRole('button', { name: 'Disconnect', exact: true }).waitFor();
+	await first.waitForFunction(() =>
+		document.querySelector('link[rel="icon"]')?.href.startsWith('data:image/png')
+	);
+	assert.equal(await first.locator('link[rel="icon"]').count(), 1);
+	const printingIcon = await first.locator('link[rel="icon"]').getAttribute('href');
 	await first.waitForFunction(
 		() => document.body.innerText.includes('Updates') && document.body.innerText.includes('Live')
 	);
@@ -75,6 +86,10 @@ try {
 	await first.getByRole('spinbutton', { name: 'Nozzle target' }).fill('225');
 	await first.getByRole('button', { name: 'Disconnect', exact: true }).click();
 	await second.getByText('Printer disconnected', { exact: true }).waitFor();
+	await first.waitForFunction(
+		(before) => document.querySelector('link[rel="icon"]')?.href !== before,
+		printingIcon
+	);
 	assert.equal(await first.getByRole('spinbutton', { name: 'Nozzle target' }).inputValue(), '225');
 	assert.equal(
 		await first
@@ -88,14 +103,25 @@ try {
 	await first.locator('.heater').first().getByRole('button', { name: 'Set', exact: true }).click();
 
 	await second.getByText('Target 225°C', { exact: true }).waitFor();
+	await first.waitForFunction(
+		(before) => document.querySelector('link[rel="icon"]')?.href === before,
+		printingIcon
+	);
 	await first.getByRole('button', { name: 'Pause print', exact: true }).click();
 	await second.getByRole('button', { name: 'Resume print', exact: true }).waitFor();
+	await first.waitForFunction(
+		(before) => document.querySelector('link[rel="icon"]')?.href !== before,
+		printingIcon
+	);
 	await first.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await first.getByRole('dialog').waitFor();
 	await first.getByRole('checkbox', { name: 'Cool down bed', exact: true }).uncheck();
 	await first.screenshot({ path: 'test-results/stop-print.png', fullPage: true });
 	await first.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
 	await second.getByText('cancelled', { exact: true }).waitFor();
+	await first.waitForFunction(
+		() => !document.querySelector('link[rel="icon"]')?.href.startsWith('data:')
+	);
 	await second.getByText('Target 0°C', { exact: true }).waitFor();
 	await second.getByText('Target 60°C', { exact: true }).waitFor();
 	await first.getByRole('button', { name: 'Cool down nozzle & bed', exact: true }).click();
@@ -119,6 +145,9 @@ try {
 	await first.setViewportSize({ width: 1505, height: 1045 });
 
 	await first.goto(`${base}/controls`);
+	await first.getByRole('heading', { name: 'Printer controls', exact: true }).waitFor();
+	assert.equal(await first.locator('link[rel="icon"]').count(), 1);
+	assert.equal(heldDashboardRequests.size, 1, 'One dashboard stream after navigating to Controls');
 	await second.goto(`${base}/controls`);
 	assert.equal(await first.title(), 'Printer controls · Perilune');
 	await first.locator('.bed-map').click();
