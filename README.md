@@ -20,7 +20,10 @@ Open http://localhost:4181. By default this is **simulator mode**: no physical p
 connected or controlled. Pause, stop, temperature changes, and disconnects affect
 shared demo state. Stop the demo print to try the XY bed map, destination shortcuts,
 fine jogging, and separate Z controls at `/controls`. Live connections show motion
-telemetry but cannot move or home the printer. The header toggle compares serif and sans-serif headings.
+telemetry but cannot move or home the printer. Overview includes temperature history, inferred heater state, and simulator target/
+cooldown controls. Shared history survives page reloads and disconnects, retaining
+up to one hour until the backend restarts. Additional live sensors are read-only.
+The header toggle compares serif and sans-serif headings.
 
 For a production build:
 

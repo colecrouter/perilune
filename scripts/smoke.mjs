@@ -63,6 +63,7 @@ try {
 		() => document.body.innerText.includes('Updates') && document.body.innerText.includes('Live')
 	);
 	await first.evaluate(() => document.fonts.ready);
+	await first.getByRole('slider', { name: /Nozzle temperatures over/ }).waitFor({ timeout: 10000 });
 	await mkdir('test-results', { recursive: true });
 	await first.screenshot({ path: 'test-results/overview-serif.png', fullPage: true });
 	await first.getByRole('switch', { name: 'Serif headings' }).click();
@@ -75,9 +76,17 @@ try {
 	await first.getByRole('button', { name: 'Disconnect', exact: true }).click();
 	await second.getByText('Printer disconnected', { exact: true }).waitFor();
 	assert.equal(await first.getByRole('spinbutton', { name: 'Nozzle target' }).inputValue(), '225');
-	await first.locator('.heater').first().getByRole('button', { name: 'Set', exact: true }).click();
-	await first.getByText('queued', { exact: true }).waitFor();
+	assert.equal(
+		await first
+			.locator('.heater')
+			.first()
+			.getByRole('button', { name: 'Pending…', exact: true })
+			.isDisabled(),
+		true
+	);
 	await first.getByRole('button', { name: 'Reconnect', exact: true }).click();
+	await first.locator('.heater').first().getByRole('button', { name: 'Set', exact: true }).click();
+
 	await second.getByText('Target 225°C', { exact: true }).waitFor();
 	await first.getByRole('button', { name: 'Pause print', exact: true }).click();
 	await second.getByRole('button', { name: 'Resume print', exact: true }).waitFor();
@@ -89,6 +98,26 @@ try {
 	await second.getByText('cancelled', { exact: true }).waitFor();
 	await second.getByText('Target 0°C', { exact: true }).waitFor();
 	await second.getByText('Target 60°C', { exact: true }).waitFor();
+	await first.getByRole('button', { name: 'Cool down nozzle & bed', exact: true }).click();
+	await second
+		.locator('.heater')
+		.filter({ hasText: 'Bed' })
+		.getByText('Target 0°C', { exact: true })
+		.waitFor();
+	await first.getByRole('combobox', { name: 'Window', exact: true }).selectOption('5');
+	await first
+		.getByRole('slider', { name: /Nozzle temperatures over the last 5 minutes/ })
+		.waitFor();
+	await first.screenshot({ path: 'test-results/temperature-desktop.png', fullPage: true });
+	await first.setViewportSize({ width: 320, height: 844 });
+	await first.screenshot({ path: 'test-results/temperature-mobile.png', fullPage: true });
+	assert.equal(
+		await first.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+		false,
+		'Temperature charts fit 320px'
+	);
+	await first.setViewportSize({ width: 1505, height: 1045 });
+
 	await first.goto(`${base}/controls`);
 	await second.goto(`${base}/controls`);
 	assert.equal(await first.title(), 'Printer controls · Perilune');

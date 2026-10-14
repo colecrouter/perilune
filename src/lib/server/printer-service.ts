@@ -1,4 +1,9 @@
-import { Context, Data, Effect, Layer, Schedule, Semaphore, SubscriptionRef } from 'effect';
+import {
+	appendTemperatureSample,
+	temperatureReason,
+	type TemperatureSample
+} from '#lib/domain/temperature.js';
+import { Context, Data, Effect, Layer, Schedule, Semaphore, Stream, SubscriptionRef } from 'effect';
 import {
 	CommandRejected,
 	actionLabel,
@@ -21,6 +26,7 @@ export class PrinterService extends Context.Service<
 	PrinterService,
 	{
 		state: SubscriptionRef.SubscriptionRef<PrinterSnapshot>;
+		temperatureHistory: SubscriptionRef.SubscriptionRef<TemperatureSample[]>;
 		submit: (request: ActionRequest) => Effect.Effect<ActionRecord, ActionRejected>;
 		setConnection: (connected: boolean) => Effect.Effect<void>;
 		reset: Effect.Effect<void>;
@@ -29,7 +35,7 @@ export class PrinterService extends Context.Service<
 				PrinterSnapshot,
 				'connection' | 'klippy' | 'telemetryAt' | 'availableObjects' | 'job' | 'heaters'
 			> &
-				Partial<Pick<PrinterSnapshot, 'motion'>>
+				Partial<Pick<PrinterSnapshot, 'motion' | 'additionalTemperatures'>>
 		) => Effect.Effect<void>;
 	}
 >()('perilune/PrinterService') {}
@@ -50,6 +56,34 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 				...(mode === 'moonraker' ? initialLiveSnapshot() : initialSnapshot()),
 				actions: mode === 'moonraker' ? [] : history
 			});
+			const temperatureHistory = yield* SubscriptionRef.make<TemperatureSample[]>([]);
+			yield* Effect.gen(function* () {
+				const snapshot = yield* SubscriptionRef.get(state);
+				yield* SubscriptionRef.update(temperatureHistory, (samples) =>
+					appendTemperatureSample(samples, snapshot, Date.now())
+				);
+			}).pipe(Effect.repeat(Schedule.spaced('5 seconds')), Effect.forkScoped);
+
+			let lastThermalReady: boolean | undefined;
+			yield* SubscriptionRef.changes(state).pipe(
+				Stream.runForEach((snapshot) =>
+					Effect.gen(function* () {
+						const ready = snapshot.connection === 'connected' && snapshot.klippy === 'ready';
+						const changed = lastThermalReady !== undefined && ready !== lastThermalReady;
+						lastThermalReady = ready;
+						if (changed)
+							yield* SubscriptionRef.update(temperatureHistory, (samples) =>
+								appendTemperatureSample(
+									samples,
+									snapshot,
+									Math.max(Date.now(), (samples.at(-1)?.at ?? 0) + 1)
+								)
+							);
+					})
+				),
+				Effect.forkScoped
+			);
+
 			const lock = yield* Semaphore.make(1);
 			const pending = new Map<string, ActionRequest>();
 			const unwritten = new Map<string, { status: ActionStatus; message: string | null }>();
@@ -199,6 +233,7 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 
 			return {
 				state,
+				temperatureHistory,
 				submit: (request) =>
 					lock
 						.withPermits(1)(
@@ -226,6 +261,24 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 										);
 									return existing.action;
 								}
+								if (request.command.type === 'temperature' || request.command.type === 'cooldown') {
+									const reason = temperatureReason(
+										current,
+										request.command.type === 'temperature' ? request.command.heater : undefined
+									);
+									if (reason) return yield* Effect.fail(new ActionRejected({ message: reason }));
+									yield* Effect.try({
+										try: () => applyCommand(current, request.command),
+										catch: (cause) =>
+											new ActionRejected({
+												message:
+													cause instanceof CommandRejected
+														? cause.message
+														: 'Invalid temperature command'
+											})
+									});
+								}
+
 								if (
 									request.command.type === 'move' ||
 									request.command.type === 'home' ||

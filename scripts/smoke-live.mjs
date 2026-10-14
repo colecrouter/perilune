@@ -151,7 +151,7 @@ try {
 	temperature = 41;
 	klippy = 'ready';
 	await first.waitForFunction(() =>
-		document.querySelector('.heater:last-child')?.textContent?.includes('41')
+		Array.from(document.querySelectorAll('.heater')).at(-1)?.textContent?.includes('41')
 	);
 	assert.equal(connections, 2, 'One new socket after reconnect');
 	await first.setViewportSize({ width: 390, height: 844 });
