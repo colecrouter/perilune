@@ -36,3 +36,21 @@ reference calibration and first-layer print tuning are separate workflows.
 
 References: [Klipper paper test](https://www.klipper3d.org/Bed_Level.html#the-paper-test),
 [Klipper probe calibration](https://www.klipper3d.org/Probe_Calibrate.html).
+
+## Bed mesh inspection
+
+Open **Calibration → Bed mesh** to inspect the current reported sample grid or a
+saved profile. Selecting a profile changes the view only; it does not load it.
+Tap a sample, use arrow keys from a focused sample, or choose row/column numbers.
+The numeric table provides every reported value. Maximum Y is at the top and
+minimum X at the left. Zero is the mesh reference, not necessarily its minimum.
+
+Comparisons show **selected − reference** on identical coordinates. Different
+grids are explained and displayed without subtraction. Changing thermal/probing
+conditions or mesh references can affect differences. No measurement time or
+bed temperature is inferred. The reported grid can contain substituted or
+extrapolated values; it is distinct from Klipper's interpolated compensation grid.
+See [Klipper Bed Mesh](https://www.klipper3d.org/Bed_Mesh.html) and
+[status fields](https://www.klipper3d.org/Status_Reference.html#bed_mesh).
+
+Live inspection is read-only; no probing, heating, motion or config write occurs.

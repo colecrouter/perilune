@@ -129,7 +129,7 @@ small {
 	flex-direction: column;
 	gap: 9px;
 }
-.sidebar nav a {
+.sidebar nav :is(a, .nav-trigger) {
 	display: flex;
 	align-items: center;
 	gap: 18px;
@@ -141,11 +141,11 @@ small {
 	font-weight: 500;
 	border-radius: 8px;
 }
-.sidebar nav a.active {
+.sidebar nav :is(a, .nav-trigger).active {
 	background: var(--highlight);
 	color: var(--highlight-text);
 }
-.sidebar nav a:not(.active):hover {
+.sidebar nav :is(a, .nav-trigger):not(.active):hover {
 	background: #ffffff12;
 	color: var(--rail-text);
 }
@@ -749,7 +749,7 @@ progress::-moz-progress-bar {
 		gap: 0;
 		overflow-x: auto;
 	}
-	.sidebar nav a {
+	.sidebar nav :is(a, .nav-trigger) {
 		padding: 10px 12px;
 		font-size: 11px;
 		flex-direction: column;
@@ -757,7 +757,7 @@ progress::-moz-progress-bar {
 		flex: 1;
 		border-radius: 6px 6px 0 0;
 	}
-	.sidebar nav a svg {
+	.sidebar nav :is(a, .nav-trigger) svg {
 		width: 18px;
 		height: 18px;
 	}

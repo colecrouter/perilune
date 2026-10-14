@@ -13,11 +13,13 @@ export const MoonrakerBridgeLive = Layer.effectDiscard(
 					connection: telemetry.connection,
 					klippy: telemetry.klippy,
 					telemetryAt: telemetry.updatedAt,
+					telemetryReady: telemetry.telemetryReady,
 					availableObjects: telemetry.availableObjects,
 					job:
 						telemetry.updatedAt === null ? { ...telemetry.job, state: 'unknown' } : telemetry.job,
 					heaters: telemetry.heaters,
 					motion: telemetry.motion,
+					bedMesh: telemetry.bedMesh,
 					additionalTemperatures: telemetry.additionalTemperatures
 				})
 			),

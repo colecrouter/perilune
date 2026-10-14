@@ -416,3 +416,37 @@ printer-state checkboxes derive automatically from fresh shared telemetry; manua
 cleanliness/clearance acknowledgements remain user-owned drafts. Stop-dialog heater
 choices retain their original intent while already-off options are annotated and
 disabled, so concurrent target changes do not silently alter cancellation intent.
+
+## Read-only bed mesh inspection
+
+Calibration includes `/calibration/mesh`, a top-down reported-sample height map,
+coordinate selection, numeric table, saved-profile inspection and compatible-grid
+comparison. Bed mesh status comes through the existing process-owned Moonraker
+subscription and shared dashboard stream. No additional socket, polling worker,
+G-code, profile activation, probing or configuration writes are introduced.
+
+Normalization accepts finite rectangular 2..65 by 2..65 sample grids, ordered
+from minimum Y/minimum X, with increasing finite bounds. Coordinate magnitudes
+are limited to 1,000,000 mm and heights to 1,000 mm. Up to 32 profile entries and
+32,768 total samples (including the active grid) are exposed; omitted/invalid
+profiles are annotated. Unknown, cleared, malformed and valid flat grids are
+distinct. Interpolated matrices and unrelated upstream fields are not published.
+Saved profile data is derived from Klipper status, not private config files.
+
+The heat map uses a symmetric zero-centered teal/neutral/lavender scale and an
+accessible numeric fallback. It displays reported probed-matrix values, which may
+include substituted/extrapolated values on faulty regions or round beds. Range
+is descriptive, not a leveling verdict. Comparison computes selected minus
+reference only for matching dimensions/bounds; no interpolation or reference
+alignment is invented. Measurement time, thermal conditions and probing provenance
+are unavailable. Simulator examples are explicitly synthetic. View selections
+remain through telemetry changes and reconnect; retained data is marked stale
+whenever browser transport or printer readiness is unavailable. Physical probing,
+profile management and measured printer validation remain future milestones.
+
+The Calibration navigation button opens a Bits UI menu of workflow links, with
+keyboard navigation, focus return and a portaled mobile menu. Bed mesh freshness
+also requires a telemetry-ready marker: ready transport alone is insufficient
+until the current connection's initial object subscription completes. Prior mesh
+data remains visible during this interval. Shutdown/readiness/reconnect transitions
+reset the marker; a delayed-subscription regression covers this distinction.
