@@ -61,3 +61,25 @@ visible and clearly labels amplification; ×1 uses actual proportions. Numeric
 heights and comparison values stay unchanged. Lines connect grid samples and
 are not the interpolated compensation surface. **Top-down** remains available
 for cell selection; row/column fields and the table work in both views.
+
+## Guided bed mesh simulator run
+
+Choose **Probe bed…** and review the fixed X/Y 20–200 mm, 5×5 plan. Automatic checks
+follow connection/readiness, job state, homing and heater targets. Manual checks
+acknowledge cleanliness, area clearance and synthetic samples. Preparation offers
+homing/cooldown and the existing stop-job prompt where needed. Heater targets off
+is not a claim that surfaces are cool. Real thermal/probing requirements must be
+reviewed for the actual printer before enabling live runs.
+
+The backend advances 25 synthetic samples; leaving the page doesn't stop it.
+The initiating operator owns the workflow. Other accounts can observe; account
+owners may cancel an abandoned run. Cancel/discard leaves the previous active mesh
+and saved profiles intact. A run or unsaved review expires ten minutes after start.
+Printer loss, access revocation and backend restart interrupt it without replay.
+
+Review displays the actual candidate separately from earlier inspection choices.
+**Use temporarily…** activates it until process restart. **Save profile…** creates
+a new named simulator profile without activation; it survives restart. Existing
+profiles are never overwritten. Interrupted/unknown actions are explained and not
+retried automatically; storage recovery may reveal a profile whose commit succeeded
+before its acknowledgement was lost. No live probing or printer config write occurs.

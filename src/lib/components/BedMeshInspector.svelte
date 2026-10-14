@@ -4,8 +4,16 @@
 	let {
 		meshState,
 		fresh = true,
-		simulator = false
-	}: { meshState: BedMeshState; fresh?: boolean; simulator?: boolean } = $props();
+		simulator = false,
+		activeLabel = 'Active',
+		showProfiles = true
+	}: {
+		meshState: BedMeshState;
+		fresh?: boolean;
+		simulator?: boolean;
+		activeLabel?: string;
+		showProfiles?: boolean;
+	} = $props();
 	let selected = $state('active');
 	let view = $state<'top' | 'surface'>('top');
 	let comparison = $state('none');
@@ -16,7 +24,7 @@
 			? [
 					{
 						id: 'active',
-						label: `Active · ${meshState.active.name || 'unnamed'}`,
+						label: `${activeLabel} · ${meshState.active.name || 'unnamed'}`,
 						mesh: meshState.active
 					}
 				]
@@ -79,23 +87,25 @@
 			The selected profile is no longer available. Showing {choice?.label ?? 'no mesh'} until you choose
 			another profile.
 		</p>{/if}
-	<div class="view-controls">
-		<label
-			>Inspect mesh<select bind:value={selected} disabled={!options.length}
-				>{#if !options.some((option) => option.id === selected)}<option value={selected}
-						>Unavailable selection</option
-					>{/if}{#each options as option}<option value={option.id}>{option.label}</option
-					>{/each}</select
-			></label
-		>
-		<label
-			>Compare with<select bind:value={comparison} disabled={!options.length}
-				><option value="none">No comparison</option>{#each options as option}<option
-						value={option.id}>{option.label}</option
-					>{/each}</select
-			></label
-		>
-	</div>
+	{#if showProfiles}
+		<div class="view-controls">
+			<label
+				>Inspect mesh<select bind:value={selected} disabled={!options.length}
+					>{#if !options.some((option) => option.id === selected)}<option value={selected}
+							>Unavailable selection</option
+						>{/if}{#each options as option}<option value={option.id}>{option.label}</option
+						>{/each}</select
+				></label
+			>
+			<label
+				>Compare with<select bind:value={comparison} disabled={!options.length}
+					><option value="none">No comparison</option>{#each options as option}<option
+							value={option.id}>{option.label}</option
+						>{/each}</select
+				></label
+			>
+		</div>
+	{/if}
 	{#if meshState.omittedProfiles}<p class="notice">
 			{meshState.omittedProfiles} profile(s) could not be displayed because their data is invalid or exceeds
 			inspection limits.

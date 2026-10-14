@@ -4,6 +4,10 @@ import * as Migrator from 'effect/sql/Migrator';
 
 export const migrate = Migrator.make({})({
 	loader: Migrator.fromRecord({
+		'004_mesh_probe': Effect.gen(function* () {
+			const sql = yield* SqlClient;
+			yield* sql`CREATE TABLE simulator_mesh_probe (id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL)`;
+		}),
 		'003_calibration': Effect.gen(function* () {
 			const sql = yield* SqlClient;
 			yield* sql`ALTER TABLE actions ADD COLUMN actor_id TEXT`;
