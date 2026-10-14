@@ -242,8 +242,7 @@
 			</p>
 			<div class="manual-checks">
 				<label
-					><input type="checkbox" bind:checked={clean} />I reviewed the clean-bed and clean-probe
-					checklist.</label
+					><input type="checkbox" bind:checked={clean} />I reviewed bed and probe cleanliness.</label
 				><label
 					><input type="checkbox" bind:checked={clear} />I reviewed physical clearance across the
 					probing area.</label
