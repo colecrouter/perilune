@@ -66,6 +66,11 @@ try {
 	await page.emulateMedia({ colorScheme: 'light' });
 	await page.getByRole('button', { name: 'Sign out', exact: true }).click();
 	await page.getByRole('heading', { name: 'Welcome back' }).waitFor();
+	assert.equal(await page.locator('link[rel="icon"]').count(), 1);
+	assert.equal(
+		(await page.locator('link[rel="icon"]').getAttribute('href')).startsWith('data:'),
+		false
+	);
 	await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
 	await page.getByRole('heading', { name: 'Overview', exact: true }).waitFor();
 	const commandRequest = page.waitForRequest(
