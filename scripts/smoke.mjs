@@ -147,6 +147,10 @@ try {
 	await first.goto(`${base}/controls`);
 	await first.getByRole('heading', { name: 'Printer controls', exact: true }).waitFor();
 	assert.equal(await first.locator('link[rel="icon"]').count(), 1);
+	const streamDeadline = Date.now() + 5000;
+	while (heldDashboardRequests.size !== 1 && Date.now() < streamDeadline) {
+		await new Promise((resolve) => setTimeout(resolve, 50));
+	}
 	assert.equal(heldDashboardRequests.size, 1, 'One dashboard stream after navigating to Controls');
 	await second.goto(`${base}/controls`);
 	assert.equal(await first.title(), 'Printer controls · Perilune');
