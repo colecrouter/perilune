@@ -1,4 +1,5 @@
 <script lang="ts">
+	import BedMeshSurface from './BedMeshSurface.svelte';
 	import { meshStats, meshPoint, meshDifference, type BedMeshState } from '#lib/domain/bed-mesh.js';
 	let {
 		meshState,
@@ -6,6 +7,7 @@
 		simulator = false
 	}: { meshState: BedMeshState; fresh?: boolean; simulator?: boolean } = $props();
 	let selected = $state('active');
+	let view = $state<'top' | 'surface'>('top');
 	let comparison = $state('none');
 	let row = $state(0);
 	let column = $state(0);
@@ -134,43 +136,54 @@
 				>
 			</div>
 		</div>
+		<div class="view-switch" role="group" aria-label="Mesh visualization">
+			<button class="button secondary" aria-pressed={view === 'top'} onclick={() => (view = 'top')}
+				>Top-down</button
+			><button
+				class="button secondary"
+				aria-pressed={view === 'surface'}
+				onclick={() => (view = 'surface')}>Isometric</button
+			>
+		</div>
 		<div class="mesh-layout">
 			<div class="map-area">
-				<div class="axis-caption">Y {displayed.max[1]} mm · maximum</div>
-				<div
-					class="height-map"
-					role="group"
-					aria-label="Height map; arrow keys select adjacent samples"
-					style={`--columns:${displayed.points[0].length}; aspect-ratio:${(displayed.max[0] - displayed.min[0]) / (displayed.max[1] - displayed.min[1])}; width:min(100%, ${((displayed.max[0] - displayed.min[0]) / (displayed.max[1] - displayed.min[1])) * 600}px)`}
-				>
-					{#each [...displayed.points].reverse() as values, reversedRow}
-						{@const y = displayed.points.length - 1 - reversedRow}
-						{#each values as value, x}
-							{@const coordinate = meshPoint(displayed, y, x)}
-							<button
-								tabindex={y === selectedRow && x === selectedColumn ? 0 : -1}
-								onkeydown={navigate}
-								class:selected={y === selectedRow && x === selectedColumn}
-								style={`background:${color(value)}`}
-								aria-label={`X ${coordinate.x.toFixed(1)}, Y ${coordinate.y.toFixed(1)}: ${signed(value)} mm`}
-								onclick={() => {
-									row = y;
-									column = x;
-								}}
-								title={`${signed(value)} mm`}
-								><span
-									>{displayed.points[0].length <= 7 && displayed.points.length <= 7
-										? signed(value)
-										: ''}</span
-								></button
-							>
+				{#if view === 'surface'}<BedMeshSurface mesh={displayed} {scale} {color} />{:else}
+					<div class="axis-caption">Y {displayed.max[1]} mm · maximum</div>
+					<div
+						class="height-map"
+						role="group"
+						aria-label="Height map; arrow keys select adjacent samples"
+						style={`--columns:${displayed.points[0].length}; aspect-ratio:${(displayed.max[0] - displayed.min[0]) / (displayed.max[1] - displayed.min[1])}; width:min(100%, ${((displayed.max[0] - displayed.min[0]) / (displayed.max[1] - displayed.min[1])) * 600}px)`}
+					>
+						{#each [...displayed.points].reverse() as values, reversedRow}
+							{@const y = displayed.points.length - 1 - reversedRow}
+							{#each values as value, x}
+								{@const coordinate = meshPoint(displayed, y, x)}
+								<button
+									tabindex={y === selectedRow && x === selectedColumn ? 0 : -1}
+									onkeydown={navigate}
+									class:selected={y === selectedRow && x === selectedColumn}
+									style={`background:${color(value)}`}
+									aria-label={`X ${coordinate.x.toFixed(1)}, Y ${coordinate.y.toFixed(1)}: ${signed(value)} mm`}
+									onclick={() => {
+										row = y;
+										column = x;
+									}}
+									title={`${signed(value)} mm`}
+									><span
+										>{displayed.points[0].length <= 7 && displayed.points.length <= 7
+											? signed(value)
+											: ''}</span
+									></button
+								>
+							{/each}
 						{/each}
-					{/each}
-				</div>
-				<div class="axis-caption">Y {displayed.min[1]} mm · minimum</div>
-				<div class="x-axis">
-					<span>X {displayed.min[0]} mm</span><span>X {displayed.max[0]} mm →</span>
-				</div>
+					</div>
+					<div class="axis-caption">Y {displayed.min[1]} mm · minimum</div>
+					<div class="x-axis">
+						<span>X {displayed.min[0]} mm</span><span>X {displayed.max[0]} mm →</span>
+					</div>
+				{/if}
 				<div class="scale">
 					<span>{signed(-scale)} mm</span>
 					<div aria-hidden="true"></div>
@@ -270,6 +283,15 @@
 </section>
 
 <style>
+	.view-switch {
+		display: flex;
+		gap: 0.5rem;
+	}
+	.view-switch button[aria-pressed='true'] {
+		background: var(--highlight);
+		color: var(--highlight-text);
+		border-color: var(--highlight);
+	}
 	.mesh-inspector {
 		display: grid;
 		gap: 1.25rem;

@@ -450,3 +450,12 @@ also requires a telemetry-ready marker: ready transport alone is insufficient
 until the current connection's initial object subscription completes. Prior mesh
 data remains visible during this interval. Shutdown/readiness/reconnect transitions
 reset the marker; a delayed-subscription regression covers this distinction.
+
+An alternate isometric wireframe uses LayerChart's built-in isometric projection,
+height channels, Spline/Circle marks, and transform drag rotation. No custom 3D
+renderer or new dependency is introduced. Rotation/tilt sliders and reset provide
+alternatives to dragging; scroll zoom is disabled. Height amplification is explicitly
+labeled (1/25/100/300×), with true millimetre axes and unchanged numeric samples.
+The display floor is the lower Z-domain bound, reserving room for negative heights without changing signed readings. Straight lines connect the reported grid, not an inferred compensation surface.
+Only one chart instance is mounted; top-down remains the default and numeric
+inspection/table stay available. There is no animated or continuously running scene.

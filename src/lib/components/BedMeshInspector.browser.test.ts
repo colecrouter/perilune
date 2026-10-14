@@ -36,3 +36,52 @@ test('missing and incompatible profiles have explicit fallback messages', async 
 		.element(screen.getByRole('heading', { name: 'Bed mesh is not available' }))
 		.toBeVisible();
 });
+
+test('LayerChart isometric view rotates, resets and retains true numeric values', async () => {
+	const meshState = simulatedBedMesh();
+	const screen = await render(BedMeshInspector, { meshState });
+	await screen.getByRole('button', { name: 'Isometric', exact: true }).click();
+	const rotation = screen.getByRole('slider', { name: 'Rotation', exact: true });
+	await expect.element(rotation).toHaveValue('-45');
+	const original =
+		document.querySelector('.surface-chart .lc-spline')?.getAttribute('d') ??
+		document.querySelector('.surface-chart path')?.getAttribute('d');
+	await rotation.fill('20');
+	await expect.element(rotation).toHaveValue('20');
+	await screen.getByRole('combobox', { name: 'Height scale', exact: true }).selectOptions('1');
+	await expect.element(screen.getByText(/Height scale ×1\./)).toBeVisible();
+	await screen.rerender({ fresh: false, meshState: { ...meshState } });
+	await expect.element(rotation).toHaveValue('20');
+	await screen.getByRole('button', { name: 'Reset view', exact: true }).click();
+	await expect.element(rotation).toHaveValue('-45');
+	await expect.element(screen.getByRole('combobox', { name: 'Height scale' })).toHaveValue('100');
+	await expect.element(screen.getByText('X 20.0 · Y 20.0 mm', { exact: true })).toBeVisible();
+	expect(original).toBeTruthy();
+	await screen.getByRole('button', { name: 'Top-down', exact: true }).click();
+	await expect
+		.element(screen.getByRole('button', { name: 'X 20.0, Y 20.0: +0.034 mm', exact: true }))
+		.toBeVisible();
+});
+
+test('negative mesh heights stay within the isometric viewport at high amplification', async () => {
+	const meshState = simulatedBedMesh();
+	meshState.active!.points = meshState.active!.points.map((row) => row.map((value) => value - 1));
+	const screen = await render(BedMeshInspector, { meshState });
+	await screen.getByRole('button', { name: 'Isometric', exact: true }).click();
+	await screen.getByRole('combobox', { name: 'Height scale', exact: true }).selectOptions('300');
+	await expect.poll(() => document.querySelectorAll('.surface-chart circle').length).toBe(25);
+	const root = document.querySelector('.surface-chart')!.getBoundingClientRect();
+	const samples = [...document.querySelectorAll('.surface-chart circle')].map((node) =>
+		node.getBoundingClientRect()
+	);
+	expect(
+		samples.every(
+			(point) =>
+				point.top >= root.top &&
+				point.bottom <= root.bottom &&
+				point.left >= root.left &&
+				point.right <= root.right
+		)
+	).toBe(true);
+	await expect.element(screen.getByText('X 20.0 · Y 20.0 mm', { exact: true })).toBeVisible();
+});

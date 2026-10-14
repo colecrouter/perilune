@@ -167,6 +167,28 @@ try {
 	await second.getByRole('combobox', { name: 'Compare with' }).selectOption('profile:cold');
 	await second.getByText('Difference range', { exact: true }).waitFor();
 	await second.getByRole('spinbutton', { name: 'Row (Y)' }).fill('2');
+	await second.getByRole('button', { name: 'Isometric', exact: true }).click();
+	const surface = second.locator('.surface-chart');
+	await surface.scrollIntoViewIfNeeded();
+	await second.getByRole('slider', { name: 'Rotation', exact: true }).waitFor();
+	const bounds = await surface.boundingBox();
+	assert.ok(bounds);
+	await second.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+	await second.mouse.down();
+	await second.mouse.move(bounds.x + bounds.width / 2 + 40, bounds.y + bounds.height / 2 + 10, {
+		steps: 6
+	});
+	await second.mouse.up();
+	await second.waitForFunction(
+		() => document.querySelector('.surface-controls input[type="range"]')?.value !== '-45'
+	);
+	assert.notEqual(
+		await second.getByRole('slider', { name: 'Rotation', exact: true }).inputValue(),
+		'-45',
+		'LayerChart drag rotates the view'
+	);
+	await second.getByRole('button', { name: 'Reset view', exact: true }).click();
+	await second.getByRole('button', { name: 'Top-down', exact: true }).click();
 	await second.setViewportSize({ width: 320, height: 800 });
 	assert.equal(
 		await second.evaluate(() => document.documentElement.scrollWidth > innerWidth),

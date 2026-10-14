@@ -54,3 +54,10 @@ See [Klipper Bed Mesh](https://www.klipper3d.org/Bed_Mesh.html) and
 [status fields](https://www.klipper3d.org/Status_Reference.html#bed_mesh).
 
 Live inspection is read-only; no probing, heating, motion or config write occurs.
+
+Choose **Isometric** for LayerChart's rotatable wireframe. Drag to turn/tilt, use
+the sliders, or reset the view. The height-scale control makes small variation
+visible and clearly labels amplification; ×1 uses actual proportions. Numeric
+heights and comparison values stay unchanged. Lines connect grid samples and
+are not the interpolated compensation surface. **Top-down** remains available
+for cell selection; row/column fields and the table work in both views.
