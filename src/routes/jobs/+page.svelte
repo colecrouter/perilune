@@ -36,6 +36,7 @@
 	let startOpen = $state(false);
 	let removeOpen = $state(false);
 	let cancelOpen = $state(false);
+	let stopJob = $state<{ filename: string; runId: string | null } | undefined>();
 	let uploadProgress = $state<number | null>(null);
 	let uploading = $state(false);
 	let uploadRequest: XMLHttpRequest | undefined;
@@ -188,6 +189,14 @@
 		}
 	}
 	async function command(command: PrinterCommand) {
+		if (command.type === 'pause' || command.type === 'resume' || command.type === 'cancel')
+			command = {
+				...command,
+				expectedJob: command.expectedJob ?? {
+					filename: snapshot.job.filename,
+					runId: snapshot.job.runId ?? null
+				}
+			};
 		submitting = true;
 		failure = '';
 		try {
@@ -319,6 +328,7 @@
 						class="button danger"
 						disabled={!currentReady}
 						onclick={() => {
+							stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
 							cancelOpen = true;
 						}}>Stop print</button
 					>{:else}<a class="button secondary" href={resolve('/')}>View overview</a>{/if}
@@ -623,7 +633,8 @@
 	bind:open={cancelOpen}
 	bedTarget={snapshot.heaters.bed.target}
 	nozzleTarget={snapshot.heaters.nozzle.target}
-	onConfirm={(coolBed, coolNozzle) => command({ type: 'cancel', coolBed, coolNozzle })}
+	onConfirm={(coolBed, coolNozzle) =>
+		command({ type: 'cancel', coolBed, coolNozzle, expectedJob: stopJob })}
 />
 
 <style>

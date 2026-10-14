@@ -305,7 +305,9 @@ excluded. Comments provide slicer estimates only, never executable inspection.
 The file selection and search draft survive five-second finite library refreshes.
 The existing dashboard query remains the single held stream per tab. Simulator
 starts reference a persisted file ID through the existing idempotent action queue;
-readiness and file existence are checked again at execution. Pending starts reserve
+readiness and file existence are checked again at execution. Browser pause/resume/stop controls bind the reviewed filename and run identity, so an old
+stop dialog cannot affect a replacement job, including a new run of the same file.
+Pending starts reserve
 the printer across users, and active/pending files cannot be removed. Explicit
 confirmation starts a simulation that advances 1% per second, pauses without
 advancing, and completes after 100 ticks. This timing is unrelated to slicer

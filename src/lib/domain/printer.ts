@@ -13,6 +13,9 @@ export { CommandRejected } from './errors.js';
 
 const coordinate = Schema.Number.check(Schema.isFinite());
 const position = Schema.Struct({ x: coordinate, y: coordinate, z: coordinate });
+const expectedJob = Schema.optional(
+	Schema.Struct({ filename: Schema.String, runId: Schema.NullOr(Schema.String) })
+);
 export const PrinterCommand = Schema.Union([
 	Schema.Struct({ type: Schema.Literal('start'), fileId: Schema.String.check(Schema.isUUID()) }),
 	Schema.Struct({
@@ -32,10 +35,11 @@ export const PrinterCommand = Schema.Union([
 		confirmed: Schema.Boolean
 	}),
 	Schema.Struct({ type: Schema.Literal('cooldown') }),
-	Schema.Struct({ type: Schema.Literal('pause') }),
-	Schema.Struct({ type: Schema.Literal('resume') }),
+	Schema.Struct({ type: Schema.Literal('pause'), expectedJob }),
+	Schema.Struct({ type: Schema.Literal('resume'), expectedJob }),
 	Schema.Struct({
 		type: Schema.Literal('cancel'),
+		expectedJob,
 		coolBed: Schema.Boolean,
 		coolNozzle: Schema.Boolean
 	}),
@@ -98,6 +102,7 @@ export const initialSnapshot = (): PrinterSnapshot => ({
 	storage: 'healthy',
 	job: {
 		filename: 'orbital-bracket.gcode',
+		runId: crypto.randomUUID(),
 		state: 'printing',
 		progress: 42,
 		layer: 84,
@@ -140,6 +145,16 @@ export function applyCommand(
 	file?: JobFile
 ): PrinterSnapshot {
 	const next = structuredClone(state);
+	if (
+		'expectedJob' in command &&
+		command.expectedJob &&
+		(command.expectedJob.filename !== state.job.filename ||
+			command.expectedJob.runId !== (state.job.runId ?? null))
+	) {
+		throw new CommandRejected({
+			message: 'The active job changed. Review the current job before trying again.'
+		});
+	}
 	if (command.type === 'start') {
 		const reason = startReason(state, false);
 		if (reason) throw new CommandRejected({ message: reason });

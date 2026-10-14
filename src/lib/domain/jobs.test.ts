@@ -61,3 +61,19 @@ describe('job inspection and readiness', () => {
 		expect(startReason(state)).toContain('read-only');
 	});
 });
+
+it.each(['pause', 'resume', 'cancel'] as const)(
+	'rejects a stale %s aimed at a previous run of the same file',
+	async (type) => {
+		const { applyCommand } = await import('./printer.js');
+		const previous = initialSnapshot();
+		const current = initialSnapshot();
+		current.job.filename = previous.job.filename;
+		const expectedJob = { filename: previous.job.filename, runId: previous.job.runId ?? null };
+		const command =
+			type === 'cancel'
+				? { type, coolBed: true, coolNozzle: true, expectedJob }
+				: { type, expectedJob };
+		expect(() => applyCommand(current, command)).toThrow('active job changed');
+	}
+);

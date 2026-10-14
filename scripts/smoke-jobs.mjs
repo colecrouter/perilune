@@ -218,6 +218,29 @@ try {
 		.getByRole('textbox', { name: 'New upload key', exact: true })
 		.waitFor({ state: 'hidden' });
 	assert.equal((await fetch(base + '/server/info', { headers })).status, 401);
+	await second.getByRole('button', { name: 'Stop print', exact: true }).click();
+	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
+	await page.waitForFunction(
+		() => document.querySelector('.current-job .job-state').textContent === 'cancelled'
+	);
+	await page.getByRole('button', { name: 'Review & start simulation', exact: true }).click();
+	await page
+		.getByRole('dialog')
+		.getByRole('button', { name: 'Start simulated print', exact: true })
+		.click();
+	await page.getByRole('button', { name: 'Pause print', exact: true }).waitFor();
+	await second.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
+	await second
+		.getByRole('dialog')
+		.getByRole('alert')
+		.filter({ hasText: 'active job changed' })
+		.waitFor();
+	await second
+		.getByRole('dialog')
+		.getByRole('button', { name: 'Keep printing', exact: true })
+		.click();
+	assert.equal(await page.locator('.current-job .job-state').textContent(), 'printing');
 	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.waitForFunction(
@@ -233,7 +256,16 @@ try {
 		.locator('.history .run')
 		.filter({ hasText: 'fixture-bracket.gcode' })
 		.filter({ hasText: 'cancelled' })
+		.first()
 		.waitFor();
+	assert.equal(
+		await page
+			.locator('.history .run')
+			.filter({ hasText: 'fixture-bracket.gcode' })
+			.filter({ hasText: 'cancelled' })
+			.count(),
+		2
+	);
 	assert.deepEqual(errors, []);
 	console.log(
 		'Jobs smoke passed: uploads, PNG proxy, metadata, shared starts/pause/cancel, deletion safeguards, history, scoped slicer uploads, revocation, 320px layout.'

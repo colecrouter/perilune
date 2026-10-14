@@ -87,6 +87,7 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 
 			const lock = yield* Semaphore.make(1);
 			const pending = new Map<string, ActionRequest>();
+			let simulatedRunId: string | undefined;
 			const unwritten = new Map<string, { status: ActionStatus; message: string | null }>();
 			let lastRecovery = 0;
 			const revised = (previous: PrinterSnapshot, next: PrinterSnapshot) => ({
@@ -136,7 +137,10 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 									message = result.failure.message;
 								} else {
 									next = result.success;
-									if (request.command.type === 'start') next.job.runId = request.id;
+									if (request.command.type === 'start') {
+										next.job.runId = request.id;
+										simulatedRunId = request.id;
+									}
 								}
 							}
 						}
@@ -223,7 +227,9 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 						? {
 								...snapshot,
 								job:
-									snapshot.job.runId && snapshot.job.state === 'printing'
+									snapshot.job.runId === simulatedRunId &&
+									simulatedRunId !== undefined &&
+									snapshot.job.state === 'printing'
 										? {
 												...snapshot.job,
 												progress: Math.min(100, (snapshot.job.progress ?? 0) + 1),
@@ -283,6 +289,18 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 											})
 										);
 									return existing.action;
+								}
+								if (
+									'expectedJob' in request.command &&
+									request.command.expectedJob &&
+									(request.command.expectedJob.filename !== current.job.filename ||
+										request.command.expectedJob.runId !== (current.job.runId ?? null))
+								) {
+									return yield* Effect.fail(
+										new ActionRejected({
+											message: 'The active job changed. Review the current job before trying again.'
+										})
+									);
 								}
 								if (request.command.type === 'start') {
 									const reason = startReason(current);
