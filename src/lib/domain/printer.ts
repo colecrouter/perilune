@@ -1,3 +1,10 @@
+import {
+	MeshProbeCommand,
+	emptyMeshProbe,
+	applyMeshProbe,
+	meshProbeActive,
+	type MeshProbeState
+} from './mesh-probe.js';
 import { emptyBedMesh, simulatedBedMesh, type BedMeshState } from './bed-mesh.js';
 import {
 	CalibrationCommand,
@@ -27,6 +34,7 @@ const expectedJob = Schema.optional(
 );
 export const PrinterCommand = Schema.Union([
 	CalibrationCommand,
+	MeshProbeCommand,
 	Schema.Struct({ type: Schema.Literal('start'), fileId: Schema.String.check(Schema.isUUID()) }),
 	Schema.Struct({
 		type: Schema.Literal('move'),
@@ -101,6 +109,7 @@ export interface PrinterSnapshot {
 	motion: MotionSnapshot;
 	calibration: CalibrationState;
 	bedMesh: BedMeshState;
+	meshProbe: MeshProbeState;
 	actions: ActionRecord[];
 }
 export const initialSnapshot = (): PrinterSnapshot => ({
@@ -128,10 +137,19 @@ export const initialSnapshot = (): PrinterSnapshot => ({
 	motion: simulatedMotion(),
 	calibration: emptyCalibration(),
 	bedMesh: simulatedBedMesh(),
+	meshProbe: emptyMeshProbe(),
 	actions: []
 });
 export function actionLabel(command: PrinterCommand): string {
 	switch (command.type) {
+		case 'meshProbeBegin':
+			return 'Begin simulator bed mesh probing';
+		case 'meshProbeFinish':
+			return command.outcome === 'save'
+				? 'Save simulator mesh profile'
+				: 'Apply temporary simulator mesh';
+		case 'meshProbeCancel':
+			return 'Cancel bed mesh workflow';
 		case 'calibrationBegin':
 			return 'Begin Z-offset calibration';
 		case 'calibrationAdjust':
@@ -171,6 +189,11 @@ export function applyCommand(
 	file?: JobFile,
 	actor?: CalibrationActor
 ): PrinterSnapshot {
+	if ('probeId' in command) return applyMeshProbe(state, command, actor);
+	if (meshProbeActive(state.meshProbe) && command.type !== 'cooldown')
+		throw new CommandRejected({
+			message: 'Bed mesh calibration owns the printer. Finish or cancel it first.'
+		});
 	if ('sessionId' in command) return applyCalibration(state, command, actor);
 	if (calibrationActive(state.calibration) && command.type !== 'cooldown')
 		throw new CommandRejected({

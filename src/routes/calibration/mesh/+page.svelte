@@ -1,8 +1,10 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import AppShell from '#lib/components/AppShell.svelte';
+	import BedMeshProbe from '#lib/components/BedMeshProbe.svelte';
+	import type { PrinterCommand } from '#lib/domain/printer.js';
 	import BedMeshInspector from '#lib/components/BedMeshInspector.svelte';
-	import { getDashboard } from '../../printer.remote.js';
+	import { getDashboard, submitAction } from '../../printer.remote.js';
+	let { data } = $props();
 	const dashboard = getDashboard();
 	const initial = await dashboard;
 	const snapshot = $derived(dashboard.current?.printer ?? initial.printer);
@@ -11,6 +13,17 @@
 			snapshot.connection === 'connected' &&
 			snapshot.klippy === 'ready' &&
 			snapshot.telemetryReady
+	);
+	async function submit(command: PrinterCommand) {
+		return (
+			await submitAction({
+				id: command.type === 'meshProbeBegin' ? command.probeId : crypto.randomUUID(),
+				command
+			})
+		).id;
+	}
+	const candidate = $derived(
+		snapshot.meshProbe.session?.stage === 'review' ? snapshot.meshProbe.session.result : null
 	);
 </script>
 
@@ -29,11 +42,35 @@
 				>{snapshot.mode === 'simulator' ? 'Simulator examples' : 'Read-only inspection'}</span
 			>
 		</header>
-		<BedMeshInspector
-			meshState={snapshot.bedMesh}
-			{fresh}
-			simulator={snapshot.mode === 'simulator'}
+		<BedMeshProbe
+			{snapshot}
+			connected={dashboard.connected}
+			userId={data.user?.id ?? ''}
+			role={data.user?.role ?? 'viewer'}
+			onSubmit={submit}
 		/>
+		{#if candidate}
+			{#key snapshot.meshProbe.session!.id}<section
+					class="candidate-inspection"
+					aria-label="Candidate mesh review"
+				>
+					<h2>Candidate result · not active</h2>
+					<BedMeshInspector
+						activeLabel="Candidate"
+						showProfiles={false}
+						meshState={{ status: 'ready', active: candidate, profiles: [], omittedProfiles: 0 }}
+						{fresh}
+						simulator={true}
+					/>
+				</section>{/key}
+		{/if}
+		<div hidden={Boolean(candidate)}>
+			<BedMeshInspector
+				meshState={snapshot.bedMesh}
+				{fresh}
+				simulator={snapshot.mode === 'simulator'}
+			/>
+		</div>
 		<section class="mesh-guide">
 			<h2>What does this tell me?</h2>
 			<div class="guide-columns">
@@ -62,8 +99,9 @@
 				</div>
 			</div>
 			<p>
-				Inspecting a profile does not activate it. Probing, loading profiles, and saving changes
-				will come with guided workflows after printer testing.
+				Inspecting a profile does not activate it. The simulator workflow supports probing, result
+				review, temporary use and saving new profiles. Live probing and printer profile changes
+				require coordinated testing.
 			</p>
 			<a href="https://www.klipper3d.org/Bed_Mesh.html" target="_blank" rel="noreferrer"
 				>Understanding bed mesh in Klipper ↗</a

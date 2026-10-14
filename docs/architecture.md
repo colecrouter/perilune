@@ -457,5 +457,49 @@ renderer or new dependency is introduced. Rotation/tilt sliders and reset provid
 alternatives to dragging; scroll zoom is disabled. Height amplification is explicitly
 labeled (1/25/100/300×), with true millimetre axes and unchanged numeric samples.
 The display floor is the lower Z-domain bound, reserving room for negative heights without changing signed readings. Straight lines connect the reported grid, not an inferred compensation surface.
-Only one chart instance is mounted; top-down remains the default and numeric
+Only one mesh inspector is visible at a time; top-down remains the default and numeric
 inspection/table stay available. There is no animated or continuously running scene.
+
+## Guided simulator bed mesh probing
+
+The Calibration mesh page has a Probe bed preparation dialog, automatic readiness,
+idle/homing/heater-target checks and manual cleanliness, area-clearance and synthetic
+run acknowledgments. The cold simulator plan is fixed to 25 samples over X/Y
+20..200 mm and is validated against travel limits. Heater targets off does not mean
+cooled surfaces. Live mode explains that coordinated printer testing is required;
+there is no physical RPC/probe/heater/config-write implementation.
+
+MeshProbeState lives in PrinterService and owns the shared motion/calibration lease
+through probing and review. A process-scoped worker advances one deterministic
+synthetic sample per second (not actual probe timing). Browser navigation/reconnect
+never owns the worker. Queued begin/finish/cancel commands use the existing bounded,
+expiring action lifecycle with admission and execution validation. Begin run IDs
+must equal the unique persisted action ID, preventing recycled run identities;
+idempotency is bound to the authenticated actor. Only the initiating operator can
+keep results; account owners can explicitly cancel abandoned workflows. Progress
+is not versioned, so a cancellation isn't invalidated by a newly observed sample,
+but dialogs capture the immutable run ID and cannot affect replacement runs.
+
+A candidate is reviewed in its own keyed inspector, with no profile/comparison
+selection that could silently substitute an older mesh. The ordinary inspector's
+drafts are retained separately while hidden. Temporary use changes only the active
+simulator mesh until process restart. Save creates a named new profile, never
+activates or overwrites a profile, and supports up to 30 user profiles (40-character
+ASCII names). Existing active/saved meshes remain unchanged by cancellation.
+
+Migration 004 stores the simulator mesh checkpoint in SQLite. Begin/finish/cancel
+checkpoint and action terminal status commit atomically; progress is transient,
+while review/interrupt checkpoints are recorded. A restart interrupts unfinished
+runs and temporary application, restores fixture defaults, and retains saved
+profiles. Printer loss, revoked operator access or ten-minute expiry interrupts
+an unfinished workflow. Storage failure marks unknown outcomes, discards unsaved
+results and releases controls; recovery reads committed profiles and never replays
+probe/finish commands. Before/after-commit acknowledgement-loss tests cover this.
+
+Domain/service/browser tests cover readiness/ownership/expiry, bounded profiles,
+run identity, restart semantics, cancellation and failed storage. A seventh headless
+production smoke verifies preparation, progress while navigating away, shared
+observers/viewers, true candidate display despite earlier profile selection,
+saving and owner cancellation, with 320px preparation. Integration tests remain
+synthetic; live heating, homing/probing sequences and Klipper SAVE_CONFIG require
+coordinated owner testing before enabling.

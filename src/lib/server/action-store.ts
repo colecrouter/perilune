@@ -1,3 +1,4 @@
+import { emptyMeshProbe, type MeshProbeState } from '#lib/domain/mesh-probe.js';
 import { emptyCalibration, type CalibrationState } from '#lib/domain/calibration.js';
 import { Context, Effect, Layer } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
@@ -9,6 +10,14 @@ import { migrate } from './migrations.js';
 export class ActionStore extends Context.Service<
 	ActionStore,
 	{
+		meshProbe: Effect.Effect<MeshProbeState, SqlError>;
+		writeMeshProbe: (state: MeshProbeState) => Effect.Effect<void, SqlError>;
+		commitMeshProbe: (
+			id: string,
+			status: ActionStatus,
+			message: string | null,
+			state: MeshProbeState
+		) => Effect.Effect<void, SqlError>;
 		calibration: Effect.Effect<CalibrationState, SqlError>;
 		writeCalibration: (state: CalibrationState) => Effect.Effect<void, SqlError>;
 		commitCalibration: (
@@ -67,7 +76,24 @@ export const ActionStoreLive = Layer.effect(
 			sql`INSERT INTO simulator_calibration (id, state) VALUES (1, ${JSON.stringify(state)}) ON CONFLICT(id) DO UPDATE SET state=excluded.state`.pipe(
 				Effect.asVoid
 			);
+		const writeMeshProbe = (state: MeshProbeState) =>
+			sql`INSERT INTO simulator_mesh_probe (id, state) VALUES (1, ${JSON.stringify(state)}) ON CONFLICT(id) DO UPDATE SET state=excluded.state`.pipe(
+				Effect.asVoid
+			);
 		return {
+			meshProbe: sql<{ state: string }>`SELECT state FROM simulator_mesh_probe WHERE id=1`.pipe(
+				Effect.map((rows) =>
+					rows[0] ? (JSON.parse(rows[0].state) as MeshProbeState) : emptyMeshProbe()
+				)
+			),
+			writeMeshProbe,
+			commitMeshProbe: (id, status, message, state) =>
+				sql.withTransaction(
+					Effect.gen(function* () {
+						yield* writeMeshProbe(state);
+						yield* sql`UPDATE actions SET status=${status}, message=${message} WHERE id=${id}`;
+					})
+				),
 			calibration: sql<{ state: string }>`SELECT state FROM simulator_calibration WHERE id=1`.pipe(
 				Effect.map((rows) =>
 					rows[0] ? (JSON.parse(rows[0].state) as CalibrationState) : emptyCalibration()

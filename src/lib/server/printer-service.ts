@@ -1,4 +1,11 @@
 import {
+	advanceMeshProbe,
+	restartMeshProbe,
+	interruptMeshProbe,
+	meshProbeActive,
+	meshProbeReason
+} from '#lib/domain/mesh-probe.js';
+import {
 	calibrationActive,
 	calibrationReason,
 	interruptCalibration,
@@ -20,6 +27,7 @@ import {
 	type ActionRecord,
 	type ActionRequest,
 	type ActionStatus,
+	type PrinterCommand,
 	type PrinterSnapshot
 } from '#lib/domain/printer.js';
 import { startReason } from '#lib/domain/jobs.js';
@@ -59,7 +67,13 @@ const connectionMessage = 'Connection lost during sending. This action will not 
 const storageMessage =
 	'Action history storage failed. Outcome is unknown; this action will not be retried.';
 
-export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') =>
+const actorCommand = (command: PrinterCommand) =>
+	command.type.startsWith('calibration') || command.type.startsWith('meshProbe');
+
+export const makePrinterService = (
+	mode: PrinterSnapshot['mode'] = 'simulator',
+	probeInterval: '1 second' | '20 millis' = '1 second'
+) =>
 	Layer.effect(
 		PrinterService,
 		Effect.gen(function* () {
@@ -70,10 +84,24 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 					? restartCalibration(yield* store.calibration)
 					: initialLiveSnapshot().calibration;
 			if (mode === 'simulator') yield* store.writeCalibration(calibration);
+			const meshProbe =
+				mode === 'simulator'
+					? restartMeshProbe(yield* store.meshProbe)
+					: initialLiveSnapshot().meshProbe;
+			if (mode === 'simulator') yield* store.writeMeshProbe(meshProbe);
+			const bedMesh =
+				mode === 'simulator'
+					? {
+							...initialSnapshot().bedMesh,
+							profiles: [...initialSnapshot().bedMesh.profiles, ...meshProbe.savedProfiles]
+						}
+					: initialLiveSnapshot().bedMesh;
 			const state = yield* SubscriptionRef.make({
 				...(mode === 'moonraker' ? initialLiveSnapshot() : initialSnapshot()),
 				actions: mode === 'moonraker' ? [] : history,
-				calibration
+				calibration,
+				meshProbe,
+				bedMesh
 			});
 			const temperatureHistory = yield* SubscriptionRef.make<TemperatureSample[]>([]);
 			yield* Effect.gen(function* () {
@@ -106,6 +134,7 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 			const lock = yield* Semaphore.make(1);
 			const pending = new Map<string, ActionRequest & { actor?: CalibrationActor }>();
 			let simulatedRunId: string | undefined;
+			let probeActor: CalibrationActor | undefined;
 			const unwritten = new Map<string, { status: ActionStatus; message: string | null }>();
 			let lastRecovery = 0;
 			const revised = (previous: PrinterSnapshot, next: PrinterSnapshot) => ({
@@ -146,7 +175,7 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 								const result = yield* Effect.try({
 									try: () => {
 										if (
-											request.command.type.startsWith('calibration') &&
+											actorCommand(request.command) &&
 											request.actor?.authorized &&
 											!request.actor.authorized()
 										)
@@ -172,7 +201,10 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 								}
 							}
 						}
-						if (status === 'completed' && request?.command.type.startsWith('calibration'))
+						if (status === 'completed' && request?.command.type.startsWith('meshProbe')) {
+							yield* store.commitMeshProbe(action.id, status, message, next.meshProbe);
+							if (request.command.type === 'meshProbeBegin') probeActor = request.actor;
+						} else if (status === 'completed' && request?.command.type.startsWith('calibration'))
 							yield* store.commitCalibration(action.id, status, message, next.calibration);
 						else yield* store.setStatus(action.id, status, message);
 						pending.delete(action.id);
@@ -197,6 +229,10 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 					yield* update((snapshot) => ({
 						...snapshot,
 						storage: 'degraded',
+						meshProbe: interruptMeshProbe(
+							snapshot.meshProbe,
+							'Storage failed. The outcome is unknown; saved profiles will be reconciled without replaying commands.'
+						),
 						calibration: interruptCalibration(
 							snapshot.calibration,
 							'Action storage failed. The result is unknown; check the saved default after storage recovers.'
@@ -216,13 +252,37 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 					unwritten.delete(id);
 				}
 				const persisted = yield* store.calibration;
+				const persistedProbe = yield* store.meshProbe;
 				yield* SubscriptionRef.modifyEffect(state, (snapshot) =>
 					Effect.gen(function* () {
 						const calibration = { ...snapshot.calibration, savedOffset: persisted.savedOffset };
 						yield* store.writeCalibration(calibration);
+						const meshProbe = {
+							...snapshot.meshProbe,
+							savedProfiles: persistedProbe.savedProfiles
+						};
+						yield* store.writeMeshProbe(meshProbe);
+						const savedNames = new Set(
+							[...snapshot.meshProbe.savedProfiles, ...meshProbe.savedProfiles].map(
+								(profile) => profile.name
+							)
+						);
+						const bedMesh = {
+							...snapshot.bedMesh,
+							profiles: [
+								...snapshot.bedMesh.profiles.filter((profile) => !savedNames.has(profile.name)),
+								...meshProbe.savedProfiles
+							]
+						};
 						return [
 							undefined,
-							revised(snapshot, { ...snapshot, calibration, storage: 'healthy' })
+							revised(snapshot, {
+								...snapshot,
+								calibration,
+								meshProbe,
+								bedMesh,
+								storage: 'healthy'
+							})
 						] as const;
 					})
 				);
@@ -336,6 +396,57 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 					)
 					.pipe(Effect.repeat(Schedule.spaced('1 second')), Effect.forkScoped);
 
+			if (mode === 'simulator')
+				yield* lock
+					.withPermits(1)(
+						SubscriptionRef.modifyEffect(state, (current) =>
+							Effect.gen(function* () {
+								if (!meshProbeActive(current.meshProbe)) return [undefined, current] as const;
+								let meshProbe = current.meshProbe;
+								if (
+									current.connection !== 'connected' ||
+									current.klippy !== 'ready' ||
+									current.storage !== 'healthy' ||
+									probeActor?.authorized?.() === false
+								)
+									meshProbe = interruptMeshProbe(
+										meshProbe,
+										'Printer readiness or operator access changed. The unfinished run was interrupted.'
+									);
+								else meshProbe = advanceMeshProbe(meshProbe);
+								if (meshProbe === current.meshProbe) return [undefined, current] as const;
+								const terminal = meshProbe.session!.stage !== 'probing';
+								const persisted = terminal
+									? yield* store.writeMeshProbe(meshProbe).pipe(Effect.result)
+									: undefined;
+								const failed = persisted?._tag === 'Failure';
+								if (failed)
+									meshProbe = interruptMeshProbe(
+										meshProbe,
+										'Storage failed while recording the result. Unsaved data was discarded.'
+									);
+								return [
+									undefined,
+									revised(current, {
+										...current,
+										meshProbe,
+										motion: {
+											...current.motion,
+											calibration:
+												calibrationActive(current.calibration) || meshProbeActive(meshProbe)
+										},
+										storage: failed ? 'degraded' : current.storage
+									})
+								] as const;
+							})
+						)
+					)
+					.pipe(
+						Effect.uninterruptible,
+						Effect.repeat(Schedule.spaced(probeInterval)),
+						Effect.forkScoped
+					);
+
 			return {
 				state,
 				temperatureHistory,
@@ -356,12 +467,20 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 											message: 'Action history storage is recovering. Please wait.'
 										})
 									);
+								if (
+									request.command.type === 'meshProbeBegin' &&
+									request.command.probeId !== request.id
+								)
+									return yield* Effect.fail(
+										new ActionRejected({
+											message: 'The probe run ID must match its unique begin action ID.'
+										})
+									);
 								const existing = yield* store.find(request.id);
 								if (existing) {
 									if (
 										existing.payload !== JSON.stringify(request.command) ||
-										(request.command.type.startsWith('calibration') &&
-											existing.actorId !== actor?.id)
+										(actorCommand(request.command) && existing.actorId !== actor?.id)
 									)
 										return yield* Effect.fail(
 											new ActionRejected({
@@ -384,7 +503,7 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 								}
 								if (
 									calibrationActive(current.calibration) &&
-									!request.command.type.startsWith('calibration') &&
+									!actorCommand(request.command) &&
 									request.command.type !== 'cooldown'
 								)
 									return yield* Effect.fail(
@@ -392,7 +511,17 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 											message: 'Calibration owns the printer controls. Finish or cancel it first.'
 										})
 									);
-								if (request.command.type.startsWith('calibration')) {
+								if (
+									meshProbeActive(current.meshProbe) &&
+									!request.command.type.startsWith('meshProbe') &&
+									request.command.type !== 'cooldown'
+								)
+									return yield* Effect.fail(
+										new ActionRejected({
+											message: 'Bed mesh calibration owns the printer. Finish or cancel it first.'
+										})
+									);
+								if (actorCommand(request.command)) {
 									if (current.actions.some((item) => ['queued', 'sending'].includes(item.status)))
 										return yield* Effect.fail(
 											new ActionRejected({
@@ -405,6 +534,10 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 												message: 'The operator account is no longer authorized.'
 											})
 										);
+									if (request.command.type === 'meshProbeBegin') {
+										const reason = meshProbeReason(current);
+										if (reason) return yield* Effect.fail(new ActionRejected({ message: reason }));
+									}
 									if (request.command.type === 'calibrationBegin') {
 										const reason = calibrationReason(current);
 										if (reason) return yield* Effect.fail(new ActionRejected({ message: reason }));
@@ -495,7 +628,7 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 								yield* store.insert(
 									action,
 									request.command,
-									request.command.type.startsWith('calibration') ? actor?.id : undefined
+									actorCommand(request.command) ? actor?.id : undefined
 								);
 								pending.set(action.id, { ...request, actor });
 								yield* update((snapshot) => ({
@@ -521,6 +654,16 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 										const connection = connected
 											? ('connected' as const)
 											: ('disconnected' as const);
+										const meshProbe = connected
+											? snapshot.meshProbe
+											: interruptMeshProbe(
+													snapshot.meshProbe,
+													'Printer connection lost. The unfinished run was interrupted; start again after reconnecting.'
+												);
+										const meshPersisted =
+											meshProbe !== snapshot.meshProbe
+												? yield* store.writeMeshProbe(meshProbe).pipe(Effect.result)
+												: undefined;
 										const calibration = connected
 											? snapshot.calibration
 											: interruptCalibration(
@@ -537,8 +680,15 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 												...snapshot,
 												connection,
 												calibration,
-												motion: { ...snapshot.motion, calibration: calibrationActive(calibration) },
-												storage: persisted?._tag === 'Failure' ? 'degraded' : snapshot.storage,
+												meshProbe,
+												motion: {
+													...snapshot.motion,
+													calibration: calibrationActive(calibration) || meshProbeActive(meshProbe)
+												},
+												storage:
+													persisted?._tag === 'Failure' || meshPersisted?._tag === 'Failure'
+														? 'degraded'
+														: snapshot.storage,
 												connectionGeneration:
 													snapshot.connectionGeneration +
 													(connection === snapshot.connection ? 0 : 1)
@@ -567,11 +717,14 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 								update((snapshot) =>
 									pending.size > 0 ||
 									snapshot.storage === 'degraded' ||
-									calibrationActive(snapshot.calibration)
+									calibrationActive(snapshot.calibration) ||
+									meshProbeActive(snapshot.meshProbe)
 										? snapshot
 										: {
 												...initialSnapshot(),
 												calibration: snapshot.calibration,
+												meshProbe: snapshot.meshProbe,
+												bedMesh: snapshot.bedMesh,
 												actions: snapshot.actions,
 												connectionGeneration: snapshot.connectionGeneration + 1
 											}
