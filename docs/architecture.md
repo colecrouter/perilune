@@ -37,7 +37,7 @@ headers supplied by clients are not trusted. TLS/HTTP2/HTTP3 belong at the edge.
   will need separate acknowledgement and physical completion semantics.
 
 The simulator begins with a fixed example print. Temperatures approach targets;
-print progress is fixed. Reset restores the example and preserves action history.
+the initial demo’s print progress is fixed, while explicitly started simulator jobs advance. Reset restores the example and preserves action history.
 This application-service demo is separate from the WebSocket protocol fixtures used to test live integration.
 
 ## Persistent read-only Moonraker
@@ -129,7 +129,7 @@ and patched during prepare so its diagnostics also appear in checks.
 2. Real command policies, reconciliation, cancellation macro behavior, priority stop.
 3. Completed: go2rtc camera gateway and source-change propagation; broader media protocols follow.
 4. Completed: built-in authentication; external identity remains optional future work.
-5. File/slicer workflows, calibration, and explained configuration editing.
+5. Completed: Jobs file library and upload-only slicer gateway; calibration and explained configuration editing remain.
 6. Installability, configurable push notifications, and layout preferences.
 
 Built-in authentication protects browser-facing state, actions, and media. Compose
@@ -235,7 +235,7 @@ and manual-probe state, but rejects all movement and homing. The map uses the
 Its rectangle represents reported travel extent, not guaranteed reachable bed
 geometry or a collision-free path. Kinematic profiles, fixtures, physical command
 acknowledgements, and coordinated owner testing are required before live operation.
-Temperature history/LayerChart, extrusion, fan controls, and guided calibration
+Temperature history is implemented below. Extrusion, fan controls and guided calibration
 remain subsequent increments.
 
 ## Temperature monitoring and controls
@@ -288,3 +288,59 @@ with projected illumination proportional to progress; pause/unavailable badges
 preserve the last phase. Guest pages and idle jobs use the static crescent.
 The brand study, PNG logo and repository social-preview card live in static/brand;
 see docs/branding.md for source attribution and usage.
+
+## Jobs and slicer uploads
+
+A process-owned JobService stores a simulator G-code library in SQLite via Effect
+SQL. Files are immutable by ID: retries of identical name/content return the same
+file, while differing content under an existing name is rejected. The library is
+bounded to 100 files / 200 MiB, with text `.gcode` uploads limited to 20 MiB.
+Two whole uploads can be in progress; additional uploads fail admission instead
+of retaining bodies. Stream reads have byte limits, 60-second deadlines, abort
+cleanup and closed readers. Other operations have bounded admission (20) and
+request/session/shutdown interruption. PNG thumbnails are size/dimension checked
+and served through authenticated same-origin endpoints; SVG/HTML thumbnails are
+excluded. Comments provide slicer estimates only, never executable inspection.
+
+The file selection and search draft survive five-second finite library refreshes.
+The existing dashboard query remains the single held stream per tab. Simulator
+starts reference a persisted file ID through the existing idempotent action queue;
+readiness and file existence are checked again at execution. Pending starts reserve
+the printer across users, and active/pending files cannot be removed. Explicit
+confirmation starts a simulation that advances 1% per second, pauses without
+advancing, and completes after 100 ticks. This timing is unrelated to slicer
+estimates. Existing pause/stop/cooldown controls and unknown-outcome handling apply.
+File commit and catalog publication are a short uninterruptible section after a
+final execution-time authorization check: cancellation can leave a saved file,
+but cannot leave the shared catalog stale. Retrying the identical file is safe.
+
+The shared observed-session history persists across restarts, retains up to 500
+records and shows the newest 50. Restarts and live connection loss interrupt an
+unfinished observed session; a reconnect begins a new observation rather than
+claiming it is the same physical print. History storage failures are visible and
+retried. This is not authoritative Moonraker history import or a print scheduler.
+
+Live mode polls a bounded Moonraker G-code listing every 30 seconds from a
+process-owned worker. Startup renders immediately while discovery proceeds.
+Inspection fetches sanitized metadata on demand; upstream reads have eight-second
+deadlines, size limits, cancelled controllers and no redirects. Up to 500 live
+files are presented. Cached files remain visible during failure. Live uploads,
+deletes and physical starts remain prohibited. Real-device file-library validation
+and physical command testing remain outstanding; protocol fixtures cover this slice.
+
+Operators can issue upload-only slicer keys from Jobs. Keys are hashed at rest,
+expire after 90 days, are individually revocable, and are bound to an active
+operator/owner and its authentication recovery epoch. They authorize only the
+Moonraker-compatible `/server/info`, `/server/files/roots` and
+`/server/files/upload` subset. Print requests are rejected; unrelated APIs still
+require browser sessions. Native slicers omit Origin, so the Node entrypoint fills
+it only for the exact upload endpoint with a correctly shaped API-key header.
+The route then validates the actual key; foreign Origin is never rewritten and
+cookie-only mutations still require same-origin protection. No global CSRF
+exception is configured. Automatic upload-and-print, binary G-code/3MF, folders,
+file overwrite, G-code visualization and live writes remain future increments.
+
+The headless Jobs production smoke verifies uploads, inspection, shared controls,
+PNG serving, file-in-use guards, 320px layout, API-key revocation and native-slicer
+multipart behavior. Automated Vitest workers are capped at four to keep concurrent
+service/browser tests within predictable local and CI resource use.

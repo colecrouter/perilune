@@ -2,12 +2,14 @@ import { Context, Effect, Layer } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
 import type { ActionRecord, ActionStatus, PrinterCommand } from '#lib/domain/printer.js';
+import type { JobFile, JobMetadata } from '#lib/domain/jobs.js';
 import { migrate } from './migrations.js';
 
 export class ActionStore extends Context.Service<
 	ActionStore,
 	{
 		list: Effect.Effect<ActionRecord[], SqlError>;
+		jobFile: (id: string) => Effect.Effect<JobFile | undefined, SqlError>;
 		find: (
 			id: string
 		) => Effect.Effect<{ action: ActionRecord; payload: string } | undefined, SqlError>;
@@ -45,6 +47,24 @@ export const ActionStoreLive = Layer.effect(
 		// A process restart cannot establish whether a sent command completed. Never replay it.
 		yield* sql`UPDATE actions SET status = 'unknown', message = 'Backend restarted. This action was not replayed.' WHERE status IN ('queued', 'sending')`;
 		return {
+			jobFile: (id) =>
+				sql<{
+					id: string;
+					name: string;
+					size: number;
+					modified: number;
+					metadata: string;
+				}>`SELECT id,name,size,modified,metadata FROM job_files WHERE id=${id}`.pipe(
+					Effect.map((rows) =>
+						rows[0]
+							? {
+									...rows[0],
+									source: 'local' as const,
+									metadata: JSON.parse(rows[0].metadata) as JobMetadata
+								}
+							: undefined
+					)
+				),
 			list: sql<StoredAction>`SELECT * FROM actions ORDER BY created_at DESC LIMIT 20`.pipe(
 				Effect.map((rows) => rows.map(fromRow))
 			),

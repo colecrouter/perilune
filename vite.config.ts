@@ -17,6 +17,7 @@ export default defineConfig({
 		legacy({ modernTargets: ['Safari >= 16.4', 'Chrome >= 110', 'Firefox >= 115'] })
 	]),
 	test: {
+		maxWorkers: 4,
 		expect: { poll: { timeout: 3000 } },
 		projects: [
 			{
