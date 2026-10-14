@@ -49,7 +49,7 @@ test('LayerChart isometric view rotates, resets and retains true numeric values'
 	await rotation.fill('20');
 	await expect.element(rotation).toHaveValue('20');
 	await screen.getByRole('combobox', { name: 'Height scale', exact: true }).selectOptions('1');
-	await expect.element(screen.getByText(/Height scale ×1\./)).toBeVisible();
+	await expect.element(screen.getByRole('combobox', { name: 'Height scale' })).toHaveValue('1');
 	await screen.rerender({ fresh: false, meshState: { ...meshState } });
 	await expect.element(rotation).toHaveValue('20');
 	await screen.getByRole('button', { name: 'Reset view', exact: true }).click();

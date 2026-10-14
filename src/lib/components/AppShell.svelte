@@ -29,7 +29,19 @@
 						><DropdownMenu.Trigger
 							class={`nav-trigger ${active === 'Calibration' ? 'active' : ''}`}
 							aria-label="Calibration"
-							><Icon name="calibration" /><span>Calibration <span aria-hidden="true">⌄</span></span
+							><Icon name="calibration" /><span class="calibration-label"
+								>Calibration<svg
+									class="calibration-chevron"
+									width="12"
+									height="12"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg
+								></span
 							></DropdownMenu.Trigger
 						><DropdownMenu.Portal
 							><DropdownMenu.Content
@@ -76,6 +88,16 @@
 </div>
 
 <style>
+	.calibration-label {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+	}
+	:global(.sidebar nav .calibration-label .calibration-chevron) {
+		width: 12px;
+		height: 12px;
+		flex: none;
+	}
 	:global(.calibration-menu) {
 		z-index: 80;
 		width: min(300px, calc(100vw - 24px));

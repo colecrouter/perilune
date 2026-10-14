@@ -112,7 +112,6 @@
 		</Chart>
 	</div>
 	<p class="surface-note">
-		Height scale ×{amplification}. Display floor: {(-scale).toFixed(3)} mm. Z values remain in millimetres.
 		Lines connect reported samples; they are not Klipper’s compensation surface.
 	</p>
 	<div class="surface-controls">
