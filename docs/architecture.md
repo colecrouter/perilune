@@ -40,14 +40,13 @@ The simulator begins with a fixed example print. Temperatures approach targets;
 the initial demo’s print progress is fixed, while explicitly started simulator jobs advance. Reset restores the example and preserves action history.
 This application-service demo is separate from the WebSocket protocol fixtures used to test live integration.
 
-## Persistent read-only Moonraker
+## Persistent Moonraker transport
 
 `PERILUNE_MOONRAKER_URL` selects live mode at process startup. A scoped Effect
 MoonrakerService owns one native Node WebSocket and a bounded exponential reconnect
 loop. JSON-RPC requests have deadlines; a periodic `server.info` round trip detects
 silent connections and distinguishes Moonraker reachability from Klipper readiness.
-Only identification, server info, object discovery, and status subscription RPCs
-are available. There is no arbitrary RPC or physical command API.
+Identification, server info, object discovery, subscription, and fenced status refresh RPCs are available. A narrow mesh command API is gated by PERILUNE_LIVE_MESH; there is no arbitrary browser RPC/G-code API.
 
 A process-owned bridge consumes transport snapshots into PrinterService. Browser
 lifetimes never create printer sockets. Full initial subscription status replaces
@@ -59,8 +58,7 @@ print duration and file progress, not a slicer prediction.
 Live initialization is immediate with unknown values, so a slow/offline printer does
 not block rendering. Reconnects retain last known values with a telemetry timestamp.
 Shutdown/startup retain visible readings while indicating that Klipper is unavailable.
-All live action admission is rejected before persistence; simulator connection/reset
-methods cannot change live state. Physical command policies are a separate milestone.
+Generic live controls remain read-only. The opt-in cold bed mesh workflow has a separate persistent command lifecycle described below. Simulator connection/reset methods cannot change live state.
 URLs, API keys, raw server errors, and printer configuration stay out of client state.
 
 ## Browser and interface
@@ -466,8 +464,7 @@ The Calibration mesh page has a Probe bed preparation dialog, automatic readines
 idle/homing/heater-target checks and manual cleanliness, area-clearance and synthetic
 run acknowledgments. The cold simulator plan is fixed to 25 samples over X/Y
 20..200 mm and is validated against travel limits. Heater targets off does not mean
-cooled surfaces. Live mode explains that coordinated printer testing is required;
-there is no physical RPC/probe/heater/config-write implementation.
+cooled surfaces. Live mode uses the separate opt-in workflow described below.
 
 MeshProbeState lives in PrinterService and owns the shared motion/calibration lease
 through probing and review. A process-scoped worker advances one deterministic
@@ -503,3 +500,56 @@ observers/viewers, true candidate display despite earlier profile selection,
 saving and owner cancellation, with 320px preparation. Integration tests remain
 synthetic; live heating, homing/probing sequences and Klipper SAVE_CONFIG require
 coordinated owner testing before enabling.
+
+## Live cold bed mesh workflow
+
+PERILUNE_LIVE_MESH=true explicitly enables live mesh actions. Other live controls,
+including Z-offset, job start/stop, motion and heater setting, remain read-only.
+LiveMeshService uses process-scoped Effect workers, the existing shared printer
+snapshot and action history, and migration 005's separate live_mesh_workflow
+checkpoint. The default server configuration remains read-only.
+
+The supported initial plan is rectangular bed_mesh with a discrete probe/bltouch,
+without homing_override, faulty regions, circular meshes or extra reference probing.
+Only normalized bounds/count/offset/sample count and pending-config state reach the
+browser; raw printer configuration remains backend-only. Probe offsets are checked
+against nozzle travel. The cold run requires ready fresh telemetry, no active/paused
+job or other calibration, heater targets zero, and observed temperatures at most
+40°C. The operator reviews physical cleanliness/clearance and actual homing/probing.
+Unhomed axes trigger G28; plan, readiness and prior mesh identity are revalidated
+before homing and again before probing. Commands from external clients can still
+change state after a validation; this is not a lock enforced by Moonraker.
+
+Admission atomically writes an actor-bound idempotent action and workflow reservation
+before dispatch. Queue capacity is one; undispatched actions expire after 30 seconds.
+The persistent worker performs physical I/O outside snapshot locks. Probe/home RPCs
+have a ten-minute deadline; status requests retain normal short deadlines. Transport
+commands fence socket/Klippy generations, and fresh query results replay newer
+subscription deltas. Failed/missing acknowledgements never trigger command replay.
+
+Progress estimates completed grid points from probe-response coordinates and the
+configured readings per point, ignoring homing responses. Completed acknowledgement
+plus a fresh unique-profile mesh with matching bounds/dimensions is required for
+review. Live probing immediately activates the measured mesh, unlike the simulator.
+A unique internal profile prevents overwriting default. Temporary keep removes its
+pending profile entry while leaving compensation active; later Klipper restart or
+an existing print macro can replace it. Restore verifies the captured previous saved
+profile contents (or clears compensation if no prior mesh existed). Normal queued
+cancellation cannot interrupt probing and is disabled during physical execution.
+
+Save confirms a new identifier, refuses overwrites/default/internal names, checks
+fresh profile conflicts, then saves the named profile, removes the internal profile,
+and executes SAVE_CONFIG. This writes ALL pending Klipper configuration and restarts
+Klipper. Completion requires a new ready generation, no pending save, and matching
+saved profile samples; the save script is never replayed. Existing start macros are
+not edited and may still load a different profile. Profile deletion/activation outside
+this workflow and a warm-bed probing option remain future work.
+
+Lost connection, unexpected errors, journal failure or backend restart preserve an
+uncertain reservation and restoration metadata. This does not claim physical movement
+stopped. A fresh idle printer and explicit operator/owner confirmation are needed to
+restore/clear the workflow. Journal recovery retries only checkpoint/status writes.
+Expired reviews retain the reservation for explicit restoration rather than issuing
+physical commands automatically. Tests cover actor ownership, concurrent observers,
+late acknowledgements/query responses, generation changes, profile races, SQL faults,
+restart/no replay, and headless live/simulator preparation semantics.

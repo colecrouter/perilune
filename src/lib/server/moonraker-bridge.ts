@@ -20,6 +20,7 @@ export const MoonrakerBridgeLive = Layer.effectDiscard(
 					heaters: telemetry.heaters,
 					motion: telemetry.motion,
 					bedMesh: telemetry.bedMesh,
+					liveMesh: telemetry.liveMesh,
 					additionalTemperatures: telemetry.additionalTemperatures
 				})
 			),
