@@ -358,13 +358,7 @@
 					class="library-filters"
 					method="GET"
 					action={resolve('/jobs')}
-					onsubmit={(event) => {
-						event.preventDefault();
-						const params = new URLSearchParams(
-							new FormData(event.currentTarget) as unknown as Record<string, string>
-						);
-						void goto(resolve('/jobs') + '?' + params.toString());
-					}}
+					data-sveltekit-reset="false"
 				>
 					<label class="search-label"
 						>Find a file<input

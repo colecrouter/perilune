@@ -5,7 +5,6 @@
 		columnVisibilityFeature,
 		rowPaginationFeature
 	} from '@tanstack/svelte-table';
-	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import Icon from './Icon.svelte';
 	import { durationLabel, type JobFile } from '#lib/domain/jobs.js';
@@ -102,7 +101,9 @@
 									? 'ascending'
 									: 'descending'
 								: 'none'}
-							>{#if sortable(header.column.id)}<a href={sortHref(header.column.id as JobSort)}
+							>{#if sortable(header.column.id)}<a
+									data-sveltekit-reset="false"
+									href={sortHref(header.column.id as JobSort)}
 									>{labels[
 										header.column.id as JobSort
 									]}{#if catalog.query.sort === header.column.id}<span aria-hidden="true"
@@ -134,18 +135,7 @@
 	</table>
 </div>
 <div class="mobile-files">
-	<form
-		method="GET"
-		action={resolve('/jobs')}
-		class="mobile-sort"
-		onsubmit={(event) => {
-			event.preventDefault();
-			const params = new URLSearchParams(
-				new FormData(event.currentTarget) as unknown as Record<string, string>
-			);
-			void goto(resolve('/jobs') + '?' + params.toString());
-		}}
-	>
+	<form method="GET" action={resolve('/jobs')} class="mobile-sort" data-sveltekit-reset="false">
 		<input type="hidden" name="q" value={catalog.query.q} /><input
 			type="hidden"
 			name="material"
@@ -153,7 +143,8 @@
 		/><input type="hidden" name="size" value={catalog.query.pageSize} />
 		<label
 			>Sort files<select name="sort" value={catalog.query.sort}
-				>{#each Object.entries(labels) as [key, label]}<option value={key}>{label}</option
+				>{#each Object.entries(labels) as [key, label]}<option value={key} disabled={!sortable(key)}
+						>{label}</option
 					>{/each}</select
 			></label
 		>
@@ -210,6 +201,7 @@
 </nav>
 <div class="page-sizes">
 	<span>Rows per page</span>{#each [10, 25, 50] as size}<a
+			data-sveltekit-reset="false"
 			href={href({ pageSize: size, page: 1 })}
 			aria-current={catalog.query.pageSize === size ? 'true' : undefined}>{size}</a
 		>{/each}
