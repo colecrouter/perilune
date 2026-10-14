@@ -89,6 +89,10 @@ async function fixture() {
 					}
 					if (behavior === 'slow') {
 						notify('notify_status_update', [{ heater_bed: { temperature: 25 } }, 3]);
+						notify('notify_gcode_response', [
+							'// probe: at 20.000,20.000 bed will contact at z=-0.025000'
+						]);
+						notify('notify_gcode_response', ['// probe at 40.000,35.000 is z=-0.025000']);
 						setTimeout(() => reply('ok'), 100);
 					} else reply('ok');
 					break;
@@ -136,6 +140,7 @@ it('waits beyond the normal RPC timeout while telemetry continues and projects c
 	);
 	await expect.poll(async () => (await f.snapshot()).heaters.bed.current).toBe(25);
 	await command;
+	expect((await f.snapshot()).probeResponses.map((p) => p.space)).toEqual(['probe', 'nozzle']);
 	expect(f.scripts()).toBe(1);
 });
 it('preserves newer telemetry when an older refresh response arrives', async () => {

@@ -144,3 +144,41 @@ test('live probing does not offer queued cancellation as a physical stop', async
 		.toBeDisabled();
 	await expect.element(screen.getByText(/Normal queued commands cannot interrupt/)).toBeVisible();
 });
+test('live review waits for motion to settle before enabling finish controls', async () => {
+	const snapshot = ready();
+	snapshot.mode = 'moonraker';
+	snapshot.heaters.bed.current = 23;
+	snapshot.heaters.nozzle.current = 23;
+	snapshot.motion.busy = true;
+	snapshot.liveMesh = {
+		enabled: true,
+		pendingConfig: true,
+		plan: { min: [20, 20], max: [200, 200], offset: [0, 0], columns: 5, rows: 5, samples: 1 }
+	};
+	snapshot.meshProbe.session = {
+		id: crypto.randomUUID(),
+		ownerId: actor.id,
+		ownerName: actor.name,
+		stage: 'review',
+		live: true,
+		plan: snapshot.liveMesh.plan!,
+		completedSamples: 25,
+		startedAt: Date.now(),
+		expiresAt: Date.now() + 600000,
+		result: snapshot.bedMesh.active,
+		message: null
+	};
+	const screen = await render(BedMeshProbe, {
+		snapshot,
+		connected: true,
+		userId: actor.id,
+		role: actor.role,
+		onSubmit: vi.fn()
+	});
+	await expect.element(screen.getByRole('button', { name: 'Save profile…' })).toBeDisabled();
+	await expect
+		.element(screen.getByText(/Waiting for the printer to finish movement/))
+		.toBeVisible();
+	await screen.rerender({ snapshot: { ...snapshot, motion: { ...snapshot.motion, busy: false } } });
+	await expect.element(screen.getByRole('button', { name: 'Save profile…' })).toBeEnabled();
+});

@@ -493,15 +493,24 @@ export const LiveMeshServiceLive = Layer.effect(
 				if (p.sequence <= progress.baseline) continue;
 				progress.baseline = p.sequence;
 				const col = Math.round(
-					((p.x + plan.offset[0] - plan.min[0]) / (plan.max[0] - plan.min[0])) * (plan.columns - 1)
+					((p.x + (p.space === 'probe' ? 0 : plan.offset[0]) - plan.min[0]) /
+						(plan.max[0] - plan.min[0])) *
+						(plan.columns - 1)
 				);
 				const row = Math.round(
-					((p.y + plan.offset[1] - plan.min[1]) / (plan.max[1] - plan.min[1])) * (plan.rows - 1)
+					((p.y + (p.space === 'probe' ? 0 : plan.offset[1]) - plan.min[1]) /
+						(plan.max[1] - plan.min[1])) *
+						(plan.rows - 1)
 				);
 				if (col < 0 || col >= plan.columns || row < 0 || row >= plan.rows) continue;
 				const x =
-						plan.min[0] + (col * (plan.max[0] - plan.min[0])) / (plan.columns - 1) - plan.offset[0],
-					y = plan.min[1] + (row * (plan.max[1] - plan.min[1])) / (plan.rows - 1) - plan.offset[1];
+						plan.min[0] +
+						(col * (plan.max[0] - plan.min[0])) / (plan.columns - 1) -
+						(p.space === 'probe' ? 0 : plan.offset[0]),
+					y =
+						plan.min[1] +
+						(row * (plan.max[1] - plan.min[1])) / (plan.rows - 1) -
+						(p.space === 'probe' ? 0 : plan.offset[1]);
 				if (Math.abs(x - p.x) > 0.05 || Math.abs(y - p.y) > 0.05) continue;
 				const key = `${col},${row}`;
 				progress.counts.set(key, (progress.counts.get(key) ?? 0) + 1);

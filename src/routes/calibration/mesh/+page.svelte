@@ -108,8 +108,8 @@
 			</div>
 			<p>
 				Inspecting a profile does not activate it. The simulator workflow supports probing, result
-				review, temporary use and saving new profiles. Live probing and printer profile changes
-				require coordinated testing.
+				review, temporary use and saving new profiles. Servers can opt into the cold live probing
+				workflow; other live calibration remains planned.
 			</p>
 			<a href="https://www.klipper3d.org/Bed_Mesh.html" target="_blank" rel="noreferrer"
 				>Understanding bed mesh in Klipper ↗</a

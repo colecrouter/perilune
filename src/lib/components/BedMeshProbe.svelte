@@ -47,6 +47,11 @@
 	);
 	const homed = $derived(ready && allAxesHomed(snapshot));
 	const off = $derived(ready && heaterTargetsOff(snapshot));
+	const liveIdle = $derived(
+		!live ||
+			(snapshot.motion.busy === false &&
+				!snapshot.actions.some((a) => ['queued', 'sending'].includes(a.status)))
+	);
 	const idle = $derived(ready && ['standby', 'complete', 'cancelled'].includes(snapshot.job.state));
 	const pending = $derived(
 		submitting || snapshot.actions.some((action) => ['queued', 'sending'].includes(action.status))
@@ -193,14 +198,18 @@
 							? 'Klipper has already activated this mesh. Your default profile has not been overwritten.'
 							: 'Your active mesh and saved profiles have not changed.'}
 					</p>
+					{#if live && !liveIdle}<p class="notice" role="status">
+							Waiting for the printer to finish movement before keeping, restoring, or saving this
+							mesh.
+						</p>{/if}
 					<div class="review-actions">
 						<button
 							class="button primary"
-							disabled={!owns || !canOperate || !ready || pending}
+							disabled={!owns || !canOperate || !ready || pending || !liveIdle}
 							onclick={() => review('apply')}>Use temporarily…</button
 						><button
 							class="button secondary"
-							disabled={!owns || !canOperate || !ready || pending}
+							disabled={!owns || !canOperate || !ready || pending || !liveIdle}
 							onclick={() => review('save')}>Save profile…</button
 						>
 					</div>
@@ -220,6 +229,7 @@
 							(!owns && role !== 'owner') ||
 							!ready ||
 							pending ||
+							!liveIdle ||
 							(live && ['probing', 'saving'].includes(session.stage))}
 						onclick={cancel}
 						>{live
@@ -359,6 +369,7 @@
 					disabled={!canOperate ||
 						!owns ||
 						!ready ||
+						!liveIdle ||
 						pending ||
 						!reviewed ||
 						(reviewed.outcome === 'save' && !name.trim())}
@@ -399,7 +410,7 @@
 				<Dialog.Close class="button secondary" disabled={submitting}>Keep going</Dialog.Close
 				><button
 					class="button danger"
-					disabled={!ready || pending || !reviewed}
+					disabled={!ready || !liveIdle || pending || !reviewed}
 					onclick={async () => {
 						if (!reviewed) return;
 						try {

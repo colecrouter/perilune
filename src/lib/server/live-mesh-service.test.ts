@@ -345,3 +345,25 @@ it('does not probe if an external client changes the baseline during homing', as
 	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('uncertain');
 	expect(f.operations.map((o) => o.type)).toEqual(['home']);
 });
+it('counts current Klipper probe-coordinate readings without applying offsets twice', async () => {
+	let release!: () => void;
+	const held = new Promise<void>((r) => (release = r));
+	const f = await fixture(async (op) => {
+		if (op.type === 'probe') await held;
+	});
+	const request = f.begin();
+	await f.submit(request);
+	await expect.poll(() => f.operations.map((o) => o.type)).toEqual(['home', 'probe']);
+	await Effect.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			probeResponses: [
+				{ sequence: 1, x: 30, y: 30, space: 'probe' as const },
+				{ sequence: 2, x: 30, y: 30, space: 'probe' as const }
+			]
+		}))
+	);
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.completedSamples).toBe(1);
+	release();
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('review');
+});

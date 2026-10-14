@@ -30,7 +30,7 @@ export interface MoonrakerSnapshot {
 	motion: MotionSnapshot;
 	bedMesh: BedMeshState;
 	liveMesh: { enabled: boolean; plan: LiveMeshPlan | null; pendingConfig: boolean };
-	probeResponses: Array<{ sequence: number; x: number; y: number }>;
+	probeResponses: Array<{ sequence: number; x: number; y: number; space?: 'probe' | 'nozzle' }>;
 	job: {
 		filename: string;
 		state: 'standby' | 'printing' | 'paused' | 'complete' | 'cancelled' | 'error';
@@ -300,13 +300,21 @@ export const MoonrakerServiceLive = Layer.effect(
 						}
 						if (message.method === 'notify_gcode_response' && config.liveMeshEnabled) {
 							const line = String(Array.isArray(message.params) ? message.params[0] : '');
-							const match = /probe at (-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?) is z=/.exec(line);
+							const old = /probe at (-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?) is z=/.exec(line);
+							const modern =
+								/probe: at (-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?) bed will contact at z=/.exec(line);
+							const match = modern ?? old;
 							if (match)
 								void publish({
 									...current,
 									probeResponses: [
 										...current.probeResponses,
-										{ sequence: ++responseSequence, x: Number(match[1]), y: Number(match[2]) }
+										{
+											sequence: ++responseSequence,
+											x: Number(match[1]),
+											y: Number(match[2]),
+											space: modern ? ('probe' as const) : ('nozzle' as const)
+										}
 									].slice(-256)
 								});
 						} else if (message.method === 'notify_status_update' && (subscribed || subscribing)) {
