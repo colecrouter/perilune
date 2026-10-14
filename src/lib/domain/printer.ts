@@ -1,3 +1,11 @@
+import {
+	CalibrationCommand,
+	emptyCalibration,
+	applyCalibration,
+	calibrationActive,
+	type CalibrationState,
+	type CalibrationActor
+} from './calibration.js';
 import { temperatureReason, type TemperatureSensor } from './temperature.js';
 import {
 	checkedMove,
@@ -17,6 +25,7 @@ const expectedJob = Schema.optional(
 	Schema.Struct({ filename: Schema.String, runId: Schema.NullOr(Schema.String) })
 );
 export const PrinterCommand = Schema.Union([
+	CalibrationCommand,
 	Schema.Struct({ type: Schema.Literal('start'), fileId: Schema.String.check(Schema.isUUID()) }),
 	Schema.Struct({
 		type: Schema.Literal('move'),
@@ -88,6 +97,7 @@ export interface PrinterSnapshot {
 	};
 	additionalTemperatures: TemperatureSensor[];
 	motion: MotionSnapshot;
+	calibration: CalibrationState;
 	actions: ActionRecord[];
 }
 export const initialSnapshot = (): PrinterSnapshot => ({
@@ -112,10 +122,21 @@ export const initialSnapshot = (): PrinterSnapshot => ({
 	heaters: { nozzle: { current: 210, target: 210 }, bed: { current: 60, target: 60 } },
 	additionalTemperatures: [],
 	motion: simulatedMotion(),
+	calibration: emptyCalibration(),
 	actions: []
 });
 export function actionLabel(command: PrinterCommand): string {
 	switch (command.type) {
+		case 'calibrationBegin':
+			return 'Begin Z-offset calibration';
+		case 'calibrationAdjust':
+			return `Adjust calibration ${command.delta > 0 ? '+' : ''}${command.delta} mm`;
+		case 'calibrationStage':
+			return `Calibration: ${command.stage}`;
+		case 'calibrationFinish':
+			return command.outcome === 'save' ? 'Save simulator offset' : 'Apply temporary offset';
+		case 'calibrationCancel':
+			return 'Cancel calibration';
 		case 'start':
 			return 'Start print';
 		case 'move':
@@ -142,8 +163,14 @@ export function actionLabel(command: PrinterCommand): string {
 export function applyCommand(
 	state: PrinterSnapshot,
 	command: PrinterCommand,
-	file?: JobFile
+	file?: JobFile,
+	actor?: CalibrationActor
 ): PrinterSnapshot {
+	if ('sessionId' in command) return applyCalibration(state, command, actor);
+	if (calibrationActive(state.calibration) && command.type !== 'cooldown')
+		throw new CommandRejected({
+			message: 'Calibration owns the printer controls. Finish or cancel it first.'
+		});
 	const next = structuredClone(state);
 	if (
 		'expectedJob' in command &&

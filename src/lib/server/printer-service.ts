@@ -1,4 +1,11 @@
 import {
+	calibrationActive,
+	calibrationReason,
+	interruptCalibration,
+	restartCalibration,
+	type CalibrationActor
+} from '#lib/domain/calibration.js';
+import {
 	appendTemperatureSample,
 	temperatureReason,
 	type TemperatureSample
@@ -28,7 +35,10 @@ export class PrinterService extends Context.Service<
 	{
 		state: SubscriptionRef.SubscriptionRef<PrinterSnapshot>;
 		temperatureHistory: SubscriptionRef.SubscriptionRef<TemperatureSample[]>;
-		submit: (request: ActionRequest) => Effect.Effect<ActionRecord, ActionRejected>;
+		submit: (
+			request: ActionRequest,
+			actor?: CalibrationActor
+		) => Effect.Effect<ActionRecord, ActionRejected>;
 		setConnection: (connected: boolean) => Effect.Effect<void>;
 		reset: Effect.Effect<void>;
 		ingest: (
@@ -53,9 +63,15 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 		Effect.gen(function* () {
 			const store = yield* ActionStore;
 			const history = yield* store.list;
+			const calibration =
+				mode === 'simulator'
+					? restartCalibration(yield* store.calibration)
+					: initialLiveSnapshot().calibration;
+			if (mode === 'simulator') yield* store.writeCalibration(calibration);
 			const state = yield* SubscriptionRef.make({
 				...(mode === 'moonraker' ? initialLiveSnapshot() : initialSnapshot()),
-				actions: mode === 'moonraker' ? [] : history
+				actions: mode === 'moonraker' ? [] : history,
+				calibration
 			});
 			const temperatureHistory = yield* SubscriptionRef.make<TemperatureSample[]>([]);
 			yield* Effect.gen(function* () {
@@ -86,7 +102,7 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 			);
 
 			const lock = yield* Semaphore.make(1);
-			const pending = new Map<string, ActionRequest>();
+			const pending = new Map<string, ActionRequest & { actor?: CalibrationActor }>();
 			let simulatedRunId: string | undefined;
 			const unwritten = new Map<string, { status: ActionStatus; message: string | null }>();
 			let lastRecovery = 0;
@@ -104,7 +120,7 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 				action: ActionRecord,
 				status: ActionStatus,
 				message: string | null,
-				request?: ActionRequest,
+				request?: ActionRequest & { actor?: CalibrationActor },
 				generation?: number
 			) =>
 				SubscriptionRef.modifyEffect(state, (current) =>
@@ -126,7 +142,17 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 										? yield* store.jobFile(request.command.fileId)
 										: undefined;
 								const result = yield* Effect.try({
-									try: () => applyCommand(current, request.command, file),
+									try: () => {
+										if (
+											request.command.type.startsWith('calibration') &&
+											request.actor?.authorized &&
+											!request.actor.authorized()
+										)
+											throw new CommandRejected({
+												message: 'The operator account is no longer authorized.'
+											});
+										return applyCommand(current, request.command, file, request.actor);
+									},
 									catch: (cause) =>
 										cause instanceof CommandRejected
 											? cause
@@ -144,7 +170,9 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 								}
 							}
 						}
-						yield* store.setStatus(action.id, status, message);
+						if (status === 'completed' && request?.command.type.startsWith('calibration'))
+							yield* store.commitCalibration(action.id, status, message, next.calibration);
+						else yield* store.setStatus(action.id, status, message);
 						pending.delete(action.id);
 						return [
 							undefined,
@@ -167,6 +195,11 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 					yield* update((snapshot) => ({
 						...snapshot,
 						storage: 'degraded',
+						calibration: interruptCalibration(
+							snapshot.calibration,
+							'Action storage failed. The result is unknown; check the saved default after storage recovers.'
+						),
+						motion: { ...snapshot.motion, calibration: false },
 						actions: snapshot.actions.map((item) =>
 							item.id === action.id ? { ...item, status: 'unknown', message: storageMessage } : item
 						)
@@ -180,7 +213,17 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 					yield* store.setStatus(id, record.status, record.message);
 					unwritten.delete(id);
 				}
-				yield* update((snapshot) => ({ ...snapshot, storage: 'healthy' }));
+				const persisted = yield* store.calibration;
+				yield* SubscriptionRef.modifyEffect(state, (snapshot) =>
+					Effect.gen(function* () {
+						const calibration = { ...snapshot.calibration, savedOffset: persisted.savedOffset };
+						yield* store.writeCalibration(calibration);
+						return [
+							undefined,
+							revised(snapshot, { ...snapshot, calibration, storage: 'healthy' })
+						] as const;
+					})
+				);
 			});
 			const work = Effect.gen(function* () {
 				const snapshot = yield* SubscriptionRef.get(state);
@@ -207,7 +250,9 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 					}));
 					yield* Effect.sleep('600 millis');
 					yield* lock.withPermits(1)(
-						settle(action, 'completed', null, request, snapshot.connectionGeneration)
+						settle(action, 'completed', null, request, snapshot.connectionGeneration).pipe(
+							Effect.uninterruptible
+						)
 					);
 				});
 				yield* execute.pipe(
@@ -260,10 +305,39 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 						: snapshot
 				).pipe(Effect.repeat(Schedule.spaced('1 second')), Effect.forkScoped);
 
+			if (mode === 'simulator')
+				yield* lock
+					.withPermits(1)(
+						SubscriptionRef.modifyEffect(state, (current) =>
+							Effect.gen(function* () {
+								if (
+									!calibrationActive(current.calibration) ||
+									current.calibration.session!.expiresAt > Date.now()
+								)
+									return [undefined, current] as const;
+								const calibration = interruptCalibration(
+									current.calibration,
+									'Session expired after 10 minutes without changes. Unsaved adjustments were discarded.'
+								);
+								const persisted = yield* store.writeCalibration(calibration).pipe(Effect.result);
+								return [
+									undefined,
+									revised(current, {
+										...current,
+										calibration,
+										motion: { ...current.motion, calibration: false },
+										storage: persisted._tag === 'Failure' ? 'degraded' : current.storage
+									})
+								] as const;
+							})
+						)
+					)
+					.pipe(Effect.repeat(Schedule.spaced('1 second')), Effect.forkScoped);
+
 			return {
 				state,
 				temperatureHistory,
-				submit: (request) =>
+				submit: (request, actor) =>
 					lock
 						.withPermits(1)(
 							Effect.gen(function* () {
@@ -282,7 +356,11 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 									);
 								const existing = yield* store.find(request.id);
 								if (existing) {
-									if (existing.payload !== JSON.stringify(request.command))
+									if (
+										existing.payload !== JSON.stringify(request.command) ||
+										(request.command.type.startsWith('calibration') &&
+											existing.actorId !== actor?.id)
+									)
 										return yield* Effect.fail(
 											new ActionRejected({
 												message: 'Action ID already belongs to a different command'
@@ -301,6 +379,44 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 											message: 'The active job changed. Review the current job before trying again.'
 										})
 									);
+								}
+								if (
+									calibrationActive(current.calibration) &&
+									!request.command.type.startsWith('calibration') &&
+									request.command.type !== 'cooldown'
+								)
+									return yield* Effect.fail(
+										new ActionRejected({
+											message: 'Calibration owns the printer controls. Finish or cancel it first.'
+										})
+									);
+								if (request.command.type.startsWith('calibration')) {
+									if (current.actions.some((item) => ['queued', 'sending'].includes(item.status)))
+										return yield* Effect.fail(
+											new ActionRejected({
+												message: 'Another action is pending. Wait for it to finish.'
+											})
+										);
+									if (actor?.authorized && !actor.authorized())
+										return yield* Effect.fail(
+											new ActionRejected({
+												message: 'The operator account is no longer authorized.'
+											})
+										);
+									if (request.command.type === 'calibrationBegin') {
+										const reason = calibrationReason(current);
+										if (reason) return yield* Effect.fail(new ActionRejected({ message: reason }));
+									}
+									yield* Effect.try({
+										try: () => applyCommand(current, request.command, undefined, actor),
+										catch: (cause) =>
+											new ActionRejected({
+												message:
+													cause instanceof CommandRejected
+														? cause.message
+														: 'Invalid calibration command'
+											})
+									});
 								}
 								if (request.command.type === 'start') {
 									const reason = startReason(current);
@@ -374,8 +490,12 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 									createdAt: Date.now(),
 									message: null
 								};
-								yield* store.insert(action, request.command);
-								pending.set(action.id, request);
+								yield* store.insert(
+									action,
+									request.command,
+									request.command.type.startsWith('calibration') ? actor?.id : undefined
+								);
+								pending.set(action.id, { ...request, actor });
 								yield* update((snapshot) => ({
 									...snapshot,
 									actions: [action, ...snapshot.actions].slice(0, 40)
@@ -393,15 +513,38 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 				setConnection: (connected) =>
 					mode === 'moonraker'
 						? Effect.void
-						: update((snapshot) => {
-								const connection = connected ? 'connected' : 'disconnected';
-								return {
-									...snapshot,
-									connection,
-									connectionGeneration:
-										snapshot.connectionGeneration + (connection === snapshot.connection ? 0 : 1)
-								};
-							}),
+						: lock.withPermits(1)(
+								SubscriptionRef.modifyEffect(state, (snapshot) =>
+									Effect.gen(function* () {
+										const connection = connected
+											? ('connected' as const)
+											: ('disconnected' as const);
+										const calibration = connected
+											? snapshot.calibration
+											: interruptCalibration(
+													snapshot.calibration,
+													'Printer connection lost. Unsaved adjustments were discarded; start again after reconnecting.'
+												);
+										const persisted =
+											calibration === snapshot.calibration
+												? undefined
+												: yield* store.writeCalibration(calibration).pipe(Effect.result);
+										return [
+											undefined,
+											revised(snapshot, {
+												...snapshot,
+												connection,
+												calibration,
+												motion: { ...snapshot.motion, calibration: calibrationActive(calibration) },
+												storage: persisted?._tag === 'Failure' ? 'degraded' : snapshot.storage,
+												connectionGeneration:
+													snapshot.connectionGeneration +
+													(connection === snapshot.connection ? 0 : 1)
+											})
+										] as const;
+									})
+								).pipe(Effect.uninterruptible)
+							),
 				ingest: (telemetry) =>
 					mode === 'simulator'
 						? Effect.void
@@ -420,10 +563,13 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 						? Effect.void
 						: lock.withPermits(1)(
 								update((snapshot) =>
-									pending.size > 0 || snapshot.storage === 'degraded'
+									pending.size > 0 ||
+									snapshot.storage === 'degraded' ||
+									calibrationActive(snapshot.calibration)
 										? snapshot
 										: {
 												...initialSnapshot(),
+												calibration: snapshot.calibration,
 												actions: snapshot.actions,
 												connectionGeneration: snapshot.connectionGeneration + 1
 											}

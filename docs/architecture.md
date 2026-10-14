@@ -129,7 +129,7 @@ and patched during prepare so its diagnostics also appear in checks.
 2. Real command policies, reconciliation, cancellation macro behavior, priority stop.
 3. Completed: go2rtc camera gateway and source-change propagation; broader media protocols follow.
 4. Completed: built-in authentication; external identity remains optional future work.
-5. Completed: Jobs file library and upload-only slicer gateway; calibration and explained configuration editing remain.
+5. Completed: Jobs file library and upload-only slicer gateway; guided simulator calibration is implemented; live calibration and explained configuration editing remain.
 6. Installability, configurable push notifications, and layout preferences.
 
 Built-in authentication protects browser-facing state, actions, and media. Compose
@@ -362,3 +362,48 @@ The headless Jobs production smoke verifies uploads, inspection, shared controls
 PNG serving, file-in-use guards, 320px layout, API-key revocation and native-slicer
 multipart behavior. Automated Vitest workers are capped at four to keep concurrent
 service/browser tests within predictable local and CI resource use.
+
+## Guided simulator calibration
+
+Calibration has a process-owned session in PrinterService, using the same bounded
+idempotent action queue. The authenticated RPC binds an actor ID/name/role and an
+authorization recheck to queued calibration actions; clients cannot select their
+actor. Session ID plus monotonically increasing version prevents stale
+adjustments/dialogs from mutating a new step or session. Idempotency is also bound
+to the submitting actor for calibration commands. Readiness/ownership are checked
+at admission and execution. Other motion, heater changes and print starts are
+blocked while active; cooldown remains available. Account owners can explicitly
+confirm cancellation of an abandoned operator session.
+
+Preparation requires a ready, idle, homed simulator and heater targets off, plus
+an acknowledged checklist. Fine adjustments change a bounded relative candidate
+(−2..+2 mm) in 0.005/0.01/0.05/0.1 mm steps. They do not move a nozzle or mutate an
+actual Klipper probe offset. First-layer examples are educational diagrams, not
+printed or detected results. Review leads to either temporary process application
+or a saved simulator default, with separate confirmation for saving/cancelling.
+
+Migration 003 adds server-bound calibration action actor IDs and a single simulator
+calibration checkpoint. Each calibration transition and completed action status
+commit in one SQLite transaction, followed by uninterruptible state publication.
+On ambiguous storage failure, action status becomes unknown, unsaved candidate
+state is interrupted, and only status/checkpoint recovery is retried. Recovery
+reads the durable saved default, including a write that committed before losing
+its acknowledgement; it never reruns the command. The UI instructs the operator
+to check the saved default after recovery.
+
+Ten minutes without a step/adjustment interrupts the process-owned session and
+releases controls. Browser unmounts and transport reconnects do not own this lease.
+Simulator printer disconnects interrupt the session. Backend restart interrupts
+unfinished sessions and discards temporary application, restoring only the saved
+simulator default. Draft checklist/increment choices persist through state updates;
+first-layer selection resets on a new session ID. Dialogs capture the reviewed
+session/version instead of following incoming values.
+
+No physical probing, G-code emission, test print, firmware save or printer config
+write is implemented. All live commands remain rejected. Probe calibration,
+print-time first-layer tuning, thermal/contact validation and supported printer
+capabilities require coordinated owner testing before implementation/enabling.
+Headless calibration smoke uses synthetic accounts, two owner tabs, operator and
+viewer sessions to verify ownership, stale saves, locked motion, shared state,
+temporary/saved outcomes and 320px layouts. Domain/service tests cover expiry,
+revocation, restart, before/after-commit ambiguity and no replay.
