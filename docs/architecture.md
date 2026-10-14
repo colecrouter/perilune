@@ -2,7 +2,7 @@
 
 ## Process-owned services
 
-SvelteKit 3 and Vite+ serve a shared dashboard in simulator or read-only live mode. A process-scoped Effect
+SvelteKit 3 and Vite+ serve a shared dashboard in simulator or live mode (read-only by default). A process-scoped Effect
 ManagedRuntime owns a single PrinterService, its worker, temperature ticker, and
 SQLite-backed ActionStore. Browser connections never own these resources.
 
@@ -397,8 +397,7 @@ simulator default. Draft checklist/increment choices persist through state updat
 first-layer selection resets on a new session ID. Dialogs capture the reviewed
 session/version instead of following incoming values.
 
-No physical probing, G-code emission, test print, firmware save or printer config
-write is implemented. All live commands remain rejected. Probe calibration,
+This Z-offset workshop does not emit physical G-code, print a test, or write printer configuration. Live Z-offset commands remain rejected. Probe calibration,
 print-time first-layer tuning, thermal/contact validation and supported printer
 capabilities require coordinated owner testing before implementation/enabling.
 Headless calibration smoke uses synthetic accounts, two owner tabs, operator and
@@ -497,9 +496,7 @@ Domain/service/browser tests cover readiness/ownership/expiry, bounded profiles,
 run identity, restart semantics, cancellation and failed storage. A seventh headless
 production smoke verifies preparation, progress while navigating away, shared
 observers/viewers, true candidate display despite earlier profile selection,
-saving and owner cancellation, with 320px preparation. Integration tests remain
-synthetic; live heating, homing/probing sequences and Klipper SAVE_CONFIG require
-coordinated owner testing before enabling.
+saving and owner cancellation, with 320px preparation. These simulator tests are separate from the live workflow below.
 
 ## Live cold bed mesh workflow
 
@@ -528,7 +525,7 @@ commands fence socket/Klippy generations, and fresh query results replay newer
 subscription deltas. Failed/missing acknowledgements never trigger command replay.
 
 Progress estimates completed grid points from probe-response coordinates and the
-configured readings per point, ignoring homing responses. Completed acknowledgement
+configured readings per point, ignoring homing responses. Both legacy nozzle-coordinate and current Klipper probe-coordinate response formats are normalized. Completed acknowledgement
 plus a fresh unique-profile mesh with matching bounds/dimensions is required for
 review. Live probing immediately activates the measured mesh, unlike the simulator.
 A unique internal profile prevents overwriting default. Temporary keep removes its
@@ -553,3 +550,11 @@ Expired reviews retain the reservation for explicit restoration rather than issu
 physical commands automatically. Tests cover actor ownership, concurrent observers,
 late acknowledgements/query responses, generation changes, profile races, SQL faults,
 restart/no replay, and headless live/simulator preparation semantics.
+
+An eighth headless production smoke uses a stateful Moonraker fixture to verify
+live remote-command wiring, shared progress through navigation, immediate mesh
+activation, named profile saving/restart, restoration, one shared socket, config
+privacy, and mobile preparation. Authorized hardware testing verified cold probing,
+a new saved profile after restart, and restoration of the original default mesh.
+A real transport interruption preserved an uncertain reservation without replay.
+The subsequent explicit recovery/fresh-run test passed with heater targets off.

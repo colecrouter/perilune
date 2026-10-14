@@ -133,8 +133,8 @@ Live mode discovers available objects and displays job state and temperatures.
 Missing readings appear as unknown. Perilune and Moonraker reconnect independently;
 last telemetry and editable drafts remain visible. Klipper startup, shutdown, and
 unavailable states are separate from the Moonraker connection. Controls are disabled
-and the backend rejects all actions in live mode, including simulator commands.
-No physical commands are sent. Remove the URL to return to simulator mode.
+for generic actions, including simulator commands. The explicit live mesh option
+above enables only its reviewed physical workflow. Remove the URL to return to simulator mode.
 
 The backend connects directly to Moonraker; existing browser-facing Cloudflare
 Access protection does not authenticate this connection. Perilune authenticates browser access independently of Moonraker.
