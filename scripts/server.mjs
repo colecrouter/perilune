@@ -18,6 +18,8 @@ if (
 ) {
 	throw new Error('PERILUNE_ORIGIN must be an HTTP(S) origin without a path or credentials');
 }
+// Multipart uploads are bounded again in the authenticated job gateway.
+process.env.BODY_SIZE_LIMIT ??= String(20 * 1024 * 1024 + 64 * 1024);
 const { handler } = await import('../build/handler.js');
 const server = createServer((request, response) => {
 	let origin;
@@ -27,6 +29,16 @@ const server = createServer((request, response) => {
 		response.writeHead(400);
 		response.end('Invalid host');
 		return;
+	}
+	// Native slicers omit Origin. Only this explicit API-key endpoint may enter
+	// Kit's multipart handler without it; the route still validates the key.
+	if (
+		request.url?.split('?')[0] === '/server/files/upload' &&
+		!request.headers.origin &&
+		typeof request.headers['x-api-key'] === 'string' &&
+		/^[A-Za-z0-9_-]{43}$/.test(request.headers['x-api-key'])
+	) {
+		request.headers.origin = origin.origin;
 	}
 	request.headers['x-perilune-protocol'] = origin.protocol.slice(0, -1);
 	request.headers['x-perilune-host'] = origin.host;

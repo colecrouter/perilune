@@ -15,6 +15,7 @@ import {
 	type ActionStatus,
 	type PrinterSnapshot
 } from '#lib/domain/printer.js';
+import { startReason } from '#lib/domain/jobs.js';
 import { motionReason } from '#lib/domain/motion.js';
 import { ActionStore } from './action-store.js';
 
@@ -86,6 +87,7 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 
 			const lock = yield* Semaphore.make(1);
 			const pending = new Map<string, ActionRequest>();
+			let simulatedRunId: string | undefined;
 			const unwritten = new Map<string, { status: ActionStatus; message: string | null }>();
 			let lastRecovery = 0;
 			const revised = (previous: PrinterSnapshot, next: PrinterSnapshot) => ({
@@ -119,8 +121,12 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 								status = 'failed';
 								message = expiryMessage;
 							} else {
+								const file =
+									request.command.type === 'start'
+										? yield* store.jobFile(request.command.fileId)
+										: undefined;
 								const result = yield* Effect.try({
-									try: () => applyCommand(current, request.command),
+									try: () => applyCommand(current, request.command, file),
 									catch: (cause) =>
 										cause instanceof CommandRejected
 											? cause
@@ -129,7 +135,13 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 								if (result._tag === 'Failure') {
 									status = 'failed';
 									message = result.failure.message;
-								} else next = result.success;
+								} else {
+									next = result.success;
+									if (request.command.type === 'start') {
+										next.job.runId = request.id;
+										simulatedRunId = request.id;
+									}
+								}
 							}
 						}
 						yield* store.setStatus(action.id, status, message);
@@ -214,6 +226,23 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 					snapshot.connection === 'connected'
 						? {
 								...snapshot,
+								job:
+									snapshot.job.runId === simulatedRunId &&
+									simulatedRunId !== undefined &&
+									snapshot.job.state === 'printing'
+										? {
+												...snapshot.job,
+												progress: Math.min(100, (snapshot.job.progress ?? 0) + 1),
+												state: (snapshot.job.progress ?? 0) >= 99 ? 'complete' : 'printing',
+												layer: snapshot.job.totalLayers
+													? Math.floor(
+															(snapshot.job.totalLayers *
+																Math.min(100, (snapshot.job.progress ?? 0) + 1)) /
+																100
+														)
+													: null
+											}
+										: snapshot.job,
 								heaters: {
 									nozzle: {
 										...snapshot.heaters.nozzle,
@@ -260,6 +289,27 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 											})
 										);
 									return existing.action;
+								}
+								if (
+									'expectedJob' in request.command &&
+									request.command.expectedJob &&
+									(request.command.expectedJob.filename !== current.job.filename ||
+										request.command.expectedJob.runId !== (current.job.runId ?? null))
+								) {
+									return yield* Effect.fail(
+										new ActionRejected({
+											message: 'The active job changed. Review the current job before trying again.'
+										})
+									);
+								}
+								if (request.command.type === 'start') {
+									const reason = startReason(current);
+									if (reason) return yield* Effect.fail(new ActionRejected({ message: reason }));
+									const file = yield* store.jobFile(request.command.fileId);
+									if (!file)
+										return yield* Effect.fail(
+											new ActionRejected({ message: 'The selected file is no longer available.' })
+										);
 								}
 								if (request.command.type === 'temperature' || request.command.type === 'cooldown') {
 									const reason = temperatureReason(
@@ -316,7 +366,10 @@ export const makePrinterService = (mode: PrinterSnapshot['mode'] = 'simulator') 
 									);
 								const action: ActionRecord = {
 									id: request.id,
-									label: actionLabel(request.command),
+									label:
+										request.command.type === 'start'
+											? `Start ${(yield* store.jobFile(request.command.fileId))!.name}`
+											: actionLabel(request.command),
 									status: 'queued',
 									createdAt: Date.now(),
 									message: null

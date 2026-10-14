@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
+	import { isHttpError } from '@sveltejs/kit';
 	let {
 		open = $bindable(false),
 		bedTarget,
@@ -22,7 +23,11 @@
 			await onConfirm(coolBed, coolNozzle);
 			open = false;
 		} catch (cause) {
-			failure = cause instanceof Error ? cause.message : 'Could not stop the print';
+			failure = isHttpError(cause)
+				? cause.body.message
+				: cause instanceof Error
+					? cause.message
+					: 'Could not stop the print';
 		} finally {
 			submitting = false;
 		}

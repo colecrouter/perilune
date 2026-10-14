@@ -6,13 +6,18 @@ import {
 	simulatedMotion,
 	type MotionSnapshot
 } from './motion.js';
+import { startReason, type JobFile } from './jobs.js';
 import { Schema } from 'effect';
 import { CommandRejected } from './errors.js';
 export { CommandRejected } from './errors.js';
 
 const coordinate = Schema.Number.check(Schema.isFinite());
 const position = Schema.Struct({ x: coordinate, y: coordinate, z: coordinate });
+const expectedJob = Schema.optional(
+	Schema.Struct({ filename: Schema.String, runId: Schema.NullOr(Schema.String) })
+);
 export const PrinterCommand = Schema.Union([
+	Schema.Struct({ type: Schema.Literal('start'), fileId: Schema.String.check(Schema.isUUID()) }),
 	Schema.Struct({
 		type: Schema.Literal('move'),
 		target: Schema.Struct({
@@ -30,10 +35,11 @@ export const PrinterCommand = Schema.Union([
 		confirmed: Schema.Boolean
 	}),
 	Schema.Struct({ type: Schema.Literal('cooldown') }),
-	Schema.Struct({ type: Schema.Literal('pause') }),
-	Schema.Struct({ type: Schema.Literal('resume') }),
+	Schema.Struct({ type: Schema.Literal('pause'), expectedJob }),
+	Schema.Struct({ type: Schema.Literal('resume'), expectedJob }),
 	Schema.Struct({
 		type: Schema.Literal('cancel'),
+		expectedJob,
 		coolBed: Schema.Boolean,
 		coolNozzle: Schema.Boolean
 	}),
@@ -69,6 +75,7 @@ export interface PrinterSnapshot {
 	storage: 'healthy' | 'degraded';
 	job: {
 		filename: string;
+		runId?: string;
 		state: 'unknown' | 'standby' | 'printing' | 'paused' | 'complete' | 'cancelled' | 'error';
 		progress: number | null;
 		layer: number | null;
@@ -95,6 +102,7 @@ export const initialSnapshot = (): PrinterSnapshot => ({
 	storage: 'healthy',
 	job: {
 		filename: 'orbital-bracket.gcode',
+		runId: crypto.randomUUID(),
 		state: 'printing',
 		progress: 42,
 		layer: 84,
@@ -108,6 +116,8 @@ export const initialSnapshot = (): PrinterSnapshot => ({
 });
 export function actionLabel(command: PrinterCommand): string {
 	switch (command.type) {
+		case 'start':
+			return 'Start print';
 		case 'move':
 			return `Move ${Object.entries(command.target)
 				.map(([axis, value]) => `${axis.toUpperCase()} ${value} mm`)
@@ -129,9 +139,38 @@ export function actionLabel(command: PrinterCommand): string {
 	}
 }
 /** Validate against the current state at execution time, not the browser's stale view. */
-export function applyCommand(state: PrinterSnapshot, command: PrinterCommand): PrinterSnapshot {
+export function applyCommand(
+	state: PrinterSnapshot,
+	command: PrinterCommand,
+	file?: JobFile
+): PrinterSnapshot {
 	const next = structuredClone(state);
-	if (command.type === 'move') {
+	if (
+		'expectedJob' in command &&
+		command.expectedJob &&
+		(command.expectedJob.filename !== state.job.filename ||
+			command.expectedJob.runId !== (state.job.runId ?? null))
+	) {
+		throw new CommandRejected({
+			message: 'The active job changed. Review the current job before trying again.'
+		});
+	}
+	if (command.type === 'start') {
+		const reason = startReason(state, false);
+		if (reason) throw new CommandRejected({ message: reason });
+		if (!file || file.id !== command.fileId || file.source !== 'local')
+			throw new CommandRejected({ message: 'The selected file is no longer available.' });
+		next.job = {
+			filename: file.name,
+			state: 'printing',
+			progress: 0,
+			layer: 0,
+			totalLayers: file.metadata?.layers ?? null,
+			remainingMinutes: file.metadata?.estimatedSeconds
+				? Math.ceil(file.metadata.estimatedSeconds / 60)
+				: null
+		};
+	} else if (command.type === 'move') {
 		next.motion.position = checkedMove(
 			state,
 			command.target,

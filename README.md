@@ -8,6 +8,13 @@ shared printer state, action tracking, and authenticated camera access behind a
 self-hosted backend. The browser presents clear progress and reconnecting states
 without throwing away inputs.
 
+## Jobs
+
+Browse and inspect G-code files, upload with visible progress, and start shared
+simulated prints with explicit confirmation. Slicer upload-only keys and persistent
+print observations are available under Jobs. Live files are read-only.
+See [Jobs and OrcaSlicer setup](docs/jobs.md).
+
 ## Run locally
 
 Requires Node.js 24.13+ and pnpm 12.11.2. Vite+ is installed locally.

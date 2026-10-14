@@ -44,6 +44,7 @@
 
 	let serif = $state(true);
 	let cancelOpen = $state(false);
+	let stopJob = $state<{ filename: string; runId: string | null } | undefined>();
 	let submitting = $state(false);
 	let errorMessage = $state('');
 	const pending = $derived(
@@ -69,6 +70,14 @@
 	);
 	const busy = $derived(submitting || pending || snapshot.storage === 'degraded');
 	async function send(command: PrinterCommand) {
+		if (command.type === 'pause' || command.type === 'resume' || command.type === 'cancel')
+			command = {
+				...command,
+				expectedJob: command.expectedJob ?? {
+					filename: snapshot.job.filename,
+					runId: snapshot.job.runId ?? null
+				}
+			};
 		submitting = true;
 		errorMessage = '';
 		try {
@@ -237,7 +246,10 @@
 								!connected ||
 								!transportConnected ||
 								(snapshot.job.state !== 'printing' && snapshot.job.state !== 'paused')}
-							onclick={() => (cancelOpen = true)}><Icon name="stop" size={16} />Stop print</button
+							onclick={() => {
+								stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
+								cancelOpen = true;
+							}}><Icon name="stop" size={16} />Stop print</button
 						>
 					</div>
 				</section>
@@ -374,6 +386,7 @@
 		bind:open={cancelOpen}
 		bedTarget={snapshot.heaters.bed.target}
 		nozzleTarget={snapshot.heaters.nozzle.target}
-		onConfirm={(coolBed, coolNozzle) => send({ type: 'cancel', coolBed, coolNozzle })}
+		onConfirm={(coolBed, coolNozzle) =>
+			send({ type: 'cancel', coolBed, coolNozzle, expectedJob: stopJob })}
 	/>
 </AppShell>

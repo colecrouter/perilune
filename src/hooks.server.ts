@@ -41,7 +41,15 @@ export const handle: typeof integration.handle = async ({ event, resolve }) => {
 	if (event.url.pathname.startsWith('/api/account/')) {
 		if (event.request.method !== 'GET') sameOrigin(event.request);
 	} else if (
-		!['/login', '/setup', '/register', '/health'].includes(event.url.pathname) &&
+		![
+			'/login',
+			'/setup',
+			'/register',
+			'/health',
+			'/server/info',
+			'/server/files/upload',
+			'/server/files/roots'
+		].includes(event.url.pathname) &&
 		!event.locals.identity
 	) {
 		if (event.url.pathname.startsWith('/api/') || event.request.method !== 'GET')
