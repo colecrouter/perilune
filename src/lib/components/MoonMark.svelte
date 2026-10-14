@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { asset } from '$app/paths';
 	import { moonPhasePath } from '#lib/domain/moon.js';
-	let { dot = false, class: className = '' }: { dot?: boolean; class?: string } = $props();
+	let { dot = true, class: className = '' }: { dot?: boolean; class?: string } = $props();
 	const id = $props.id();
 </script>
 

@@ -1,8 +1,7 @@
-<p align="center"><img src="static/brand/logo.png" width="96" alt="Perilune crescent moon" /></p>
+<p align="center"><img src="static/brand/readme-logo.png" width="192" height="192" alt="Perilune: a textured crescent moon with a lavender satellite" /></p>
 
-# Perilune
-
-A reliable, thoughtfully designed control interface for Klipper printers.
+<h1 align="center">Perilune</h1>
+<p align="center"><strong>Your printer, in orbit.</strong><br />A reliable, thoughtfully designed control interface for Klipper printers.</p>
 
 Perilune is in early development. It places persistent Moonraker connectivity,
 shared printer state, action tracking, and authenticated camera access behind a
