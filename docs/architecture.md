@@ -237,3 +237,38 @@ geometry or a collision-free path. Kinematic profiles, fixtures, physical comman
 acknowledgements, and coordinated owner testing are required before live operation.
 Temperature history/LayerChart, extrusion, fan controls, and guided calibration
 remain subsequent increments.
+
+## Temperature monitoring and controls
+
+Overview uses LayerChart for one selected sensor at a time: solid actual temperature
+and dashed, stepped target, with 5-minute, 15-minute, and 1-hour windows. Current
+values remain visible alongside keyboard/touch sample inspection. Null readings
+split paths rather than joining across unavailable intervals; dark/light comparison
+colours preserve contrast. Heater labels are inferred from actual/target difference
+(holding within 2°C; cooling after target zero while above 35°C), not PID telemetry.
+
+A process-scoped Effect worker samples every five seconds independently of browser
+subscriptions. Connection/readiness transitions also record immediate samples so
+short disconnects leave gaps. The in-memory buffer retains up to an hour and 721
+samples, shared across users and page reloads; backend restart resets history.
+A finite authenticated query refreshes the UI every five seconds, with one request
+in flight and timer cleanup on unmount. Readiness gaps never reuse stale readings.
+
+The dashboard combines printer and camera into one authenticated live query, with
+complete recoverable snapshots because Kit can coalesce live-query values. History
+is fetched separately rather than resending its whole buffer on every printer tick.
+This avoids exhausting HTTP/1's browser connection pool with multiple tabs, media,
+and live queries. Session revocation closes the combined query and camera body.
+
+Moonraker discovery supports extra extruders, generic heaters, temperature fans,
+and temperature sensors, capped at 30 extras while preserving essential subscribed
+objects. Additional sensors/heaters can be charted and inspected read-only. Missing
+primary capabilities are hidden after discovery; loading fields retain drafts.
+
+Simulator temperature changes and atomic nozzle/bed cooldown use the shared action
+queue, idempotency, and terminal outcomes. Admission and execution check readiness,
+telemetry, storage, and configured simulator limits. Drafts remain until matching
+target telemetry confirms a submitted change, including after failed/unknown actions.
+Live heater commands and hardware-dependent limits remain a later coordinated
+command-testing milestone. History is not a persistent print archive or notification
+service; durable job records and alerts remain subsequent work.

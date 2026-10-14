@@ -37,6 +37,7 @@ async function simulator(
 	const address = server.address();
 	if (typeof address === 'string' || !address) throw new Error('Missing simulator address');
 	const methods: string[] = [];
+	let requested: Record<string, string[]> = {};
 	const clients: WebSocket[] = [];
 	let klippy = options.klippy ?? 'ready';
 	let infoCount = 0;
@@ -86,6 +87,7 @@ async function simulator(
 					result = { objects: options.objects ?? Object.keys(initial) };
 					break;
 				case 'printer.objects.subscribe':
+					requested = message.params?.objects ?? {};
 					if (options.shutdownDuringSubscribe) {
 						klippy = 'shutdown';
 						socket.send(JSON.stringify({ jsonrpc: '2.0', method: 'notify_klippy_shutdown' }));
@@ -134,6 +136,7 @@ async function simulator(
 	const service = await runtime.runPromise(MoonrakerService);
 	return {
 		methods,
+		requested: () => requested,
 		clients,
 		runtime,
 		snapshot: () => runtime.runPromise(SubscriptionRef.get(service.state)),
@@ -322,4 +325,41 @@ describe('motion telemetry normalization', () => {
 		expect(snapshot.motion.limits).toEqual({ x: null, y: null, z: null });
 		expect(snapshot.motion.busy).toBeNull();
 	});
+});
+
+it('prioritizes essential objects and bounds additional temperature subscriptions', async () => {
+	const fixture = await simulator({
+		objects: [
+			...Array.from({ length: 80 }, (_, i) => `temperature_sensor sensor_${i}`),
+			'toolhead',
+			'print_stats',
+			'extruder',
+			'heater_bed'
+		]
+	});
+	await expect.poll(() => fixture.methods.includes('printer.objects.subscribe')).toBe(true);
+	const requested = fixture.requested();
+	expect(requested.toolhead).toContain('position');
+	expect(requested.print_stats).toContain('state');
+	expect(requested.extruder).toContain('target');
+	expect(Object.keys(requested).filter((id) => id.startsWith('temperature_sensor '))).toHaveLength(
+		30
+	);
+});
+it('normalizes extra sensor and heater readings without inventing missing values', () => {
+	const previous = emptyMoonrakerSnapshot();
+	previous.availableObjects = ['temperature_sensor host', 'heater_generic chamber', 'extruder1'];
+	const result = normalizeMoonrakerStatus(
+		{
+			'temperature_sensor host': { temperature: 42 },
+			'heater_generic chamber': { temperature: NaN, target: 60 },
+			extruder1: { temperature: 201, target: 210 }
+		},
+		previous
+	);
+	expect(result.additionalTemperatures).toEqual([
+		{ id: 'temperature_sensor host', label: 'host', current: 42, target: null, heater: false },
+		{ id: 'heater_generic chamber', label: 'chamber', current: null, target: 60, heater: true },
+		{ id: 'extruder1', label: 'extruder1', current: 201, target: 210, heater: true }
+	]);
 });

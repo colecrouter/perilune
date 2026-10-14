@@ -991,3 +991,10 @@ progress::-moz-progress-bar {
 	width: min(85%, 400px);
 	height: 60%;
 }
+
+.temperature-panel .section-header {
+	flex-wrap: wrap;
+}
+.temperature-panel .section-header .button {
+	font-size: 12px;
+}

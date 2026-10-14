@@ -1,25 +1,47 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { Switch } from 'bits-ui';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import Icon from '#lib/components/Icon.svelte';
+	import TemperatureHistory from '#lib/components/TemperatureHistory.svelte';
+	import { temperatureSensors, temperatureReason } from '#lib/domain/temperature.js';
 	import HeaterControl from '#lib/components/HeaterControl.svelte';
 	import CancelDialog from '#lib/components/CancelDialog.svelte';
 	import CameraPanel from '#lib/components/CameraPanel.svelte';
 	import type { PrinterCommand } from '#lib/domain/printer.js';
 	import {
-		getPrinter,
-		getCamera,
+		getDashboard,
+		getTemperatureHistory,
 		submitAction,
 		setSimulatorConnection,
 		resetSimulator
 	} from './printer.remote.js';
 
 	let { data } = $props();
-	const printer = getPrinter();
-	const camera = getCamera();
-	const [initial, initialCamera] = await Promise.all([printer, camera]);
-	const cameraSnapshot = $derived(camera.current ?? initialCamera);
-	const snapshot = $derived(printer.current ?? initial);
+	const dashboard = getDashboard();
+	const temperatureHistory = getTemperatureHistory();
+	const [initial, initialHistory] = await Promise.all([dashboard, temperatureHistory]);
+	const snapshot = $derived(dashboard.current?.printer ?? initial.printer);
+	const cameraSnapshot = $derived(dashboard.current?.camera ?? initial.camera);
+	const samples = $derived(temperatureHistory.current ?? initialHistory);
+	let historyUnavailable = $state(false);
+	onMount(() => {
+		let refreshing = false;
+		const timer = setInterval(async () => {
+			if (refreshing || !dashboard.connected) return;
+			refreshing = true;
+			try {
+				await temperatureHistory.refresh();
+				historyUnavailable = false;
+			} catch {
+				historyUnavailable = true;
+			} finally {
+				refreshing = false;
+			}
+		}, 5000);
+		return () => clearInterval(timer);
+	});
+
 	let serif = $state(true);
 	let cancelOpen = $state(false);
 	let submitting = $state(false);
@@ -33,7 +55,18 @@
 		snapshot.connection.charAt(0).toUpperCase() + snapshot.connection.slice(1)
 	);
 	const connected = $derived(snapshot.connection === 'connected');
-	const transportConnected = $derived(printer.connected);
+	const transportConnected = $derived(dashboard.connected);
+	const sensors = $derived(temperatureSensors(snapshot));
+	const thermalReady = $derived(
+		snapshot.connection === 'connected' && snapshot.klippy === 'ready' && transportConnected
+	);
+	const thermalReason = $derived(
+		!transportConnected
+			? 'Reconnecting to Perilune. History and drafts are retained.'
+			: data.user?.role === 'viewer'
+				? 'An operator account is required to change temperatures.'
+				: temperatureReason(snapshot)
+	);
 	const busy = $derived(submitting || pending || snapshot.storage === 'degraded');
 	async function send(command: PrinterCommand) {
 		submitting = true;
@@ -132,7 +165,7 @@
 				><span>Last known values remain visible. Your inputs are preserved.</span
 				>{#if !transportConnected}<button
 						class="button secondary"
-						onclick={() => printer.reconnect()}>Retry connection</button
+						onclick={() => dashboard.reconnect()}>Retry connection</button
 					>{/if}
 			</div>{/if}
 		{#if snapshot.storage === 'degraded'}<div class="reconnect-banner" role="status">
@@ -211,21 +244,56 @@
 			</div>
 			<div class="secondary-column">
 				<section class="panel temperature-panel">
-					<div class="section-header"><h2>Temperature</h2></div>
-					<HeaterControl
-						heater="nozzle"
-						current={snapshot.heaters.nozzle.current}
-						target={snapshot.heaters.nozzle.target}
-						{readOnly}
-						pending={busy || !transportConnected}
-						onSet={(target) => send({ type: 'temperature', heater: 'nozzle', target })}
-					/><HeaterControl
-						heater="bed"
-						current={snapshot.heaters.bed.current}
-						target={snapshot.heaters.bed.target}
-						{readOnly}
-						pending={busy || !transportConnected}
-						onSet={(target) => send({ type: 'temperature', heater: 'bed', target })}
+					<div class="section-header">
+						<h2>Temperature</h2>
+						<button
+							class="button secondary"
+							disabled={busy || readOnly || !!thermalReason}
+							onclick={() => control(() => send({ type: 'cooldown' }))}
+							>Cool down nozzle & bed</button
+						>
+					</div>
+					{#if thermalReason}<p class="muted">{thermalReason}</p>{/if}
+					{#if sensors.some((sensor) => sensor.id === 'extruder')}<HeaterControl
+							heater="nozzle"
+							current={snapshot.heaters.nozzle.current}
+							target={snapshot.heaters.nozzle.target}
+							{readOnly}
+							available={thermalReady &&
+								snapshot.heaters.nozzle.current !== null &&
+								snapshot.heaters.nozzle.target !== null}
+							pending={busy || !transportConnected || !!thermalReason}
+							onSet={(target) => send({ type: 'temperature', heater: 'nozzle', target })}
+						/>{/if}{#if sensors.some((sensor) => sensor.id === 'heater_bed')}<HeaterControl
+							heater="bed"
+							current={snapshot.heaters.bed.current}
+							target={snapshot.heaters.bed.target}
+							{readOnly}
+							available={thermalReady &&
+								snapshot.heaters.bed.current !== null &&
+								snapshot.heaters.bed.target !== null}
+							pending={busy || !transportConnected || !!thermalReason}
+							onSet={(target) => send({ type: 'temperature', heater: 'bed', target })}
+						/>{/if}
+					{#if snapshot.additionalTemperatures.length}<details>
+							<summary>Additional sensors ({snapshot.additionalTemperatures.length})</summary>
+							<dl class="connection-list">
+								{#each snapshot.additionalTemperatures as sensor}<div>
+										<dt>{sensor.label}</dt>
+										<dd>
+											{sensor.current?.toFixed(1) ?? '—'}°C{sensor.heater
+												? ` · target ${sensor.target ?? '—'}°C`
+												: ''}
+										</dd>
+									</div>{/each}
+							</dl>
+							<p class="muted">Additional heaters are monitored read-only.</p>
+						</details>{/if}
+					<TemperatureHistory
+						{samples}
+						{sensors}
+						connected={thermalReady}
+						unavailable={historyUnavailable}
 					/>
 				</section>
 				<section class="panel">

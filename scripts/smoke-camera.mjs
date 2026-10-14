@@ -277,9 +277,14 @@ try {
 	const reader = continuous.body.getReader();
 	await reader.read();
 	const liveURLs = [
-		...new Set(browserRequests.filter((url) => new URL(url).pathname.includes('/_app/remote/')))
+		...new Set(
+			browserRequests.filter(
+				(url) =>
+					new URL(url).pathname.includes('/_app/remote/') && !url.includes('getTemperatureHistory')
+			)
+		)
 	];
-	assert.equal(liveURLs.length, 2, 'Printer and camera each have a live query');
+	assert.equal(liveURLs.length, 1, 'Printer and camera share one dashboard live query');
 	const liveReaders = await Promise.all(
 		liveURLs.map(async (url) => {
 			const response = await fetch(url, { headers: { Cookie: cookie } });
@@ -306,7 +311,7 @@ try {
 	);
 	assert.deepEqual(
 		await Promise.race([drain, new Promise((resolve) => setTimeout(() => resolve([]), 3000))]),
-		[true, true, true],
+		[true, true],
 		'Logout closes already-returned camera and idle live query bodies'
 	);
 	assert.equal((await context.request.get(`${base}/api/camera/snapshot`)).status(), 401);

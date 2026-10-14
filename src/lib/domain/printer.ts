@@ -1,3 +1,4 @@
+import { temperatureReason, type TemperatureSensor } from './temperature.js';
 import {
 	checkedMove,
 	motionReason,
@@ -28,6 +29,7 @@ export const PrinterCommand = Schema.Union([
 		axes: Schema.Literals(['xy', 'z', 'all']),
 		confirmed: Schema.Boolean
 	}),
+	Schema.Struct({ type: Schema.Literal('cooldown') }),
 	Schema.Struct({ type: Schema.Literal('pause') }),
 	Schema.Struct({ type: Schema.Literal('resume') }),
 	Schema.Struct({
@@ -77,6 +79,7 @@ export interface PrinterSnapshot {
 		nozzle: { current: number | null; target: number | null };
 		bed: { current: number | null; target: number | null };
 	};
+	additionalTemperatures: TemperatureSensor[];
 	motion: MotionSnapshot;
 	actions: ActionRecord[];
 }
@@ -99,6 +102,7 @@ export const initialSnapshot = (): PrinterSnapshot => ({
 		remainingMinutes: 38
 	},
 	heaters: { nozzle: { current: 210, target: 210 }, bed: { current: 60, target: 60 } },
+	additionalTemperatures: [],
 	motion: simulatedMotion(),
 	actions: []
 });
@@ -118,6 +122,8 @@ export function actionLabel(command: PrinterCommand): string {
 			return 'Resume print';
 		case 'cancel':
 			return 'Stop print';
+		case 'cooldown':
+			return 'Cool down nozzle and bed';
 		case 'temperature':
 			return `Set ${command.heater} to ${command.target}°C`;
 	}
@@ -154,9 +160,16 @@ export function applyCommand(state: PrinterSnapshot, command: PrinterCommand): P
 			command.axes === 'all' ? ['x', 'y', 'z'] : command.axes === 'xy' ? ['x', 'y'] : ['z'];
 		next.motion.homed = next.motion.homed.filter((axis) => !selected.includes(axis));
 		for (const axis of selected as ('x' | 'y' | 'z')[]) next.motion.position[axis] = null;
+	} else if (command.type === 'cooldown') {
+		const reason = temperatureReason(state, undefined, false);
+		if (reason) throw new CommandRejected({ message: reason });
+		next.heaters.nozzle.target = 0;
+		next.heaters.bed.target = 0;
 	} else if (command.type === 'temperature') {
+		const reason = temperatureReason(state, command.heater, false);
+		if (reason) throw new CommandRejected({ message: reason });
 		const maximum = command.heater === 'bed' ? 120 : 300;
-		if (command.target < 0 || command.target > maximum)
+		if (!Number.isInteger(command.target) || command.target < 0 || command.target > maximum)
 			throw new CommandRejected({ message: `Target must be between 0 and ${maximum}°C` });
 		next.heaters[command.heater].target = command.target;
 	} else if (command.type === 'pause') {
@@ -181,6 +194,7 @@ export function applyCommand(state: PrinterSnapshot, command: PrinterCommand): P
 export const initialLiveSnapshot = (): PrinterSnapshot => ({
 	...initialSnapshot(),
 	mode: 'moonraker',
+	additionalTemperatures: [],
 	motion: emptyMotion(),
 	connection: 'connecting',
 	klippy: 'unknown',

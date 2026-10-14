@@ -1,3 +1,4 @@
+import { temperatureFields, type TemperatureSensor } from '#lib/domain/temperature.js';
 import { axes, emptyMotion, type MotionSnapshot } from '#lib/domain/motion.js';
 import { Context, Effect, Layer, SubscriptionRef } from 'effect';
 
@@ -21,6 +22,7 @@ export interface MoonrakerSnapshot {
 	updatedAt: number | null;
 	availableObjects: string[];
 	webcams: unknown[];
+	additionalTemperatures: TemperatureSensor[];
 	motion: MotionSnapshot;
 	job: {
 		filename: string;
@@ -64,6 +66,7 @@ export const emptyMoonrakerSnapshot = (): MoonrakerSnapshot => ({
 	updatedAt: null,
 	availableObjects: [],
 	webcams: [],
+	additionalTemperatures: [],
 	motion: emptyMotion(),
 	job: {
 		filename: '',
@@ -92,6 +95,18 @@ export function normalizeMoonrakerStatus(
 		...previous,
 		updatedAt: Date.now(),
 		motion: normalizeMotion(status),
+		additionalTemperatures: previous.availableObjects
+			.filter((name) => name !== 'extruder' && name !== 'heater_bed' && temperatureFields(name))
+			.slice(0, 30)
+			.map((name) => ({
+				id: name,
+				label: name
+					.replace(/^(temperature_sensor|temperature_fan|heater_generic) /, '')
+					.replaceAll('_', ' '),
+				current: number(status[name]?.temperature),
+				target: number(status[name]?.target),
+				heater: temperatureFields(name)?.includes('target') ?? false
+			})),
 		job: {
 			filename: typeof print.filename === 'string' ? print.filename : '',
 			state,
@@ -307,9 +322,14 @@ export const MoonrakerServiceLive = Layer.effect(
 							const objects = Array.isArray(list.objects)
 								? list.objects.filter((name): name is string => typeof name === 'string')
 								: [];
-							const requested = Object.fromEntries(
-								objects.filter((name) => name in wanted).map((name) => [name, wanted[name]])
-							);
+							const requested = Object.fromEntries([
+								...objects.filter((name) => name in wanted).map((name) => [name, wanted[name]]),
+								...objects
+									.filter((name) => !(name in wanted) && temperatureFields(name))
+									.slice(0, 30)
+									.map((name) => [name, temperatureFields(name)])
+							]);
+
 							subscribing = true;
 							buffered = [];
 							const initial = record(
@@ -320,7 +340,7 @@ export const MoonrakerServiceLive = Layer.effect(
 							if (version !== readinessVersion) continue;
 							status = {};
 							for (const [name, value] of Object.entries(record(initial.status)))
-								if (name in wanted) status[name] = record(value);
+								if (name in wanted || temperatureFields(name)) status[name] = record(value);
 							const initialTime = number(initial.eventtime);
 							for (const update of buffered)
 								if (initialTime === null || update.time === null || update.time >= initialTime)
@@ -371,7 +391,7 @@ export const MoonrakerServiceLive = Layer.effect(
 
 function mergeStatus(status: ObjectStatus, delta: Record<string, unknown>) {
 	for (const [name, value] of Object.entries(delta)) {
-		if (!(name in wanted)) continue;
+		if (!(name in wanted) && !temperatureFields(name)) continue;
 		const fields = record(value);
 		const merged = { ...status[name], ...fields };
 		if (name === 'print_stats' && 'info' in fields && fields.info !== null)

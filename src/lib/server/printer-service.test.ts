@@ -72,19 +72,19 @@ describe('process-owned action service', () => {
 			'failed'
 		]);
 	});
-	it('keeps a queued target through disconnect and shares it with subscribers', async () => {
+	it('rejects a temperature target submitted while disconnected', async () => {
 		const { runtime, service, snapshot } = await create();
 		await runtime.runPromise(service.setConnection(false));
-		await runtime.runPromise(
-			service.submit({
-				id: randomUUID(),
-				command: { type: 'temperature', heater: 'bed', target: 75 }
-			})
-		);
-		expect((await snapshot()).actions[0]?.status).toBe('queued');
+		await expect(
+			runtime.runPromise(
+				service.submit({
+					id: randomUUID(),
+					command: { type: 'temperature', heater: 'bed', target: 75 }
+				})
+			)
+		).rejects.toThrow('reconnect');
 		expect((await snapshot()).heaters.bed.target).toBe(60);
-		await runtime.runPromise(service.setConnection(true));
-		await expect.poll(async () => (await snapshot()).heaters.bed.target).toBe(75);
+		expect((await snapshot()).actions).toHaveLength(0);
 	});
 	it('does not retry an action whose connection drops while sending', async () => {
 		const { runtime, service, snapshot } = await create();
@@ -306,4 +306,43 @@ describe('shared motion reservation', () => {
 		await expect.poll(async () => (await snapshot()).actions[0]?.status).toBe('failed');
 		expect((await snapshot()).motion.position.x).toBe(110);
 	});
+});
+
+it('samples temperature history without browser subscriptions and retains disconnect gaps', async () => {
+	const { runtime, service } = await create();
+	const history = () => runtime.runPromise(SubscriptionRef.get(service.temperatureHistory));
+	await expect.poll(async () => (await history()).length).toBe(1);
+	await runtime.runPromise(service.setConnection(false));
+	await expect.poll(async () => (await history()).length, { timeout: 7000 }).toBe(3);
+	const samples = await history();
+	expect(samples[0].readings.extruder.current).not.toBeNull();
+	expect(samples[1].readings.extruder.current).toBeNull();
+}, 10000);
+it('rechecks heater readiness at execution and publishes a failed outcome', async () => {
+	const { runtime, service, snapshot } = await create();
+	await runtime.runPromise(
+		service.submit({
+			id: randomUUID(),
+			command: { type: 'temperature', heater: 'bed', target: 80 }
+		})
+	);
+	await expect
+		.poll(async () => (await snapshot()).actions[0]?.status, { interval: 10 })
+		.toBe('sending');
+	await runtime.runPromise(
+		SubscriptionRef.update(service.state, (s) => ({ ...s, klippy: 'shutdown' as const }))
+	);
+	await expect.poll(async () => (await snapshot()).actions[0]?.status).toBe('failed');
+	expect((await snapshot()).heaters.bed.target).toBe(60);
+});
+
+it('records short disconnects even between scheduled temperature samples', async () => {
+	const { runtime, service } = await create();
+	const history = () => runtime.runPromise(SubscriptionRef.get(service.temperatureHistory));
+	await expect.poll(async () => (await history()).length).toBe(1);
+	await runtime.runPromise(service.setConnection(false));
+	await expect.poll(async () => (await history()).at(-1)?.readings.extruder.current).toBeNull();
+	await runtime.runPromise(service.setConnection(true));
+	await expect.poll(async () => (await history()).at(-1)?.readings.extruder.current).not.toBeNull();
+	expect((await history()).some((s) => s.readings.extruder.current === null)).toBe(true);
 });
