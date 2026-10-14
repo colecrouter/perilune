@@ -270,6 +270,13 @@
 		</header>
 		{#if failure}<p role="alert" class="notice error-text">{failure}</p>{/if}
 		{#if message}<p role="status" class="notice">{message}</p>{/if}
+		{#if !dashboard.connected || snapshot.connection !== 'connected' || snapshot.klippy !== 'ready'}
+			<p class="notice" role="status">
+				{!dashboard.connected ? 'Reconnecting to Perilune.' : 'The printer is unavailable.'} Showing the
+				last known job; your file selection is retained. Print controls will return when the connection
+				is ready.
+			</p>
+		{/if}
 		{#if stale || !catalog.available}<p class="notice">
 				Library connection unavailable. Showing the last known files; your selection is retained.
 			</p>{/if}
