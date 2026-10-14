@@ -403,12 +403,13 @@
 					<p class="help">Jog steps stop at the configured travel boundary.</p>
 
 					<div class="jog-buttons">
-						{#each [['X −', 'x', -1], ['X +', 'x', 1], ['Y −', 'y', -1], ['Y +', 'y', 1], ['Lower Z', 'z', -1], ['Raise Z', 'z', 1]] as [name, axis, direction]}<button
+						{#each [['X −', 'x', -1], ['X +', 'x', 1], ['Y −', 'y', -1], ['Y +', 'y', 1], ['Z −', 'z', -1], ['Z +', 'z', 1]] as [name, axis, direction]}<button
 								class="button secondary"
 								disabled={!!reason ||
 									pending ||
 									jogDestination(snapshot.motion, axis as Axis, Number(direction) * step) ===
 										snapshot.motion.position[axis as Axis]}
+								title={`${Number(direction) > 0 ? 'Increase' : 'Decrease'} ${String(axis).toUpperCase()}${axis === 'z' ? ' height' : ' position'}`}
 								onclick={() => jog(axis as Axis, Number(direction) * step)}>{name}</button
 							>{/each}
 					</div>

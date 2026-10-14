@@ -81,7 +81,7 @@ test('terminal failures stay visible and Z jogs disable at their boundary', asyn
 		}
 	];
 	await render(MotionControls, { snapshot: state, onSubmit: vi.fn() });
-	await expect.element(page.getByRole('button', { name: 'Lower Z', exact: true })).toBeDisabled();
+	await expect.element(page.getByRole('button', { name: 'Z −', exact: true })).toBeDisabled();
 	await expect
 		.element(page.getByText('Connection lost during sending. This action will not be retried.'))
 		.toBeVisible();
