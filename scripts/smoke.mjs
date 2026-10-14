@@ -237,7 +237,8 @@ try {
 	);
 	await first.emulateMedia({ colorScheme: 'dark' });
 	await first.screenshot({ path: 'test-results/overview-mobile-dark.png', fullPage: true });
-	await first.getByRole('link', { name: 'Calibration', exact: true }).click();
+	await first.getByRole('button', { name: 'Calibration', exact: true }).click();
+	await first.getByRole('menuitem', { name: /Z-offset workshop/ }).click();
 	await first.getByRole('heading', { name: 'Z-offset workshop', exact: true }).waitFor();
 	assert.deepEqual(errors, [], 'Production browser errors');
 	const polyfills = await fetch(`${base}/legacy-polyfills.js`);

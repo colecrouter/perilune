@@ -43,10 +43,30 @@ protocol.on('connection', (socket) => {
 		const results = {
 			'server.connection.identify': { connection_id: connections },
 			'server.info': { klippy_state: klippy },
-			'printer.objects.list': { objects: ['heater_bed', 'print_stats', 'virtual_sdcard'] },
+			'printer.objects.list': {
+				objects: ['heater_bed', 'print_stats', 'virtual_sdcard', 'bed_mesh']
+			},
 			'printer.objects.subscribe': {
 				eventtime: 1,
 				status: {
+					bed_mesh: {
+						profile_name: 'fixture',
+						mesh_min: [10, 20],
+						mesh_max: [110, 220],
+						probed_matrix: [
+							[-0.1, 0.2],
+							[0.3, 0.4]
+						],
+						profiles: {
+							cold: {
+								points: [
+									[-0.2, 0.1],
+									[0.2, 0.3]
+								],
+								mesh_params: { min_x: 10, min_y: 20, max_x: 110, max_y: 220 }
+							}
+						}
+					},
 					heater_bed: { temperature, target: 0 },
 					print_stats: {
 						filename: 'fixture.gcode',
@@ -141,10 +161,53 @@ try {
 	await second.getByText('3 / 10', { exact: true }).waitFor();
 	await mkdir('test-results', { recursive: true });
 	await first.screenshot({ path: 'test-results/live-fixture-desktop.png', fullPage: true });
+	await second.goto(base + '/calibration/mesh');
+	await second.getByRole('heading', { name: 'Bed mesh', exact: true }).waitFor();
+	await second.getByRole('button', { name: 'X 10.0, Y 20.0: -0.100 mm', exact: true }).waitFor();
+	await second.getByRole('combobox', { name: 'Compare with' }).selectOption('profile:cold');
+	await second.getByText('Difference range', { exact: true }).waitFor();
+	await second.getByRole('spinbutton', { name: 'Row (Y)' }).fill('2');
+	await second.getByRole('button', { name: 'Isometric', exact: true }).click();
+	const surface = second.locator('.surface-chart');
+	await surface.scrollIntoViewIfNeeded();
+	await second.getByRole('slider', { name: 'Rotation', exact: true }).waitFor();
+	const bounds = await surface.boundingBox();
+	assert.ok(bounds);
+	await second.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+	await second.mouse.down();
+	await second.mouse.move(bounds.x + bounds.width / 2 + 40, bounds.y + bounds.height / 2 + 10, {
+		steps: 6
+	});
+	await second.mouse.up();
+	await second.waitForFunction(
+		() => document.querySelector('.surface-controls input[type="range"]')?.value !== '-45'
+	);
+	assert.notEqual(
+		await second.getByRole('slider', { name: 'Rotation', exact: true }).inputValue(),
+		'-45',
+		'LayerChart drag rotates the view'
+	);
+	await second.getByRole('button', { name: 'Reset view', exact: true }).click();
+	await second.getByRole('button', { name: 'Top-down', exact: true }).click();
+	await second.setViewportSize({ width: 320, height: 800 });
+	assert.equal(
+		await second.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+		false,
+		'Mesh mobile layout does not overflow'
+	);
+	await second.getByRole('button', { name: 'Calibration', exact: true }).click();
+	await second.getByRole('menuitem', { name: /Bed mesh/ }).waitFor();
+	await second.screenshot({ path: 'test-results/mesh-live-mobile.png', fullPage: true });
+	await second.keyboard.press('Escape');
 	klippy = 'shutdown';
 	notify('notify_klippy_shutdown');
 	await first.getByText('Klipper shutdown', { exact: true }).waitFor();
 	assert.ok((await first.locator('.heater').last().innerText()).includes('39'));
+	await second.getByText(/Retained mesh data is stale/).waitFor();
+	assert.equal(
+		await second.getByRole('combobox', { name: 'Compare with' }).inputValue(),
+		'profile:cold'
+	);
 	for (const socket of protocol.clients) socket.terminate();
 	await first.getByText('Reconnecting to Moonraker', { exact: true }).waitFor();
 	assert.equal(await first.getByRole('spinbutton', { name: 'Bed target' }).inputValue(), '85');
@@ -154,6 +217,18 @@ try {
 		Array.from(document.querySelectorAll('.heater')).at(-1)?.textContent?.includes('41')
 	);
 	assert.equal(connections, 2, 'One new socket after reconnect');
+	await second.waitForFunction(() => !document.querySelector('.mesh-inspector .notice'));
+	assert.equal(await second.getByRole('spinbutton', { name: 'Row (Y)' }).inputValue(), '2');
+	notify('notify_status_update', [
+		{ bed_mesh: { profile_name: '', mesh_min: [0, 0], mesh_max: [0, 0], probed_matrix: [[]] } },
+		3
+	]);
+	await second
+		.getByText(
+			'No active mesh is reported. Inspecting a saved profile does not load it into the printer.'
+		)
+		.waitFor();
+	assert.equal(connections, 2, 'Inspection adds no printer socket');
 	await first.setViewportSize({ width: 390, height: 844 });
 	await first.screenshot({ path: 'test-results/live-fixture-mobile.png', fullPage: true });
 	assert.equal(

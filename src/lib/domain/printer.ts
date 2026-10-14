@@ -1,3 +1,4 @@
+import { emptyBedMesh, simulatedBedMesh, type BedMeshState } from './bed-mesh.js';
 import {
 	CalibrationCommand,
 	emptyCalibration,
@@ -79,6 +80,7 @@ export interface PrinterSnapshot {
 	connection: 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
 	klippy: 'unknown' | 'ready' | 'startup' | 'shutdown' | 'error' | 'disconnected';
 	telemetryAt: number | null;
+	telemetryReady: boolean;
 	availableObjects: string[];
 	connectionGeneration: number;
 	storage: 'healthy' | 'degraded';
@@ -98,6 +100,7 @@ export interface PrinterSnapshot {
 	additionalTemperatures: TemperatureSensor[];
 	motion: MotionSnapshot;
 	calibration: CalibrationState;
+	bedMesh: BedMeshState;
 	actions: ActionRecord[];
 }
 export const initialSnapshot = (): PrinterSnapshot => ({
@@ -107,6 +110,7 @@ export const initialSnapshot = (): PrinterSnapshot => ({
 	connection: 'connected',
 	klippy: 'ready',
 	telemetryAt: Date.now(),
+	telemetryReady: true,
 	availableObjects: ['extruder', 'heater_bed', 'print_stats', 'virtual_sdcard'],
 	connectionGeneration: 0,
 	storage: 'healthy',
@@ -123,6 +127,7 @@ export const initialSnapshot = (): PrinterSnapshot => ({
 	additionalTemperatures: [],
 	motion: simulatedMotion(),
 	calibration: emptyCalibration(),
+	bedMesh: simulatedBedMesh(),
 	actions: []
 });
 export function actionLabel(command: PrinterCommand): string {
@@ -260,11 +265,13 @@ export function applyCommand(
 export const initialLiveSnapshot = (): PrinterSnapshot => ({
 	...initialSnapshot(),
 	mode: 'moonraker',
+	bedMesh: emptyBedMesh(),
 	additionalTemperatures: [],
 	motion: emptyMotion(),
 	connection: 'connecting',
 	klippy: 'unknown',
 	telemetryAt: null,
+	telemetryReady: false,
 	availableObjects: [],
 	job: {
 		filename: '',

@@ -1,3 +1,4 @@
+import { emptyBedMesh, normalizeBedMesh, type BedMeshState } from '#lib/domain/bed-mesh.js';
 import { temperatureFields, type TemperatureSensor } from '#lib/domain/temperature.js';
 import { axes, emptyMotion, type MotionSnapshot } from '#lib/domain/motion.js';
 import { Context, Effect, Layer, SubscriptionRef } from 'effect';
@@ -20,10 +21,12 @@ export interface MoonrakerSnapshot {
 	klippy: KlippyState;
 	generation: number;
 	updatedAt: number | null;
+	telemetryReady: boolean;
 	availableObjects: string[];
 	webcams: unknown[];
 	additionalTemperatures: TemperatureSensor[];
 	motion: MotionSnapshot;
+	bedMesh: BedMeshState;
 	job: {
 		filename: string;
 		state: 'standby' | 'printing' | 'paused' | 'complete' | 'cancelled' | 'error';
@@ -44,6 +47,7 @@ export class MoonrakerService extends Context.Service<
 
 type ObjectStatus = Record<string, Record<string, unknown>>;
 const wanted: Record<string, string[]> = {
+	bed_mesh: ['profile_name', 'mesh_min', 'mesh_max', 'probed_matrix', 'profiles'],
 	webhooks: ['state'],
 	toolhead: ['position', 'axis_minimum', 'axis_maximum', 'homed_axes'],
 	idle_timeout: ['state'],
@@ -64,10 +68,12 @@ export const emptyMoonrakerSnapshot = (): MoonrakerSnapshot => ({
 	klippy: 'unknown',
 	generation: 0,
 	updatedAt: null,
+	telemetryReady: false,
 	availableObjects: [],
 	webcams: [],
 	additionalTemperatures: [],
 	motion: emptyMotion(),
+	bedMesh: emptyBedMesh(),
 	job: {
 		filename: '',
 		state: 'standby',
@@ -94,7 +100,9 @@ export function normalizeMoonrakerStatus(
 	return {
 		...previous,
 		updatedAt: Date.now(),
+		telemetryReady: true,
 		motion: normalizeMotion(status),
+		bedMesh: normalizeBedMesh(status.bed_mesh, previous.availableObjects.includes('bed_mesh')),
 		additionalTemperatures: previous.availableObjects
 			.filter((name) => name !== 'extruder' && name !== 'heater_bed' && temperatureFields(name))
 			.slice(0, 30)
@@ -192,6 +200,7 @@ export const MoonrakerServiceLive = Layer.effect(
 						...current,
 						connection: current.generation === 0 ? 'connecting' : 'reconnecting',
 						klippy: 'unknown',
+						telemetryReady: false,
 						generation: current.generation + 1
 					});
 					if (signal.aborted) break;
@@ -251,6 +260,7 @@ export const MoonrakerServiceLive = Layer.effect(
 						} else if (message.method === 'notify_klippy_ready') {
 							readinessVersion++;
 							subscribed = false;
+							void publish({ ...current, telemetryReady: false });
 							wake?.();
 						} else if (
 							message.method === 'notify_klippy_shutdown' ||
@@ -260,6 +270,7 @@ export const MoonrakerServiceLive = Layer.effect(
 							subscribed = false;
 							void publish({
 								...current,
+								telemetryReady: false,
 								klippy: message.method === 'notify_klippy_shutdown' ? 'shutdown' : 'disconnected'
 							});
 							wake?.();
@@ -314,7 +325,12 @@ export const MoonrakerServiceLive = Layer.effect(
 							if (version !== readinessVersion) continue;
 						}
 						const klippy = klippyState(server.klippy_state);
-						await publish({ ...current, connection: 'connected', klippy });
+						await publish({
+							...current,
+							connection: 'connected',
+							klippy,
+							telemetryReady: subscribed && klippy === 'ready'
+						});
 						if (klippy === 'ready' && !subscribed) {
 							const list = record(await request('printer.objects.list'));
 							if (closed || signal.aborted) break;
@@ -370,7 +386,12 @@ export const MoonrakerServiceLive = Layer.effect(
 					signal.removeEventListener('abort', close);
 				}
 				if (signal.aborted) break;
-				await publish({ ...current, connection: 'reconnecting', klippy: 'unknown' });
+				await publish({
+					...current,
+					connection: 'reconnecting',
+					klippy: 'unknown',
+					telemetryReady: false
+				});
 				const delay = Math.min(reconnectMax, reconnectMin * 2 ** Math.min(failures++, 10));
 				await new Promise<void>((resolve) => {
 					const done = () => {

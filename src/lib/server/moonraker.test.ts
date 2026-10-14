@@ -50,6 +50,16 @@ async function simulator(
 		},
 		virtual_sdcard: { progress: 0.25 },
 		extruder: { temperature: 205, target: 210 },
+		bed_mesh: {
+			profile_name: 'fixture',
+			mesh_min: [10, 20],
+			mesh_max: [110, 220],
+			probed_matrix: [
+				[-0.1, 0.2],
+				[0.3, 0.4]
+			],
+			profiles: {}
+		},
 		heater_bed: { temperature: 60, target: 60 }
 	};
 	server.on('connection', (socket) => {
@@ -362,4 +372,38 @@ it('normalizes extra sensor and heater readings without inventing missing values
 		{ id: 'heater_generic chamber', label: 'chamber', current: null, target: 60, heater: true },
 		{ id: 'extruder1', label: 'extruder1', current: 201, target: 210, heater: true }
 	]);
+});
+
+it('subscribes to mesh samples, preserves partial fields, and clears active meshes explicitly', async () => {
+	const fixture = await simulator();
+	await expect.poll(async () => (await fixture.snapshot()).bedMesh.active?.name).toBe('fixture');
+	fixture.notify('notify_status_update', [{ bed_mesh: { profile_name: 'changed' } }, 102]);
+	await expect.poll(async () => (await fixture.snapshot()).bedMesh.active?.name).toBe('changed');
+	expect((await fixture.snapshot()).bedMesh.active?.points).toEqual([
+		[-0.1, 0.2],
+		[0.3, 0.4]
+	]);
+	fixture.notify('notify_status_update', [
+		{ bed_mesh: { profile_name: '', mesh_min: [0, 0], mesh_max: [0, 0], probed_matrix: [[]] } },
+		103
+	]);
+	await expect.poll(async () => (await fixture.snapshot()).bedMesh.status).toBe('empty');
+	expect((await fixture.snapshot()).bedMesh.active).toBeNull();
+});
+
+it('retains mesh data but marks it stale until a delayed reconnect subscription completes', async () => {
+	const fixture = await simulator({ delaySubscribeMs: 60 });
+	await expect.poll(async () => (await fixture.snapshot()).telemetryReady).toBe(true);
+	fixture.clients[0].terminate();
+	await expect
+		.poll(() => fixture.methods.filter((method) => method === 'printer.objects.subscribe').length, {
+			interval: 1
+		})
+		.toBe(2);
+	const pending = await fixture.snapshot();
+	expect(pending.connection).toBe('connected');
+	expect(pending.klippy).toBe('ready');
+	expect(pending.telemetryReady).toBe(false);
+	expect(pending.bedMesh.active?.name).toBe('fixture');
+	await expect.poll(async () => (await fixture.snapshot()).telemetryReady).toBe(true);
 });

@@ -46,7 +46,9 @@ export class PrinterService extends Context.Service<
 				PrinterSnapshot,
 				'connection' | 'klippy' | 'telemetryAt' | 'availableObjects' | 'job' | 'heaters'
 			> &
-				Partial<Pick<PrinterSnapshot, 'motion' | 'additionalTemperatures'>>
+				Partial<
+					Pick<PrinterSnapshot, 'motion' | 'additionalTemperatures' | 'bedMesh' | 'telemetryReady'>
+				>
 		) => Effect.Effect<void>;
 	}
 >()('perilune/PrinterService') {}
