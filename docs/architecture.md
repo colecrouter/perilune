@@ -210,3 +210,30 @@ continuous response. Safari hardware passkey/media checks remain outstanding.
 Better Auth’s published peer range still declares Kit 2, despite its Kit 3 integration
 documentation. This dependency warning is retained; production Kit 3 password and
 passkey flows pass the automated tests. No peer override hides it.
+
+## Motion controls: simulator increment
+
+The Controls page provides an XY travel map with an explicit preview/Move here
+step, bounded fine jogging, a unified XYZ destination form with a vertical Z preview scale, and top-level Home All/Disengage motors actions.
+Home All establishes all axes in one action. Confirmed motor disengagement invalidates
+all positions and homed state; releasing Z calls out gantry support. Drafts survive telemetry updates; a changed position
+invalidates the preview until the operator refreshes it. Near-bed lowering below
+5 mm requires a clearance acknowledgement. This threshold is an initial UI policy,
+not collision detection. Exact destinations use number fields or the interactive
+XY/Z previews and a single full-width Move here action. Fine jog distance uses
+a keyboard-accessible segmented radio group (0.1, 1, and 10 mm).
+
+The shared backend rejects motion while printing, paused, disconnected, unhomed,
+calibrating, busy, or missing required telemetry. It checks configured bounds and
+all preserved coordinates at admission and again at execution. Pending actions
+reserve movement across users; idempotent retries return the original action.
+Terminal failures and unknown outcomes remain visible in the controls panel.
+
+Live mode subscribes to toolhead position, travel limits, homed axes, idle timeout,
+and manual-probe state, but rejects all movement and homing. The map uses the
+[Klipper toolhead coordinate system](https://www.klipper3d.org/Status_Reference.html#toolhead).
+Its rectangle represents reported travel extent, not guaranteed reachable bed
+geometry or a collision-free path. Kinematic profiles, fixtures, physical command
+acknowledgements, and coordinated owner testing are required before live operation.
+Temperature history/LayerChart, extrusion, fan controls, and guided calibration
+remain subsequent increments.

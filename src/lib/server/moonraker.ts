@@ -1,3 +1,4 @@
+import { axes, emptyMotion, type MotionSnapshot } from '#lib/domain/motion.js';
 import { Context, Effect, Layer, SubscriptionRef } from 'effect';
 
 export interface MoonrakerSettings {
@@ -20,6 +21,7 @@ export interface MoonrakerSnapshot {
 	updatedAt: number | null;
 	availableObjects: string[];
 	webcams: unknown[];
+	motion: MotionSnapshot;
 	job: {
 		filename: string;
 		state: 'standby' | 'printing' | 'paused' | 'complete' | 'cancelled' | 'error';
@@ -41,6 +43,9 @@ export class MoonrakerService extends Context.Service<
 type ObjectStatus = Record<string, Record<string, unknown>>;
 const wanted: Record<string, string[]> = {
 	webhooks: ['state'],
+	toolhead: ['position', 'axis_minimum', 'axis_maximum', 'homed_axes'],
+	idle_timeout: ['state'],
+	manual_probe: ['is_active'],
 	print_stats: ['filename', 'state', 'print_duration', 'info'],
 	virtual_sdcard: ['progress'],
 	extruder: ['temperature', 'target'],
@@ -59,6 +64,7 @@ export const emptyMoonrakerSnapshot = (): MoonrakerSnapshot => ({
 	updatedAt: null,
 	availableObjects: [],
 	webcams: [],
+	motion: emptyMotion(),
 	job: {
 		filename: '',
 		state: 'standby',
@@ -85,6 +91,7 @@ export function normalizeMoonrakerStatus(
 	return {
 		...previous,
 		updatedAt: Date.now(),
+		motion: normalizeMotion(status),
 		job: {
 			filename: typeof print.filename === 'string' ? print.filename : '',
 			state,
@@ -371,4 +378,27 @@ function mergeStatus(status: ObjectStatus, delta: Record<string, unknown>) {
 			merged.info = { ...record(status[name]?.info), ...record(fields.info) };
 		status[name] = merged;
 	}
+}
+
+function normalizeMotion(status: ObjectStatus): MotionSnapshot {
+	const result = emptyMotion();
+	const toolhead = status.toolhead;
+	if (!toolhead) return result;
+	const position = Array.isArray(toolhead.position) ? toolhead.position : [];
+	const minimum = Array.isArray(toolhead.axis_minimum) ? toolhead.axis_minimum : [];
+	const maximum = Array.isArray(toolhead.axis_maximum) ? toolhead.axis_maximum : [];
+	for (const [index, axis] of axes.entries()) {
+		result.position[axis] = number(position[index]);
+		const min = number(minimum[index]);
+		const max = number(maximum[index]);
+		result.limits[axis] = min !== null && max !== null && min < max ? { min, max } : null;
+	}
+	result.calibration = status.manual_probe?.is_active === true;
+	result.homed = axes.filter(
+		(axis) => typeof toolhead.homed_axes === 'string' && toolhead.homed_axes.includes(axis)
+	);
+	const idle = status.idle_timeout?.state;
+	result.busy =
+		idle === 'Printing' ? true : ['Ready', 'Idle'].includes(String(idle)) ? false : null;
+	return result;
 }

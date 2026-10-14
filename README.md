@@ -18,7 +18,9 @@ pnpm dev
 
 Open http://localhost:4181. By default this is **simulator mode**: no physical printer is
 connected or controlled. Pause, stop, temperature changes, and disconnects affect
-shared demo state. The header toggle compares serif and sans-serif headings.
+shared demo state. Stop the demo print to try the XY bed map, destination shortcuts,
+fine jogging, and separate Z controls at `/controls`. Live connections show motion
+telemetry but cannot move or home the printer. The header toggle compares serif and sans-serif headings.
 
 For a production build:
 

@@ -89,6 +89,79 @@ try {
 	await second.getByText('cancelled', { exact: true }).waitFor();
 	await second.getByText('Target 0°C', { exact: true }).waitFor();
 	await second.getByText('Target 60°C', { exact: true }).waitFor();
+	await first.goto(`${base}/controls`);
+	await second.goto(`${base}/controls`);
+	assert.equal(await first.title(), 'Printer controls · Perilune');
+	await first.locator('.bed-map').click();
+	assert.equal(
+		await first.getByRole('button', { name: 'Move here', exact: true }).isEnabled(),
+		true
+	);
+	await first.locator('.position-strip').getByText('110.00 mm', { exact: true }).first().waitFor();
+	await first.getByRole('spinbutton', { name: 'X (mm)', exact: true }).fill('30');
+	await first.getByRole('spinbutton', { name: 'Y (mm)', exact: true }).fill('40');
+	await first.getByRole('button', { name: 'Move here', exact: true }).click();
+	await second.locator('.position-strip').getByText('30.00 mm', { exact: true }).waitFor();
+	await second.getByRole('spinbutton', { name: 'X (mm)', exact: true }).fill('75');
+	await first.getByRole('spinbutton', { name: 'X (mm)', exact: true }).fill('0');
+	await first.getByRole('button', { name: 'Move here', exact: true }).click();
+	await second.getByText('The printer moved after this preview.', { exact: false }).waitFor();
+	assert.equal(
+		await second.getByRole('button', { name: 'Move here', exact: true }).isDisabled(),
+		true
+	);
+	assert.equal(
+		await second.getByRole('spinbutton', { name: 'X (mm)', exact: true }).inputValue(),
+		'75'
+	);
+	await first.locator('.position-strip').getByText('0.00 mm', { exact: true }).waitFor();
+	await first.locator('.position-strip').getByText('40.00 mm', { exact: true }).waitFor();
+	await first.getByRole('spinbutton', { name: 'X (mm)', exact: true }).fill('2');
+	await first.getByRole('button', { name: 'Move here', exact: true }).click();
+	await first.locator('.position-strip').getByText('2.00 mm', { exact: true }).waitFor();
+	await first.getByRole('radio', { name: '10 mm', exact: true }).check();
+	await first.getByRole('button', { name: 'X −', exact: true }).click();
+	await first.locator('.position-strip').getByText('0.00 mm', { exact: true }).waitFor();
+	await first.getByRole('spinbutton', { name: 'Z (mm)', exact: true }).fill('0');
+	assert.equal(
+		await first.getByRole('button', { name: 'Move here', exact: true }).isDisabled(),
+		true
+	);
+	await first.getByRole('checkbox', { name: 'I checked bed clearance before lowering' }).check();
+	await first.getByRole('button', { name: 'Move here', exact: true }).click();
+	await first
+		.locator('.position-strip > div')
+		.nth(2)
+		.getByText('0.00 mm', { exact: true })
+		.waitFor();
+	await first
+		.getByRole('region', { name: 'Recent movement', exact: true })
+		.getByText('completed', { exact: true })
+		.first()
+		.waitFor();
+	await first.getByRole('button', { name: 'Disengage motors', exact: true }).click();
+	await first.getByRole('button', { name: 'Confirm release', exact: true }).click();
+	await first.locator('.position-strip').getByText('Unknown mm', { exact: true }).first().waitFor();
+	assert.equal(
+		await first.getByRole('button', { name: 'Move here', exact: true }).isDisabled(),
+		true
+	);
+	await first.getByRole('button', { name: 'Home All', exact: true }).click();
+	await first
+		.locator('.position-strip > div')
+		.nth(2)
+		.getByText('0.00 mm', { exact: true })
+		.waitFor();
+	await first.screenshot({ path: 'test-results/controls-desktop.png', fullPage: true });
+	await first.setViewportSize({ width: 320, height: 844 });
+	await first.screenshot({ path: 'test-results/controls-mobile.png', fullPage: true });
+	assert.equal(
+		await first.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+		false,
+		'Controls fit 320px'
+	);
+	await first.goto(base);
+	await first.setViewportSize({ width: 1505, height: 1045 });
 	await first.getByRole('button', { name: 'Reset demo', exact: true }).click();
 	await first
 		.getByRole('button', { name: 'Pause print', exact: true })

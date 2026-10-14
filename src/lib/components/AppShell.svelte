@@ -4,6 +4,7 @@
 	let { children, active = 'Overview' }: { children: Snippet; active?: string } = $props();
 	const navigation = [
 		{ label: 'Overview', icon: 'overview', href: '/' },
+		{ label: 'Controls', icon: 'calibration', href: '/controls' },
 		{ label: 'Jobs', icon: 'jobs', href: '/roadmap#jobs' },
 		{ label: 'Calibration', icon: 'calibration', href: '/roadmap#calibration' },
 		{ label: 'Configuration', icon: 'configuration', href: '/roadmap#configuration' },

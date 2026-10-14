@@ -1,8 +1,33 @@
-import { Data, Schema } from 'effect';
+import {
+	checkedMove,
+	motionReason,
+	emptyMotion,
+	simulatedMotion,
+	type MotionSnapshot
+} from './motion.js';
+import { Schema } from 'effect';
+import { CommandRejected } from './errors.js';
+export { CommandRejected } from './errors.js';
 
-export class CommandRejected extends Data.TaggedError('CommandRejected')<{ message: string }> {}
-
+const coordinate = Schema.Number.check(Schema.isFinite());
+const position = Schema.Struct({ x: coordinate, y: coordinate, z: coordinate });
 export const PrinterCommand = Schema.Union([
+	Schema.Struct({
+		type: Schema.Literal('move'),
+		target: Schema.Struct({
+			x: Schema.optional(coordinate),
+			y: Schema.optional(coordinate),
+			z: Schema.optional(coordinate)
+		}),
+		expectedPosition: position,
+		confirmedLowering: Schema.optional(Schema.Boolean)
+	}),
+	Schema.Struct({ type: Schema.Literal('home'), axes: Schema.Literals(['xy', 'z', 'all']) }),
+	Schema.Struct({
+		type: Schema.Literal('releaseMotors'),
+		axes: Schema.Literals(['xy', 'z', 'all']),
+		confirmed: Schema.Boolean
+	}),
 	Schema.Struct({ type: Schema.Literal('pause') }),
 	Schema.Struct({ type: Schema.Literal('resume') }),
 	Schema.Struct({
@@ -52,6 +77,7 @@ export interface PrinterSnapshot {
 		nozzle: { current: number | null; target: number | null };
 		bed: { current: number | null; target: number | null };
 	};
+	motion: MotionSnapshot;
 	actions: ActionRecord[];
 }
 export const initialSnapshot = (): PrinterSnapshot => ({
@@ -73,10 +99,19 @@ export const initialSnapshot = (): PrinterSnapshot => ({
 		remainingMinutes: 38
 	},
 	heaters: { nozzle: { current: 210, target: 210 }, bed: { current: 60, target: 60 } },
+	motion: simulatedMotion(),
 	actions: []
 });
 export function actionLabel(command: PrinterCommand): string {
 	switch (command.type) {
+		case 'move':
+			return `Move ${Object.entries(command.target)
+				.map(([axis, value]) => `${axis.toUpperCase()} ${value} mm`)
+				.join(' · ')}`;
+		case 'releaseMotors':
+			return `Release ${command.axes === 'all' ? 'all motors' : command.axes === 'xy' ? 'X and Y motors' : 'Z motor'}`;
+		case 'home':
+			return `Home ${command.axes === 'xy' ? 'X and Y' : command.axes === 'z' ? 'Z' : 'all axes'}`;
 		case 'pause':
 			return 'Pause print';
 		case 'resume':
@@ -90,7 +125,36 @@ export function actionLabel(command: PrinterCommand): string {
 /** Validate against the current state at execution time, not the browser's stale view. */
 export function applyCommand(state: PrinterSnapshot, command: PrinterCommand): PrinterSnapshot {
 	const next = structuredClone(state);
-	if (command.type === 'temperature') {
+	if (command.type === 'move') {
+		next.motion.position = checkedMove(
+			state,
+			command.target,
+			command.expectedPosition,
+			command.confirmedLowering
+		);
+	} else if (command.type === 'home') {
+		const selected =
+			command.axes === 'xy'
+				? (['x', 'y'] as const)
+				: command.axes === 'z'
+					? (['z'] as const)
+					: (['x', 'y', 'z'] as const);
+		const reason = motionReason(state, selected, true, false);
+		if (reason) throw new CommandRejected({ message: reason });
+		for (const axis of selected) {
+			next.motion.position[axis] = next.motion.limits[axis]!.min;
+			if (!next.motion.homed.includes(axis)) next.motion.homed.push(axis);
+		}
+	} else if (command.type === 'releaseMotors') {
+		const reason = motionReason(state, [], true, false);
+		if (reason) throw new CommandRejected({ message: reason });
+		if (!command.confirmed)
+			throw new CommandRejected({ message: 'Confirm motor release and loss of homing first.' });
+		const selected =
+			command.axes === 'all' ? ['x', 'y', 'z'] : command.axes === 'xy' ? ['x', 'y'] : ['z'];
+		next.motion.homed = next.motion.homed.filter((axis) => !selected.includes(axis));
+		for (const axis of selected as ('x' | 'y' | 'z')[]) next.motion.position[axis] = null;
+	} else if (command.type === 'temperature') {
 		const maximum = command.heater === 'bed' ? 120 : 300;
 		if (command.target < 0 || command.target > maximum)
 			throw new CommandRejected({ message: `Target must be between 0 and ${maximum}°C` });
@@ -117,6 +181,7 @@ export function applyCommand(state: PrinterSnapshot, command: PrinterCommand): P
 export const initialLiveSnapshot = (): PrinterSnapshot => ({
 	...initialSnapshot(),
 	mode: 'moonraker',
+	motion: emptyMotion(),
 	connection: 'connecting',
 	klippy: 'unknown',
 	telemetryAt: null,
