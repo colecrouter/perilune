@@ -110,6 +110,8 @@ small {
 	width: 26px;
 	height: 26px;
 	flex-shrink: 0;
+	/* Center against Newsreader’s visible letters rather than its line box. */
+	transform: translateY(-0.1em);
 }
 
 .brand {

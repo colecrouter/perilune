@@ -5,7 +5,10 @@ Photoshop and contributed for Perilune. The original supplied PNG is preserved i
 `static/brand/moon-texture.png`; no generated image replaces its surface detail.
 It is distributed under the repository's GPL-3.0-only license.
 
-The logo is a waxing crescent with 23% projected illumination. A calculated SVG
+The fixed logo is a waxing crescent with 23% projected illumination and a small
+pale-lavender satellite dot. Progress favicons omit that decorative dot so their
+status badges remain distinct. The README uses a larger centered mark on a
+midnight tile, preserving contrast in both GitHub themes. A calculated SVG
 clip gives the photograph a clean circular limb and elliptical terminator.
 The app rail, account entry, static favicon and README use the same treatment.
 Warm neutrals, teal, midnight blue and lavender remain the established palette.
