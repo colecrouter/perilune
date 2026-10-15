@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vite-plus/test';
 import { render } from 'vitest-browser-svelte';
+import { EditorView } from '@codemirror/view';
 import ConfigurationEditor from './ConfigurationEditor.svelte';
 import { configParts, type ConfigDocument } from '#lib/domain/configuration.js';
 // Unit tests isolate optional reference loading; production smoke exercises the real artifact.
@@ -35,8 +36,14 @@ test('guided edits preserve raw comments and generated suffix, and save only aft
 	await screen.getByRole('spinbutton', { name: 'Maximum velocity', exact: true }).fill('180');
 	await screen.getByRole('button', { name: 'Raw source', exact: true }).click();
 	await expect
-		.element(screen.getByRole('textbox', { name: 'Editable configuration source' }))
-		.toHaveValue('[printer]\nmax_velocity: 180 # keep\n');
+		.poll(() =>
+			EditorView.findFromDOM(
+				screen
+					.getByRole('textbox', { name: 'Editable configuration source' })
+					.element() as HTMLElement
+			)?.state.doc.toString()
+		)
+		.toBe('[printer]\nmax_velocity: 180 # keep\n');
 	await screen.getByRole('button', { name: 'Review changes…' }).click();
 	await expect.element(screen.getByRole('button', { name: 'Save simulator file' })).toBeDisabled();
 	await screen.getByRole('checkbox', { name: 'I reviewed the source changes.' }).click();
@@ -66,14 +73,26 @@ test('incoming revisions and file switches keep drafts, and a checked newer vers
 		document: file('macros.cfg', '[gcode_macro EXAMPLE]\ngcode:\n    G28\n')
 	});
 	await expect
-		.element(screen.getByRole('textbox', { name: 'Editable configuration source' }))
-		.toHaveValue('[gcode_macro EXAMPLE]\ngcode:\n    G28\n');
+		.poll(() =>
+			EditorView.findFromDOM(
+				screen
+					.getByRole('textbox', { name: 'Editable configuration source' })
+					.element() as HTMLElement
+			)?.state.doc.toString()
+		)
+		.toBe('[gcode_macro EXAMPLE]\ngcode:\n    G28\n');
 	await screen.rerender({
 		document: { ...doc, version: 'newer', text: doc.text.replace('200', '250') }
 	});
 	await expect
-		.element(screen.getByRole('textbox', { name: 'Editable configuration source' }))
-		.toHaveValue('[printer]\nmax_velocity: 180 # mine\n');
+		.poll(() =>
+			EditorView.findFromDOM(
+				screen
+					.getByRole('textbox', { name: 'Editable configuration source' })
+					.element() as HTMLElement
+			)?.state.doc.toString()
+		)
+		.toBe('[printer]\nmax_velocity: 180 # mine\n');
 	await expect
 		.element(screen.getByRole('heading', { name: 'A newer saved file exists' }))
 		.toBeVisible();
@@ -109,6 +128,29 @@ test('rejected guided input visibly reverts before another field can be reviewed
 		.toHaveValue(200);
 	await screen.getByRole('button', { name: 'Raw source', exact: true }).click();
 	await expect
-		.element(screen.getByRole('textbox', { name: 'Editable configuration source' }))
-		.toHaveValue('[printer]\nmax_velocity: 200\nmax_accel: 2000\n');
+		.poll(() =>
+			EditorView.findFromDOM(
+				screen
+					.getByRole('textbox', { name: 'Editable configuration source' })
+					.element() as HTMLElement
+			)?.state.doc.toString()
+		)
+		.toBe('[printer]\nmax_velocity: 200\nmax_accel: 2000\n');
+});
+
+test('CodeMirror edits preserve BOM, CRLF, comments and the protected suffix through reviewed save', async () => {
+	const text = '\uFEFF[printer]\r\nmax_velocity: 200 # keep\r\n' + tail.replace(/\n/g, '\r\n');
+	const doc = file('printer.cfg', text);
+	const calls = callbacks(doc);
+	const screen = await render(ConfigurationEditor, { document: doc, files: [doc], ...calls });
+	await screen.getByRole('button', { name: 'Raw source', exact: true }).click();
+	await screen
+		.getByRole('textbox', { name: 'Editable configuration source' })
+		.fill(text.replace(/\r\n/g, '\n').split('\n#*#')[0]!.replace('200 #', '180 #'));
+	await screen.getByRole('button', { name: 'Review changes…' }).click();
+	await screen.getByRole('checkbox', { name: 'I reviewed the source changes.' }).click();
+	await screen.getByRole('button', { name: 'Save simulator file' }).click();
+	expect(calls.onSave).toHaveBeenCalledWith(
+		expect.objectContaining({ text: text.replace('200 #', '180 #') })
+	);
 });

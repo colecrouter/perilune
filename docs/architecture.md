@@ -655,6 +655,26 @@ A conservative local inventory checks all option keys and the protected generate
 suffix before offering explicit single-line additions. Includes require manual
 review acknowledgement; ambiguous sections and context mismatches block additions.
 Existing source bytes are spliced, and normal diff/CAS/save/export rules still apply.
-Full include resolution, firmware-specific schemas, new-section creation and a
-CodeMirror raw editor remain follow-ups. Upstream GPL source, license, revision,
+Full include resolution, firmware-specific schemas and new-section creation
+remain follow-ups. Upstream GPL source, license, revision,
 checksum and refresh instructions are bundled under `src/lib/server/reference/`.
+
+### CodeMirror source editing
+
+The raw source component imports CodeMirror only on browser mount. Loading is
+read-only, import failure offers a plain-text fallback, and unmount destroys the
+view even if loading finishes late. The view is keyed by file identity; parent
+per-file drafts remain canonical. Controlled text echoes are ignored to preserve
+selection and history. Genuine external source replacements create fresh editor
+state/history, preventing stale undo ranges from corrupting replacement content.
+Busy operations reconfigure both readOnly and editable facets.
+
+A custom StreamLanguage highlights Klipper sections/options, G-code and template
+expressions; official YAML/JSON language packages handle those extensions. The
+Perilune light/dark syntax palette uses teal, lavender and warm accents. Search,
+selection highlighting, line numbers, history, bracket matching and the Replit
+VS Code keymap are enabled. No autoformat, runtime evaluation, config validation,
+or completion defaults are introduced. Generated settings remain separately
+inspectable and protected by existing source checks. Browser tests cover history
+reset, keyboard escape, native languages, lifecycle and BOM/CRLF preservation;
+production smoke reads actual exports instead of CodeMirror's virtualized DOM.

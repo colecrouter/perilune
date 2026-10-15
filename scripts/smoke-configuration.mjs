@@ -58,6 +58,14 @@ const upstreamPort = upstream.address().port;
 const children = [];
 let browser, page;
 let logs = '';
+// Read the real export rather than relying on CodeMirror's virtualized DOM lines.
+async function readSource(target) {
+	const pending = target.waitForEvent('download');
+	await target.getByRole('button', { name: 'Export draft', exact: true }).click();
+	const download = await pending;
+	const source = await readFile(await download.path(), 'utf8');
+	return source.replace(/\r?\n#\*#.*SAVE_CONFIG[\s\S]*$/, '').replace(/\r\n/g, '\n');
+}
 async function start(port, live) {
 	const base = `http://127.0.0.1:${port}`;
 	const filename = join(directory, `${port}.sqlite`);
@@ -162,9 +170,8 @@ try {
 	await page.goto(sim.base + '/configuration');
 	await page.getByRole('spinbutton', { name: 'Maximum velocity', exact: true }).fill('180');
 	await page.getByRole('button', { name: 'Raw source', exact: true }).click();
-	const draft = await page
-		.getByRole('textbox', { name: 'Editable configuration source' })
-		.inputValue();
+	await page.locator('.cm-content[contenteditable=true]').waitFor();
+	const draft = await readSource(page);
 	assert.match(draft, /max_velocity: 180 # mm\/s/);
 	assert.ok(!draft.includes('SAVE_CONFIG'));
 	await page.locator('summary').filter({ hasText: 'Find or add a setting' }).click();
@@ -176,10 +183,7 @@ try {
 	assert.equal(await page.getByRole('button', { name: 'Add to draft' }).isDisabled(), true);
 	await page.getByRole('checkbox', { name: /I checked included files/ }).check();
 	await page.getByRole('button', { name: 'Add to draft' }).click();
-	assert.match(
-		await page.getByRole('textbox', { name: 'Editable configuration source' }).inputValue(),
-		/max_z_velocity: 12/
-	);
+	assert.match(await readSource(page), /max_z_velocity: 12/);
 	assert.ok(
 		!(
 			await (await context.request.get(sim.base + '/api/configuration?file=printer.cfg')).json()
@@ -207,10 +211,7 @@ try {
 		.getByRole('link', { name: /printer.cfg/ })
 		.click();
 	await page.getByRole('heading', { name: 'printer.cfg', exact: true }).waitFor();
-	assert.equal(
-		await page.getByRole('textbox', { name: 'Editable configuration source' }).inputValue(),
-		draft
-	);
+	assert.equal(await readSource(page), draft);
 	// A file disappearing between listing and selection must not destroy another file's draft.
 	const macros = await (
 		await context.request.get(sim.base + '/api/configuration?file=macros.cfg')
@@ -222,11 +223,7 @@ try {
 		.getByRole('link', { name: 'macros.cfg', exact: true })
 		.click();
 	await page.getByRole('heading', { name: 'Could not open that file' }).waitFor();
-	assert.equal(
-		await page.getByRole('textbox', { name: 'Editable configuration source' }).inputValue(),
-		draft,
-		'Failed navigation keeps the open draft'
-	);
+	assert.equal(await readSource(page), draft, 'Failed navigation keeps the open draft');
 	database
 		.prepare('INSERT INTO config_files(path,text,version,updated_at) VALUES(?,?,?,?)')
 		.run(macros.path, macros.text, macros.version, macros.updatedAt);
@@ -238,10 +235,7 @@ try {
 	await page
 		.getByRole('heading', { name: 'Could not open that file' })
 		.waitFor({ state: 'hidden' });
-	assert.equal(
-		await page.getByRole('textbox', { name: 'Editable configuration source' }).inputValue(),
-		draft
-	);
+	assert.equal(await readSource(page), draft);
 	const observer = await context.newPage();
 	await observer.goto(sim.base + '/configuration');
 	await page.getByRole('button', { name: 'Review changes…' }).click();
@@ -280,19 +274,14 @@ try {
 			.text,
 		/max_velocity: 200/
 	);
-	const before = await page
-		.getByRole('textbox', { name: 'Editable configuration source' })
-		.inputValue();
+	const before = await readSource(page);
 	await page
 		.getByRole('textbox', { name: 'Editable configuration source' })
 		.fill(before + '# my draft\n');
 	await context.setOffline(true);
 	await page.getByRole('button', { name: 'Check saved version' }).click();
 	await page.getByRole('alert').waitFor();
-	assert.equal(
-		await page.getByRole('textbox', { name: 'Editable configuration source' }).inputValue(),
-		before + '# my draft\n'
-	);
+	assert.equal(await readSource(page), before + '# my draft\n');
 	await context.setOffline(false);
 	await page.getByRole('button', { name: 'Check saved version' }).click();
 	await page.getByText('Saved version checked.', { exact: true }).waitFor();
@@ -327,10 +316,8 @@ try {
 	const livePage = await liveContext.newPage();
 	await livePage.goto(live.base + '/configuration');
 	await livePage.getByRole('button', { name: 'Raw source', exact: true }).click();
-	assert.equal(
-		await livePage.getByRole('textbox', { name: 'Editable configuration source' }).inputValue(),
-		liveText
-	);
+	await livePage.locator('.cm-content[contenteditable=true]').waitFor();
+	assert.equal(await readSource(livePage), liveText);
 	await livePage
 		.getByRole('textbox', { name: 'Editable configuration source' })
 		.fill(liveText.replace('200', '180'));
