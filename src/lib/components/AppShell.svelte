@@ -11,7 +11,7 @@
 		{ label: 'Controls', icon: 'calibration', href: '/controls' },
 		{ label: 'Jobs', icon: 'jobs', href: '/jobs' },
 		{ label: 'Calibration', icon: 'calibration', href: '/calibration' },
-		{ label: 'Configuration', icon: 'configuration', href: '/roadmap#configuration' },
+		{ label: 'Configuration', icon: 'configuration', href: '/configuration' },
 		{ label: 'Account', icon: 'account', href: '/account' }
 	] as const;
 </script>

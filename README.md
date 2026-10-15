@@ -186,7 +186,7 @@ smoke test, plus live-protocol and encoded-camera production smoke tests. Screen
 history; unfinished records are never replayed after restart.
 
 See [architecture](docs/architecture.md), [visual direction](docs/design/README.md),
-[calibration workshop](docs/calibration.md), and [milestones](https://github.com/colecrouter/perilune/milestones).
+[calibration workshop](docs/calibration.md), [configuration workspace](docs/configuration.md), and [milestones](https://github.com/colecrouter/perilune/milestones).
 
 ## Direction
 

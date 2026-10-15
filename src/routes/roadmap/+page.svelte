@@ -31,8 +31,9 @@
 		<section id="configuration">
 			<h2>Configuration</h2>
 			<p>
-				Explore an explained printer configuration editor that preserves comments, includes, macros,
-				and calibration-generated values.
+				The configuration workspace now has explained settings, lossless raw editing, protected
+				calibration-generated values, reviewed simulator saves, conflict checks and backups. Live
+				files support owner-only inspection, drafts and export; coordinated live writing follows.
 			</p>
 		</section>
 		<section>

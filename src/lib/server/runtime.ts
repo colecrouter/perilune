@@ -1,3 +1,4 @@
+import { ConfigurationServiceLive, ConfigurationSettings } from './config-service.js';
 import { authService } from './auth/index.js';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -96,7 +97,16 @@ const jobsLayer = JobServiceLive.pipe(
 	Layer.provide(SqliteClient.layer({ filename })),
 	Layer.provideMerge(commandsLayer)
 );
-export const runtime = ManagedRuntime.make(jobsLayer);
+const configurationLayer = ConfigurationServiceLive.pipe(
+	Layer.provide(
+		Layer.succeed(ConfigurationSettings, {
+			moonrakerUrl: moonrakerUrl ?? '',
+			apiKey: process.env.PERILUNE_MOONRAKER_API_KEY
+		})
+	),
+	Layer.provide(databaseLayer)
+);
+export const runtime = ManagedRuntime.make(Layer.merge(jobsLayer, configurationLayer));
 export const shutdownSignal = new AbortController();
 export const integration = createIntegration();
 export const requestEffect = integration.effect;
