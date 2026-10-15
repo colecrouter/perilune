@@ -35,6 +35,7 @@ async function fixture() {
 		error: false,
 		dropped: false,
 		noTransition: false,
+		serverStartupOnly: false,
 		transient: false,
 		pending: false,
 		target: 0
@@ -72,7 +73,10 @@ async function fixture() {
 					response.end('{}');
 					return;
 				}
-				result = { klippy_state: f.ticks-- > 0 ? 'startup' : f.error ? 'error' : 'ready' };
+				result = {
+					klippy_state:
+						f.serverStartupOnly || f.ticks-- > 0 ? 'startup' : f.error ? 'error' : 'ready'
+				};
 			} else if (request.url === '/server/files/upload') {
 				const chunks: Uint8Array[] = [];
 				for await (const chunk of request) chunks.push(chunk);
@@ -320,4 +324,14 @@ it('a verified restore cannot be toggled back, and an explicit restore retry ski
 			a.service.submit({ id: randomUUID(), revertOf: retry.id, confirmedRestart: true }, owner)
 		)
 	).rejects.toThrow('latest');
+});
+
+it('does not mistake an old ready response during Moonraker startup for a completed restart', async () => {
+	const { f, url } = await fixture(),
+		a = await app(url);
+	f.noTransition = true;
+	f.serverStartupOnly = true;
+	await a.submit(f.text.replace('200', '180'));
+	expect((await a.terminal()).phase).toBe('unknown');
+	expect(f.restarts).toBe(1);
 });

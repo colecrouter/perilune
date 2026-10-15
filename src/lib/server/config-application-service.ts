@@ -229,7 +229,11 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 							const server = await call('/server/info', signal);
 							if (['startup', 'disconnected'].includes(server?.klippy_state)) transitioned = true;
 							const state = await info(signal);
-							if (['error', 'shutdown'].includes(state.state)) {
+							if (
+								['error', 'shutdown'].includes(state.state) &&
+								['error', 'shutdown'].includes(server?.klippy_state) &&
+								(transitioned || record.mode === 'apply')
+							) {
 								record.diagnostic = String(
 									state.state_message ?? 'Klipper reported a startup error.'
 								).slice(0, 32768);
@@ -241,7 +245,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 								return;
 							}
 							if (state.state === 'startup') transitioned = true;
-							if (state.state === 'ready' && transitioned) {
+							if (state.state === 'ready' && server?.klippy_state === 'ready' && transitioned) {
 								const current = await Effect.runPromise(files.read(record.path, job.actor));
 								if (current.text !== job.row.after_text)
 									throw failure(
