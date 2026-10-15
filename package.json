@@ -13,7 +13,7 @@
 		"build": "vp build",
 		"preview": "vp preview",
 		"prepare": "effect-language-service patch && svelte-kit sync",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json && tsc --noEmit --project src/service-worker/tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"start": "node scripts/server.mjs",
 		"test": "vp test run",
