@@ -23,6 +23,8 @@ it('derives a discrete rectangular plan and rejects unsupported probe paths', ()
 	])
 		expect(liveMeshPlan({ ...config, bed_mesh: { ...config.bed_mesh, ...extra } })).toBeNull();
 	expect(liveMeshPlan({ ...config, homing_override: { gcode: 'G28' } })).toBeNull();
+	for (const name of ['G28', 'BED_MESH_CALIBRATE', 'BED_MESH_PROFILE', 'SAVE_CONFIG'])
+		expect(liveMeshPlan({ ...config, [`gcode_macro ${name}`]: { gcode: 'CUSTOM' } })).toBeNull();
 });
 it('uses probe offsets for travel limits and requires fresh idle cold state', () => {
 	const state = initialLiveSnapshot();
@@ -48,4 +50,24 @@ it('uses probe offsets for travel limits and requires fresh idle cold state', ()
 	state.telemetryReady = true;
 	state.heaters.bed.target = 60;
 	expect(liveMeshReason(state)).toMatch(/cold/);
+	state.heaters.bed.target = 0;
+	state.bedMesh.profiles = Array.from({ length: 31 }, (_, i) => ({
+		name: `profile-${i}`,
+		min: [20, 20],
+		max: [200, 200],
+		points: [
+			[0, 0],
+			[0, 0]
+		]
+	}));
+	expect(liveMeshReason(state)).toMatch(/complete profile/);
+	state.liveMesh.plan!.columns = 65;
+	state.liveMesh.plan!.rows = 65;
+	state.bedMesh.profiles = Array.from({ length: 5 }, (_, i) => ({
+		name: `profile-${i}`,
+		min: [20, 20],
+		max: [200, 200],
+		points: Array.from({ length: 65 }, () => Array(65).fill(0))
+	}));
+	expect(liveMeshReason(state)).toMatch(/space/);
 });

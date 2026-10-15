@@ -507,7 +507,7 @@ snapshot and action history, and migration 005's separate live_mesh_workflow
 checkpoint. The default server configuration remains read-only.
 
 The supported initial plan is rectangular bed_mesh with a discrete probe/bltouch,
-without homing_override, faulty regions, circular meshes or extra reference probing.
+without homing_override, overrides of the mesh/homing/save commands, faulty regions, circular meshes or extra reference probing.
 Only normalized bounds/count/offset/sample count and pending-config state reach the
 browser; raw printer configuration remains backend-only. Probe offsets are checked
 against nozzle travel. The cold run requires ready fresh telemetry, no active/paused
@@ -516,6 +516,8 @@ job or other calibration, heater targets zero, and observed temperatures at most
 Unhomed axes trigger G28; plan, readiness and prior mesh identity are revalidated
 before homing and again before probing. Commands from external clients can still
 change state after a validation; this is not a lock enforced by Moonraker.
+
+An incomplete/omitted profile list or insufficient bounded sample/profile capacity prevents a new probe, and incomplete fresh profile discovery prevents saving. Existing internal run names are also rejected rather than overwritten.
 
 Admission atomically writes an actor-bound idempotent action and workflow reservation
 before dispatch. Queue capacity is one; undispatched actions expire after 30 seconds.

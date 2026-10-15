@@ -25,6 +25,13 @@ export class LiveMeshService extends Context.Service<
 export const LiveMeshDisabled = Layer.succeed(LiveMeshService, {
 	submit: () => Effect.fail(new ActionRejected({ message: 'Live mesh commands are disabled.' }))
 });
+const canSaveProfile = (mesh: PrinterSnapshot['bedMesh']) =>
+	mesh.omittedProfiles === 0 &&
+	mesh.profiles.length < 32 &&
+	mesh.active !== null &&
+	mesh.profiles.reduce((sum, p) => sum + p.points.length * p.points[0].length, 0) +
+		2 * mesh.active.points.length * mesh.active.points[0].length <=
+		32768;
 const runName = (id: string) => `perilune_${id.replaceAll('-', '')}`;
 const authorized = (actor: CalibrationActor) =>
 	['owner', 'operator'].includes(actor.role ?? '') && actor.authorized?.() !== false;
@@ -165,6 +172,18 @@ export const LiveMeshServiceLive = Layer.effect(
 					}));
 					const session = (yield* SubscriptionRef.get(printer.state)).meshProbe.session!;
 					if (command.type === 'meshProbeBegin') {
+						const capacityReason = liveMeshReason({
+							...checked,
+							meshProbe: emptyMeshProbe(),
+							motion: { ...checked.motion, calibration: false }
+						});
+						if (
+							capacityReason ||
+							fresh.bedMesh.profiles.some((p) => p.name === runName(session.id))
+						)
+							return yield* fail(
+								capacityReason ?? 'This internal profile name already exists. Start a new run.'
+							);
 						if (
 							(fresh.bedMesh.active &&
 								!sameMesh(fresh.bedMesh.active, session.previousMesh ?? null)) ||
@@ -213,14 +232,30 @@ export const LiveMeshServiceLive = Layer.effect(
 							return yield* fail(
 								'The previous mesh changed during homing. Probing was not dispatched.'
 							);
+						if (
+							afterHome.bedMesh.omittedProfiles > 0 ||
+							afterHome.bedMesh.profiles.some((p) => p.name === runName(session.id))
+						)
+							return yield* fail(
+								'The profile list changed during homing. Probing was not dispatched.'
+							);
+						if (afterHome.motion.calibration)
+							return yield* fail(
+								'Another probe calibration started during homing. Probing was not dispatched.'
+							);
 						const beforeProbe = {
 							...checked,
 							job: afterHome.job,
 							heaters: afterHome.heaters,
 							motion: afterHome.motion,
+							bedMesh: afterHome.bedMesh,
 							liveMesh: afterHome.liveMesh
 						};
-						const changed = liveMeshReason(beforeProbe, true);
+						const changed = liveMeshReason({
+							...beforeProbe,
+							meshProbe: emptyMeshProbe(),
+							motion: { ...beforeProbe.motion, calibration: false }
+						});
 						if (changed || JSON.stringify(afterHome.liveMesh.plan) !== JSON.stringify(session.plan))
 							return yield* fail(changed ?? 'The probing plan changed during homing.');
 						progress = {
@@ -354,6 +389,7 @@ export const LiveMeshServiceLive = Layer.effect(
 							)
 						);
 					if (
+						!canSaveProfile(latest.bedMesh) ||
 						latest.bedMesh.profiles.some(
 							(p) => p.name.toLowerCase() === command.name!.toLowerCase()
 						) ||
@@ -563,6 +599,8 @@ export const LiveMeshServiceLive = Layer.effect(
 						const telemetry = yield* SubscriptionRef.get(transport.state);
 						let mesh = snapshot.meshProbe;
 						if (command.type === 'meshProbeBegin') {
+							if (snapshot.bedMesh.profiles.some((p) => p.name === runName(command.probeId)))
+								return yield* reject('This internal profile name already exists. Start a new run.');
 							if (!command.confirmed || command.probeId !== request.id)
 								return yield* reject('Confirm the reviewed plan with a unique run ID.');
 							const previous = snapshot.bedMesh.active;
@@ -619,6 +657,10 @@ export const LiveMeshServiceLive = Layer.effect(
 									session.expiresAt <= Date.now()
 								)
 									return yield* reject('The mesh result is unavailable or its review expired.');
+								if (command.outcome === 'save' && !canSaveProfile(snapshot.bedMesh))
+									return yield* reject(
+										'The full profile list could not be verified. No profile can be safely saved.'
+									);
 								if (
 									command.outcome === 'save' &&
 									(!command.name ||

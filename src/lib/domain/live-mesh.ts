@@ -23,6 +23,9 @@ export function liveMeshPlan(config: unknown): LiveMeshPlan | null {
 		probe = record(c.bltouch ?? c.probe);
 	if (
 		!Object.keys(probe).length ||
+		Object.keys(c).some((key) =>
+			/^gcode_macro (G28|BED_MESH_CALIBRATE|BED_MESH_PROFILE|SAVE_CONFIG)$/i.test(key)
+		) ||
 		c.homing_override ||
 		mesh.mesh_radius ||
 		mesh.zero_reference_position ||
@@ -75,6 +78,15 @@ export function liveMeshReason(state: PrinterSnapshot, allowReservation = false)
 	const plan = state.liveMesh.plan;
 	if (!plan)
 		return 'This printer needs a supported rectangular mesh and discrete probe configuration.';
+	if (
+		!allowReservation &&
+		(state.bedMesh.omittedProfiles > 0 ||
+			state.bedMesh.profiles.length >= 31 ||
+			state.bedMesh.profiles.reduce((sum, p) => sum + p.points.length * p.points[0].length, 0) +
+				3 * plan.rows * plan.columns >
+				32768)
+	)
+		return 'The complete profile list and space for the result must be available before probing.';
 	for (const [i, axis] of (['x', 'y'] as const).entries()) {
 		const bounds = state.motion.limits[axis];
 		if (

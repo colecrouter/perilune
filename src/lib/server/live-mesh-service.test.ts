@@ -367,3 +367,103 @@ it('counts current Klipper probe-coordinate readings without applying offsets tw
 	release();
 	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('review');
 });
+it('refuses profile writes when the bounded list cannot prove uniqueness', async () => {
+	const f = await fixture();
+	await Effect.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			bedMesh: { ...s.bedMesh, omittedProfiles: 1 }
+		}))
+	);
+	await expect.poll(async () => (await f.snapshot()).bedMesh.omittedProfiles).toBe(1);
+	await expect(f.submit(f.begin())).rejects.toThrow(/complete profile/);
+	expect(f.operations).toEqual([]);
+	await Effect.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			bedMesh: { ...s.bedMesh, omittedProfiles: 0 }
+		}))
+	);
+	await expect.poll(async () => (await f.snapshot()).bedMesh.omittedProfiles).toBe(0);
+	const request = f.begin();
+	await f.submit(request);
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('review');
+	await f.submit({
+		id: crypto.randomUUID(),
+		command: {
+			type: 'meshProbeFinish',
+			probeId: request.id,
+			outcome: 'save',
+			name: 'hidden-profile'
+		}
+	});
+	await Effect.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			bedMesh: { ...s.bedMesh, omittedProfiles: 1 }
+		}))
+	);
+	await expect.poll(async () => (await f.snapshot()).actions[0].status).toBe('failed');
+	expect(f.operations.map((o) => o.type)).toEqual(['home', 'probe']);
+	expect((await f.snapshot()).meshProbe.session?.stage).toBe('review');
+});
+it('refuses an existing internal run name rather than overwriting it', async () => {
+	const f = await fixture(),
+		request = f.begin();
+	await Effect.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			bedMesh: {
+				...s.bedMesh,
+				profiles: [
+					...s.bedMesh.profiles,
+					{ ...s.bedMesh.active!, name: `perilune_${request.id.replaceAll('-', '')}` }
+				]
+			}
+		}))
+	);
+	await expect.poll(async () => (await f.snapshot()).bedMesh.profiles.length).toBe(2);
+	await expect(f.submit(request)).rejects.toThrow(/internal profile/);
+	expect(f.operations).toEqual([]);
+});
+it('rechecks candidate capacity after homing before dispatching the probe', async () => {
+	let release!: () => void;
+	const held = new Promise<void>((r) => (release = r));
+	const f = await fixture(async (op) => {
+			if (op.type === 'home') await held;
+		}),
+		request = f.begin();
+	await f.submit(request);
+	await expect.poll(() => f.operations.map((o) => o.type)).toEqual(['home']);
+	await Effect.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			bedMesh: {
+				...s.bedMesh,
+				profiles: [
+					...s.bedMesh.profiles,
+					...Array.from({ length: 30 }, (_, i) => ({ ...s.bedMesh.active!, name: `external-${i}` }))
+				]
+			}
+		}))
+	);
+	release();
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('uncertain');
+	expect(f.operations.map((o) => o.type)).toEqual(['home']);
+});
+it('does not hide an external manual-probe session started during homing', async () => {
+	let release!: () => void;
+	const held = new Promise<void>((r) => (release = r));
+	const f = await fixture(async (op) => {
+			if (op.type === 'home') await held;
+		}),
+		request = f.begin();
+	await f.submit(request);
+	await expect.poll(() => f.operations.map((o) => o.type)).toEqual(['home']);
+	await Effect.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({ ...s, motion: { ...s.motion, calibration: true } }))
+	);
+	release();
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('uncertain');
+	expect(f.operations.map((o) => o.type)).toEqual(['home']);
+});
