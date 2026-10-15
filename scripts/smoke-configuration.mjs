@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
@@ -104,6 +104,20 @@ try {
 		(await outsider.request.get(sim.base + '/api/configuration', { maxRedirects: 0 })).status(),
 		401
 	);
+	const referenceResponse = await outsider.request.get(sim.base + '/reference/klipper.json');
+	assert.equal(referenceResponse.status(), 200);
+	assert.ok(!/immutable|max-age=[1-9]/.test(referenceResponse.headers()['cache-control'] ?? ''));
+	const reference = await referenceResponse.json();
+	const artifact = JSON.parse(await readFile('build/prerendered/reference/klipper.json', 'utf8'));
+	assert.deepEqual(
+		reference,
+		artifact,
+		'Serves the build artifact without a runtime upstream fetch'
+	);
+	assert.equal(reference.schemaVersion, 1);
+	assert.ok(reference.options.length > 500);
+	assert.match(reference.source.revision, /^[a-f0-9]{40}$/);
+	assert.ok(!JSON.stringify(reference).includes('fixture-private-config'));
 	await outsider.close();
 	const enroll = async (role) => {
 		const invitation = await context.request.post(sim.base + '/api/account/invite', {
@@ -153,6 +167,35 @@ try {
 		.inputValue();
 	assert.match(draft, /max_velocity: 180 # mm\/s/);
 	assert.ok(!draft.includes('SAVE_CONFIG'));
+	await page.locator('summary').filter({ hasText: 'Find or add a setting' }).click();
+	await page.getByRole('searchbox', { name: 'Find a setting' }).fill('max_z_velocity');
+	await page.getByRole('button', { name: /max_z_velocity/ }).click();
+	assert.equal(await page.getByRole('textbox', { name: 'Explicit value' }).inputValue(), '');
+	assert.equal(await page.getByRole('button', { name: 'Add to draft' }).isDisabled(), true);
+	await page.getByRole('textbox', { name: 'Explicit value' }).fill('12');
+	assert.equal(await page.getByRole('button', { name: 'Add to draft' }).isDisabled(), true);
+	await page.getByRole('checkbox', { name: /I checked included files/ }).check();
+	await page.getByRole('button', { name: 'Add to draft' }).click();
+	assert.match(
+		await page.getByRole('textbox', { name: 'Editable configuration source' }).inputValue(),
+		/max_z_velocity: 12/
+	);
+	assert.ok(
+		!(
+			await (await context.request.get(sim.base + '/api/configuration?file=printer.cfg')).json()
+		).text.includes('max_z_velocity: 12'),
+		'Addition stays a draft'
+	);
+	await page.setViewportSize({ width: 320, height: 800 });
+	assert.equal(
+		await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+		false,
+		'Reference browser fits320px'
+	);
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	// Restore the test draft before exercising the existing save/conflict flow.
+	await page.getByRole('textbox', { name: 'Editable configuration source' }).fill(draft);
+	await page.locator('summary').filter({ hasText: 'Find or add a setting' }).click();
 	// Same-route links retain drafts for each file.
 	await page
 		.getByRole('navigation', { name: 'Configuration files' })

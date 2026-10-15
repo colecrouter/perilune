@@ -1,5 +1,12 @@
 <script lang="ts">
 	import { untrack, onMount } from 'svelte';
+	import ConfigurationReference from './ConfigurationReference.svelte';
+	import {
+		referenceMatches,
+		referenceUrl,
+		type ReferenceCatalogue
+	} from '#lib/domain/klipper-reference.js';
+	import { referenceInventory } from '#lib/domain/reference-configuration.js';
 	import { Dialog } from 'bits-ui';
 	import {
 		configParts,
@@ -41,6 +48,7 @@
 	onMount(() => {
 		mounted = true;
 	});
+	let reference = $state<ReferenceCatalogue | null>(null);
 	let mode = $state<'guided' | 'raw'>('guided');
 	let busy = $state(false),
 		failure = $state(''),
@@ -51,6 +59,7 @@
 		confirmed = $state(false);
 	let selectedBackup = $state('');
 	const current = $derived(drafts[source.path]);
+	const referenceContext = $derived(current ? referenceInventory(current.text).kinematics : null);
 	const parts = $derived(configParts(current?.text ?? source.text));
 	const fields = $derived(configFields(current?.text ?? source.text));
 	const dirty = $derived(Boolean(current && current.text !== current.base.text));
@@ -78,6 +87,16 @@
 	$effect(() => {
 		onDirty?.(anyDirty);
 	});
+	function addFromReference(change: { path: string; expectedText: string; text: string }) {
+		if (busy || source.path !== change.path || !current || current.text !== change.expectedText)
+			throw new Error('The draft changed. Review the current file before adding the option.');
+		checkConfigChange(current.text, change.text);
+		current.text = change.text;
+		failure = '';
+		invalidField = false;
+		notice = 'Option added to your draft. Review changes before saving.';
+	}
+
 	function rawEdit(value: string) {
 		if (!current) return;
 		current.text = rawConfigEdit(parts.editable, value) + parts.generated;
@@ -325,6 +344,15 @@
 							here.</span
 						>
 					</div>{/if}
+				<details class="upstream-reference">
+					<summary>Klipper reference · Find or add a setting</summary><ConfigurationReference
+						text={current.text}
+						path={source.path}
+						disabled={busy || !mounted}
+						onAdd={addFromReference}
+						onCatalogue={(value) => (reference = value)}
+					/>
+				</details>
 				{#if mode === 'guided'}
 					<p class="muted">
 						These are configured values in this file, not live readings. Hints and input bounds help
@@ -339,6 +367,18 @@
 									<div>
 										<label for={`setting-${field.start}`}>{field.hint.title}</label>
 										<p>{field.hint.help}</p>
+										{#if reference}{@const upstream = reference.options.find(
+												(option) =>
+													option.key === field.key &&
+													referenceMatches(option, field.section, referenceContext) &&
+													option.description
+											)}{#if upstream}<details class="field-reference">
+													<summary>Upstream explanation</summary>
+													<p>{upstream.description}</p>
+													<a href={referenceUrl(upstream)} target="_blank" rel="noreferrer"
+														>Read the full section ↗</a
+													>
+												</details>{/if}{/if}
 										<div class="source-ref">
 											<code>[{field.section}] {field.key}</code><span>Line {field.line}</span><a
 												href={`https://www.klipper3d.org/Config_Reference.html#${field.hint.section}`}
@@ -488,6 +528,15 @@
 >
 
 <style>
+	.upstream-reference {
+		border: 1px solid var(--border);
+		border-radius: 0.7rem;
+		padding: 0.2rem 1rem;
+		margin: 1rem 0;
+	}
+	.field-reference {
+		font-size: 0.8rem;
+	}
 	.workspace {
 		display: grid;
 		grid-template-columns: 230px minmax(0, 1fr);

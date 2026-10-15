@@ -7,6 +7,12 @@ import { authService, sameOrigin } from '#lib/server/auth/index.js';
 
 export const handle: typeof integration.handle = async ({ event, resolve }) => {
 	if (building || !authService) return integration.handle({ event, resolve });
+	// Public upstream documentation only; generated static data contains no printer state.
+	if (event.url.pathname === '/reference/klipper.json') {
+		const response = await integration.handle({ event, resolve });
+		response.headers.set('Cache-Control', 'public, max-age=0, must-revalidate');
+		return response;
+	}
 	if (event.url.pathname.startsWith('/api/auth/')) {
 		const path = event.url.pathname.slice('/api/auth'.length);
 		const publicEndpoints = new Set([
@@ -65,5 +71,6 @@ export const handle: typeof integration.handle = async ({ event, resolve }) => {
 	return response;
 };
 export const init = async () => {
+	if (building) return;
 	await runtime.runPromise(PrinterService.pipe(Effect.asVoid));
 };

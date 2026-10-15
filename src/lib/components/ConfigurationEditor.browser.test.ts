@@ -1,7 +1,10 @@
-import { expect, test, vi } from 'vite-plus/test';
+import { afterEach, beforeEach, expect, test, vi } from 'vite-plus/test';
 import { render } from 'vitest-browser-svelte';
 import ConfigurationEditor from './ConfigurationEditor.svelte';
 import { configParts, type ConfigDocument } from '#lib/domain/configuration.js';
+// Unit tests isolate optional reference loading; production smoke exercises the real artifact.
+beforeEach(() => vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('reference offline'))));
+afterEach(() => vi.unstubAllGlobals());
 const tail =
 	'\n#*# <---------------------- SAVE_CONFIG ---------------------->\n#*# DO NOT EDIT THIS BLOCK OR BELOW. The contents are auto-generated.\n#*#\n#*# [probe]\n#*# z_offset = 1.2\n';
 const file = (

@@ -5,7 +5,16 @@ import { defineConfig, lazyPlugins } from 'vite-plus';
 import { playwright } from '@vitest/browser-playwright';
 
 export default defineConfig({
-	fmt: { useTabs: true, singleQuote: true, trailingComma: 'none', ignorePatterns: ['**/*.svelte'] },
+	fmt: {
+		useTabs: true,
+		singleQuote: true,
+		trailingComma: 'none',
+		ignorePatterns: [
+			'**/*.svelte',
+			'src/lib/server/reference/Config_Reference.md',
+			'src/lib/server/reference/COPYING'
+		]
+	},
 	lint: { options: { typeAware: true, typeCheck: false } },
 	plugins: lazyPlugins(() => [
 		sveltekit({
