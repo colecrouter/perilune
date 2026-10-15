@@ -54,11 +54,14 @@
 									><DropdownMenu.GroupHeading class="calibration-menu-heading"
 										>Calibration workflows</DropdownMenu.GroupHeading
 									>
-									{#each [{ href: '/calibration', title: 'Z-offset workshop', description: 'Understand nozzle clearance' }, { href: '/calibration/mesh', title: 'Bed mesh', description: 'Inspect height grids and profiles' }] as workflow}
+									{#each [{ href: '/calibration', title: 'Z-offset workshop', description: 'Understand nozzle clearance' }, { href: '/calibration/mesh', title: 'Bed mesh', description: 'Inspect height grids and profiles' }, { href: '/calibration/extrusion', title: 'Filament & extrusion', description: 'Measure extruder travel' }] as workflow}
 										<DropdownMenu.Item
 											>{#snippet child({ props })}<a
 													{...props}
-													href={resolve(workflow.href as '/calibration' | '/calibration/mesh')}
+													href={resolve(
+														workflow.href as
+															'/calibration' | '/calibration/mesh' | '/calibration/extrusion'
+													)}
 													class="calibration-menu-item"
 													aria-current={page.url.pathname === workflow.href ? 'page' : undefined}
 													><strong>{workflow.title}</strong><small>{workflow.description}</small></a

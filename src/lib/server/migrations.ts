@@ -4,6 +4,10 @@ import * as Migrator from 'effect/sql/Migrator';
 
 export const migrate = Migrator.make({})({
 	loader: Migrator.fromRecord({
+		'006_extrusion': Effect.gen(function* () {
+			const sql = yield* SqlClient;
+			yield* sql`CREATE TABLE simulator_extrusion (id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL)`;
+		}),
 		'005_live_mesh': Effect.gen(function* () {
 			const sql = yield* SqlClient;
 			yield* sql`CREATE TABLE live_mesh_workflow (id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL)`;

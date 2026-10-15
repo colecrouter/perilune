@@ -1,4 +1,11 @@
 import {
+	advanceExtrusion,
+	emptyExtrusion,
+	extrusionActive,
+	extrusionReason,
+	interruptExtrusion
+} from '#lib/domain/extrusion.js';
+import {
 	advanceMeshProbe,
 	restartMeshProbe,
 	interruptMeshProbe,
@@ -71,7 +78,9 @@ const storageMessage =
 	'Action history storage failed. Outcome is unknown; this action will not be retried.';
 
 const actorCommand = (command: PrinterCommand) =>
-	command.type.startsWith('calibration') || command.type.startsWith('meshProbe');
+	command.type.startsWith('calibration') ||
+	command.type.startsWith('meshProbe') ||
+	command.type.startsWith('extrusion');
 
 export const makePrinterService = (
 	mode: PrinterSnapshot['mode'] = 'simulator',
@@ -92,6 +101,14 @@ export const makePrinterService = (
 					? restartMeshProbe(yield* store.meshProbe)
 					: initialLiveSnapshot().meshProbe;
 			if (mode === 'simulator') yield* store.writeMeshProbe(meshProbe);
+			const extrusion =
+				mode === 'simulator'
+					? interruptExtrusion(
+							yield* store.extrusion,
+							'Backend restarted. Filament movement was not resumed.'
+						)
+					: emptyExtrusion();
+			if (mode === 'simulator') yield* store.writeExtrusion(extrusion);
 			const bedMesh =
 				mode === 'simulator'
 					? {
@@ -103,6 +120,7 @@ export const makePrinterService = (
 				...(mode === 'moonraker' ? initialLiveSnapshot() : initialSnapshot()),
 				actions: mode === 'moonraker' ? [] : history,
 				calibration,
+				extrusion,
 				meshProbe,
 				bedMesh
 			});
@@ -137,6 +155,7 @@ export const makePrinterService = (
 			const lock = yield* Semaphore.make(1);
 			const pending = new Map<string, ActionRequest & { actor?: CalibrationActor }>();
 			let simulatedRunId: string | undefined;
+			let extrusionActor: CalibrationActor | undefined;
 			let probeActor: CalibrationActor | undefined;
 			const unwritten = new Map<string, { status: ActionStatus; message: string | null }>();
 			let lastRecovery = 0;
@@ -204,7 +223,14 @@ export const makePrinterService = (
 								}
 							}
 						}
-						if (status === 'completed' && request?.command.type.startsWith('meshProbe')) {
+						if (status === 'completed' && request?.command.type.startsWith('extrusion')) {
+							yield* store.commitExtrusion(action.id, status, message, next.extrusion);
+							if (
+								request.command.type === 'extrusionBegin' ||
+								request.command.type === 'extrusionFeed'
+							)
+								extrusionActor = request.actor;
+						} else if (status === 'completed' && request?.command.type.startsWith('meshProbe')) {
 							yield* store.commitMeshProbe(action.id, status, message, next.meshProbe);
 							if (request.command.type === 'meshProbeBegin') probeActor = request.actor;
 						} else if (status === 'completed' && request?.command.type.startsWith('calibration'))
@@ -232,6 +258,10 @@ export const makePrinterService = (
 					yield* update((snapshot) => ({
 						...snapshot,
 						storage: 'degraded',
+						extrusion: interruptExtrusion(
+							snapshot.extrusion,
+							'Storage failed. Movement was interrupted and will not be replayed.'
+						),
 						meshProbe: interruptMeshProbe(
 							snapshot.meshProbe,
 							'Storage failed. The outcome is unknown; saved profiles will be reconciled without replaying commands.'
@@ -256,8 +286,14 @@ export const makePrinterService = (
 				}
 				const persisted = yield* store.calibration;
 				const persistedProbe = yield* store.meshProbe;
+				const persistedExtrusion = yield* store.extrusion;
 				yield* SubscriptionRef.modifyEffect(state, (snapshot) =>
 					Effect.gen(function* () {
+						const extrusion = interruptExtrusion(
+							persistedExtrusion,
+							'Storage recovered. Unfinished movement was not resumed.'
+						);
+						yield* store.writeExtrusion(extrusion);
 						const calibration = { ...snapshot.calibration, savedOffset: persisted.savedOffset };
 						yield* store.writeCalibration(calibration);
 						const meshProbe = {
@@ -282,6 +318,7 @@ export const makePrinterService = (
 							revised(snapshot, {
 								...snapshot,
 								calibration,
+								extrusion,
 								meshProbe,
 								bedMesh,
 								storage: 'healthy'
@@ -451,6 +488,55 @@ export const makePrinterService = (
 						Effect.forkScoped
 					);
 
+			if (mode === 'simulator')
+				yield* lock
+					.withPermits(1)(
+						SubscriptionRef.modifyEffect(state, (current) =>
+							Effect.gen(function* () {
+								if (!extrusionActive(current.extrusion)) return [undefined, current] as const;
+								const reason = extrusionReason(current, false);
+								let extrusion =
+									reason || extrusionActor?.authorized?.() === false
+										? interruptExtrusion(
+												current.extrusion,
+												reason ?? 'Operator access changed. Movement was interrupted.'
+											)
+										: advanceExtrusion(current.extrusion);
+								if (extrusion === current.extrusion) return [undefined, current] as const;
+								const terminal = !['feeding', 'extruding'].includes(extrusion.session!.stage);
+								const persisted = terminal
+									? yield* store.writeExtrusion(extrusion).pipe(Effect.result)
+									: undefined;
+								const failed = persisted?._tag === 'Failure';
+								if (failed)
+									extrusion = interruptExtrusion(
+										extrusion,
+										'Storage failed. Movement was not resumed.'
+									);
+								return [
+									undefined,
+									revised(current, {
+										...current,
+										extrusion,
+										motion: {
+											...current.motion,
+											calibration:
+												extrusionActive(extrusion) ||
+												calibrationActive(current.calibration) ||
+												meshProbeActive(current.meshProbe)
+										},
+										storage: failed ? 'degraded' : current.storage
+									})
+								] as const;
+							})
+						)
+					)
+					.pipe(
+						Effect.uninterruptible,
+						Effect.repeat(Schedule.spaced(probeInterval)),
+						Effect.forkScoped
+					);
+
 			return {
 				state,
 				temperatureHistory,
@@ -480,6 +566,16 @@ export const makePrinterService = (
 											message: 'The probe run ID must match its unique begin action ID.'
 										})
 									);
+								if (
+									(request.command.type === 'extrusionBegin' ||
+										request.command.type === 'extrusionFeed') &&
+									request.command.runId !== request.id
+								)
+									return yield* Effect.fail(
+										new ActionRejected({
+											message: 'The filament run ID must match its begin action ID.'
+										})
+									);
 								const existing = yield* store.find(request.id);
 								if (existing) {
 									if (
@@ -505,6 +601,16 @@ export const makePrinterService = (
 										})
 									);
 								}
+								if (
+									extrusionActive(current.extrusion) &&
+									!request.command.type.startsWith('extrusion') &&
+									request.command.type !== 'cooldown'
+								)
+									return yield* Effect.fail(
+										new ActionRejected({
+											message: 'Filament calibration owns the printer. Finish or cancel it first.'
+										})
+									);
 								if (
 									calibrationActive(current.calibration) &&
 									!actorCommand(request.command) &&
@@ -658,6 +764,16 @@ export const makePrinterService = (
 										const connection = connected
 											? ('connected' as const)
 											: ('disconnected' as const);
+										const extrusion = connected
+											? snapshot.extrusion
+											: interruptExtrusion(
+													snapshot.extrusion,
+													'Printer disconnected. Movement was not resumed.'
+												);
+										const extrusionPersisted =
+											extrusion !== snapshot.extrusion
+												? yield* store.writeExtrusion(extrusion).pipe(Effect.result)
+												: undefined;
 										const meshProbe = connected
 											? snapshot.meshProbe
 											: interruptMeshProbe(
@@ -683,14 +799,20 @@ export const makePrinterService = (
 											revised(snapshot, {
 												...snapshot,
 												connection,
+												extrusion,
 												calibration,
 												meshProbe,
 												motion: {
 													...snapshot.motion,
-													calibration: calibrationActive(calibration) || meshProbeActive(meshProbe)
+													calibration:
+														calibrationActive(calibration) ||
+														meshProbeActive(meshProbe) ||
+														extrusionActive(extrusion)
 												},
 												storage:
-													persisted?._tag === 'Failure' || meshPersisted?._tag === 'Failure'
+													persisted?._tag === 'Failure' ||
+													meshPersisted?._tag === 'Failure' ||
+													extrusionPersisted?._tag === 'Failure'
 														? 'degraded'
 														: snapshot.storage,
 												connectionGeneration:
@@ -710,7 +832,9 @@ export const makePrinterService = (
 								motion: {
 									...(telemetry.motion ?? snapshot.motion),
 									calibration: Boolean(
-										telemetry.motion?.calibration || meshProbeActive(snapshot.meshProbe)
+										telemetry.motion?.calibration ||
+										meshProbeActive(snapshot.meshProbe) ||
+										extrusionActive(snapshot.extrusion)
 									)
 								},
 								connectionGeneration:
@@ -728,12 +852,14 @@ export const makePrinterService = (
 									pending.size > 0 ||
 									snapshot.storage === 'degraded' ||
 									calibrationActive(snapshot.calibration) ||
-									meshProbeActive(snapshot.meshProbe)
+									meshProbeActive(snapshot.meshProbe) ||
+									extrusionActive(snapshot.extrusion)
 										? snapshot
 										: {
 												...initialSnapshot(),
 												calibration: snapshot.calibration,
 												meshProbe: snapshot.meshProbe,
+												extrusion: snapshot.extrusion,
 												bedMesh: snapshot.bedMesh,
 												actions: snapshot.actions,
 												connectionGeneration: snapshot.connectionGeneration + 1
