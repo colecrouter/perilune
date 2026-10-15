@@ -429,6 +429,7 @@
 					</p>
 					{#key source.path}<ConfigurationSource
 							value={parts.editable}
+							{reference}
 							path={source.path}
 							disabled={busy || !mounted}
 							onChange={rawEdit}

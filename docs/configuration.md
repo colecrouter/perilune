@@ -38,6 +38,13 @@ highlighting distinguishes sections, options, comments, G-code, and template
 expressions. YAML and JSON files use their native language modes. Highlighting
 is descriptive; it does not validate firmware settings or run macros.
 
+Hover a Klipper property name to highlight it and read its upstream explanation.
+Help follows the local section and kinematics; comments, values, macro bodies,
+and settings without matching documentation do not trigger it. Place the cursor
+on a key and press Ctrl/⌘ Shift Space for keyboard help; Tab reaches its
+documentation link and Escape returns to the editor. Reference availability
+does not affect draft editing or undo history.
+
 Use Ctrl/⌘ F to search and Escape to close search. Tab indents using four spaces;
 Escape followed by Tab moves focus out of the editor. Existing tabs and formatting
 are preserved. Editor text changes pass through the same source-preserving draft

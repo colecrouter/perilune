@@ -19,6 +19,8 @@ import { tags } from '@lezer/highlight';
 import { vscodeKeymap } from '@replit/codemirror-vscode-keymap';
 import { yaml } from '@codemirror/lang-yaml';
 import { json } from '@codemirror/lang-json';
+import { propertyHelp } from './property-help.js';
+import type { ReferenceCatalogue } from '#lib/domain/klipper-reference.js';
 import { klipper } from './klipper-language.js';
 const highlight = HighlightStyle.define([
 	{ tag: tags.heading, color: 'var(--code-heading)', fontWeight: '600' },
@@ -57,6 +59,34 @@ const theme = EditorView.theme({
 		border: '1px solid var(--border)',
 		borderRadius: '4px'
 	},
+	'.cm-property-hover': {
+		backgroundColor: 'var(--code-selection)',
+		textDecoration: 'underline',
+		textDecorationColor: 'var(--accent)',
+		textUnderlineOffset: '3px'
+	},
+	'.cm-tooltip': {
+		backgroundColor: 'var(--surface)',
+		color: 'var(--text)',
+		border: '1px solid var(--border-strong)',
+		borderRadius: '8px',
+		boxShadow: '0 8px 28px #0003'
+	},
+	'.cm-property-help': {
+		padding: '1rem',
+		maxWidth: 'min(440px, calc(100vw - 32px))',
+		maxHeight: 'min(360px, 50vh)',
+		overflowY: 'auto',
+		fontFamily: 'var(--font-sans, sans-serif)',
+		fontSize: '0.8rem',
+		lineHeight: '1.6',
+		whiteSpace: 'normal',
+		overflowWrap: 'anywhere'
+	},
+	'.cm-property-help strong': { display: 'block', fontFamily: 'ui-monospace, monospace' },
+	'.cm-property-help p': { margin: '0.65rem 0', whiteSpace: 'pre-wrap' },
+	'.cm-property-help a': { color: 'var(--accent)' },
+	'.cm-property-help small': { display: 'block', color: 'var(--muted)', marginTop: '0.65rem' },
 	'.cm-searchMatch': {
 		backgroundColor: 'var(--code-selection)',
 		outline: '1px solid var(--accent)'
@@ -67,9 +97,14 @@ export function createConfigEditor(
 	value: string,
 	path: string,
 	disabled: boolean,
-	onChange: (value: string) => void
+	onChange: (value: string) => void,
+	reference: ReferenceCatalogue | null = null
 ) {
 	const access = new Compartment();
+	const help = new Compartment();
+	let catalogue = reference;
+	const helpExtension = () =>
+		/\.(cfg|conf|ini)$/i.test(path) && catalogue ? propertyHelp(catalogue) : [];
 	const editable = (locked: boolean) => [
 		EditorState.readOnly.of(locked),
 		EditorView.editable.of(!locked)
@@ -88,6 +123,7 @@ export function createConfigEditor(
 				bracketMatching(),
 				search({ top: true }),
 				highlightSelectionMatches(),
+				help.of(helpExtension()),
 				keymap.of(vscodeKeymap),
 				indentUnit.of('    '),
 				EditorState.tabSize.of(4),
@@ -117,6 +153,11 @@ export function createConfigEditor(
 			const normalized = next.replace(/\r\n/g, '\n');
 			// Reactive echoes preserve selection/history. Explicit replacement starts a new history.
 			if (normalized !== view.state.doc.toString()) view.setState(makeState(normalized));
+		},
+		setReference: (next: ReferenceCatalogue | null) => {
+			if (catalogue === next) return;
+			catalogue = next;
+			view.dispatch({ effects: help.reconfigure(helpExtension()) });
 		},
 		destroy: () => view.destroy()
 	};
