@@ -49,7 +49,7 @@ const theme = EditorView.theme({
 		backgroundColor: 'var(--code-selection) !important'
 	},
 	'.cm-cursor': { borderLeftColor: 'var(--accent)' },
-	'&.cm-focused': { outline: '2px solid var(--accent)', outlineOffset: '2px' },
+	'&.cm-focused': { outline: '2px solid var(--accent)', outlineOffset: '-2px' },
 	'.cm-panels': { backgroundColor: 'var(--surface)', color: 'var(--text)' },
 	'.cm-textfield, .cm-button': {
 		background: 'var(--canvas)',
