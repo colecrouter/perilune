@@ -636,3 +636,25 @@ without RPC/file writes or dashboard leaks.
 Coordinated live writing, include-aware validation, new files/renames, and guided
 application of calibration proposals are follow-up milestones. See
 [the configuration guide](configuration.md).
+
+### Prerendered Klipper reference
+
+`/reference/klipper.json` is a public static catalogue containing upstream docs
+only. Its SvelteKit `prerender = true` endpoint fetches a fixed commit at build
+time with an eight-second timeout, redirect refusal, 512KiB stream bound, and
+SHA-256 verification. A byte-identical checked-in snapshot supplies offline builds;
+the bundled hash and minimum extraction coverage are checked. Build-time hook
+initialization skips printer workers. Production serves the prerendered artifact
+without fetching upstream. The route uses revalidation rather than immutable
+caching, and no private configuration is part of the catalogue.
+
+The parser preserves option descriptions, examples, source lines and kinematics
+variants; it does not infer a validation schema or defaults from commented values.
+The editor loads metadata independently so failures preserve existing drafts.
+A conservative local inventory checks all option keys and the protected generated
+suffix before offering explicit single-line additions. Includes require manual
+review acknowledgement; ambiguous sections and context mismatches block additions.
+Existing source bytes are spliced, and normal diff/CAS/save/export rules still apply.
+Full include resolution, firmware-specific schemas, new-section creation and a
+CodeMirror raw editor remain follow-ups. Upstream GPL source, license, revision,
+checksum and refresh instructions are bundled under `src/lib/server/reference/`.
