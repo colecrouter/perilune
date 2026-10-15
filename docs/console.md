@@ -54,3 +54,8 @@ Queued/sending commands become unknown on restart and are never resumed. A maxim
 of 20 submissions may be pending; queued commands expire after 30 seconds. Shortcuts
 are limited to 24 per account. Exporting or durable external log collection is not
 implemented in this milestone.
+
+Console interaction details:
+
+- Up/Down at the first/last input line recalls distinct recent submitted commands. Returning past the newest command restores the unfinished draft; editing a recalled command starts a new draft. History is frozen while browsing so incoming commands do not shift the selection.
+- “Group repeated responses” combines adjacent identical responses or adjacent temperature reports with gaps of at most 30 seconds. Expand a group to see every original sample and timestamp, or disable grouping. Commands and differing probe samples remain separate; grouping never changes retained backend data.

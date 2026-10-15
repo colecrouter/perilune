@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vite-plus/test';
+import { userEvent } from 'vite-plus/test/browser';
 import { render } from 'vitest-browser-svelte';
 import PrinterConsole from './PrinterConsole.svelte';
 import { simulatorMacros, type ConsoleSnapshot, type ConsoleReceipt } from '#lib/domain/console.js';
@@ -91,4 +92,75 @@ test('live mode never exposes an enabled run button and treats response markup a
 	await screen.getByRole('textbox', { name: 'Command', exact: true }).fill('G28');
 	await expect.element(screen.getByRole('button', { name: 'Review command…' })).toBeDisabled();
 	expect(screen.container.querySelector('img')).toBeNull();
+});
+
+test('arrow history restores drafts, preserves multiline editing and freezes across updates', async () => {
+	const screen = await render(PrinterConsole, {
+		snapshot: {
+			...initial,
+			receipts: [
+				{ ...receipt, script: 'M105', createdAt: 1 },
+				{ ...receipt, id: 'second', script: 'HELP', createdAt: 2 }
+			]
+		},
+		connected: true,
+		onSubmit: vi.fn(),
+		onFind: vi.fn(),
+		onPin: vi.fn()
+	});
+	const input = screen.getByRole('textbox', { name: 'Command', exact: true });
+	await input.fill('unfinished');
+	await userEvent.keyboard('{ArrowUp}');
+	await expect.element(input).toHaveValue('HELP');
+	await screen.rerender({
+		snapshot: { ...initial, receipts: [{ ...receipt, script: 'M114', createdAt: 3 }] }
+	});
+	await userEvent.keyboard('{ArrowUp}');
+	await expect.element(input).toHaveValue('M105');
+	await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+	await expect.element(input).toHaveValue('unfinished');
+	await input.fill('first\nsecond');
+	await userEvent.keyboard('{End}{ArrowUp}');
+	await expect.element(input).toHaveValue('first\nsecond');
+});
+test('response groups expand to original samples and can be disabled', async () => {
+	const screen = await render(PrinterConsole, {
+		snapshot: {
+			...initial,
+			responses: [
+				{ id: 'a', at: 1, kind: 'response', text: 'B:25 /0 T0:26 /0' },
+				{ id: 'b', at: 2, kind: 'response', text: 'B:26 /0 T0:27 /0' }
+			]
+		},
+		connected: true,
+		onSubmit: vi.fn(),
+		onFind: vi.fn(),
+		onPin: vi.fn()
+	});
+	await screen.getByText('Temperature updates · 2 messages').click();
+	await expect.element(screen.getByText('B:25 /0 T0:26 /0', { exact: true })).toBeVisible();
+	await screen.getByRole('checkbox', { name: 'Group repeated responses' }).click();
+	await expect
+		.element(screen.getByText('Temperature updates · 2 messages'))
+		.not.toBeInTheDocument();
+	await expect.element(screen.getByText('B:25 /0 T0:26 /0', { exact: true })).toBeVisible();
+});
+
+test('an unrelated macro receipt preserves history traversal and its unfinished draft', async () => {
+	const screen = await render(PrinterConsole, {
+		snapshot: { ...initial, receipts: [receipt] },
+		connected: true,
+		onSubmit: vi.fn(async (input) => ({ ...receipt, ...input })),
+		onFind: vi.fn(),
+		onPin: vi.fn()
+	});
+	const input = screen.getByRole('textbox', { name: 'Command', exact: true });
+	await input.fill('unfinished');
+	await userEvent.keyboard('{ArrowUp}');
+	await expect.element(input).toHaveValue('HELP');
+	await screen.getByRole('button', { name: 'Review PERILUNE_STATUS', exact: true }).click();
+	await screen.getByRole('button', { name: 'Run in simulator' }).click();
+	await input.click();
+	await userEvent.keyboard('{ArrowDown}');
+	await expect.element(input).toHaveValue('unfinished');
 });

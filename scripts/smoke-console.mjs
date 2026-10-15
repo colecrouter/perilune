@@ -89,6 +89,8 @@ try {
 	const submitted = page.waitForRequest(
 		(request) => request.method() === 'POST' && request.url().includes('/_app/remote/')
 	);
+	await mkdir('test-results', { recursive: true });
+	await page.screenshot({ path: 'test-results/console-review-desktop.png' });
 	await page.getByRole('button', { name: 'Run in simulator' }).click();
 	const command = await submitted;
 	await page.getByText('Simulator · completed', { exact: true }).waitFor();
@@ -132,6 +134,27 @@ try {
 	await page.setViewportSize({ width: 320, height: 800 });
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 	await page.screenshot({ path: 'test-results/console-mobile.png', fullPage: true });
+	const composer = page.getByRole('textbox', { name: 'Command', exact: true });
+	await composer.fill('unfinished draft');
+	await composer.press('ArrowUp');
+	assert.equal(await composer.inputValue(), 'SIMULATE_FAILURE');
+	await composer.press('ArrowDown');
+	assert.equal(await composer.inputValue(), 'unfinished draft');
+	await page.getByRole('button', { name: 'Review PERILUNE_STATUS', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.waitFor();
+	const bounds = await dialog.boundingBox();
+	assert.ok(
+		bounds.x >= 0 &&
+			bounds.x + bounds.width <= 320 &&
+			bounds.y >= 0 &&
+			bounds.y + bounds.height <= 800,
+		'Review fits mobile viewport'
+	);
+	assert.equal(await dialog.locator('.dialog-title').count(), 1);
+	await page.screenshot({ path: 'test-results/console-review-mobile.png' });
+	await page.getByRole('button', { name: 'Keep editing' }).click();
+	assert.equal(await composer.inputValue(), 'unfinished draft');
 	const invitation = await sim.context.request.post(sim.base + '/api/account/invite', {
 		headers: { Origin: sim.base },
 		data: { role: 'viewer' }
@@ -175,6 +198,14 @@ try {
 			JSON.stringify({ jsonrpc: '2.0', method: 'notify_gcode_response', params: [privateText] })
 		);
 	await livePage.getByText(privateText, { exact: true }).waitFor();
+	for (const text of ['B:25 /0 T0:26 /0', 'B:26 /0 T0:27 /0'])
+		sockets
+			.at(-1)
+			.send(JSON.stringify({ jsonrpc: '2.0', method: 'notify_gcode_response', params: [text] }));
+	await livePage.getByText('Temperature updates · 2 messages').click();
+	await livePage.getByText('B:25 /0 T0:26 /0', { exact: true }).waitFor();
+	await livePage.getByRole('checkbox', { name: 'Group repeated responses' }).uncheck();
+	assert.equal(await livePage.locator('.response-group').count(), 0);
 	assert.equal(
 		await livePage.getByRole('button', { name: 'Review TEST_MACRO', exact: true }).isDisabled(),
 		true
