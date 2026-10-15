@@ -181,4 +181,8 @@ test('live review waits for motion to settle before enabling finish controls', a
 		.toBeVisible();
 	await screen.rerender({ snapshot: { ...snapshot, motion: { ...snapshot.motion, busy: false } } });
 	await expect.element(screen.getByRole('button', { name: 'Save profile…' })).toBeEnabled();
+	await screen.rerender({
+		snapshot: { ...snapshot, telemetryReady: false, motion: { ...snapshot.motion, busy: false } }
+	});
+	await expect.element(screen.getByRole('button', { name: 'Save profile…' })).toBeDisabled();
 });

@@ -43,7 +43,10 @@
 	const owns = $derived(session?.ownerId === userId);
 	const canOperate = $derived(['owner', 'operator'].includes(role));
 	const ready = $derived(
-		connected && snapshot.connection === 'connected' && snapshot.klippy === 'ready'
+		connected &&
+			snapshot.connection === 'connected' &&
+			snapshot.klippy === 'ready' &&
+			snapshot.telemetryReady
 	);
 	const homed = $derived(ready && allAxesHomed(snapshot));
 	const off = $derived(ready && heaterTargetsOff(snapshot));
