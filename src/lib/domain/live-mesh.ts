@@ -53,6 +53,7 @@ export function liveMeshPlan(config: unknown): LiveMeshPlan | null {
 	return { min, max, offset, columns: count[0], rows: count[1], samples };
 }
 export function liveMeshReason(state: PrinterSnapshot, allowReservation = false): string | null {
+	if (state.configurationBusy) return 'Configuration recovery owns the printer.';
 	if (!state.liveMesh.enabled) return 'Live bed mesh commands are disabled on this server.';
 	if (state.connection !== 'connected' || state.klippy !== 'ready' || !state.telemetryReady)
 		return 'Wait for fresh, ready printer telemetry.';

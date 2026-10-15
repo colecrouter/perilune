@@ -687,3 +687,33 @@ highlight. Prose is inserted as text, never rendered as HTML. Mouse tooltips are
 bounded to the viewport; Ctrl/⌘ Shift Space opens a focused, labelled nonmodal
 help panel with a keyboard-reachable docs link and Escape return to the editor.
 Edits/selection changes dismiss help; YAML/JSON do not receive Klipper tooltips.
+
+## Reviewed live configuration application and recovery
+
+Issue #33 tracks browser Klipper/Jinja/LSP exploration. Current application safety
+is separate from language tooling. `PERILUNE_LIVE_CONFIGURATION` defaults false;
+when enabled, owner-only `/api/configuration/application` admits one reviewed
+single-file operation without a waiting queue. The ordinary live configuration
+save API still rejects writes. Coordinated physical printer testing is outstanding;
+all automated write/restart tests use a loopback protocol fixture.
+
+Migration 008 persists operation receipts, source snapshots and a hashed printer
+connection binding. Snapshot insertion and retention commit transactionally before
+dispatch. A process-scoped Effect worker owns execution, authorization/idle/revision
+checks, bounded upload, byte verification, restart and observed startup verification.
+Admission expires after 30 seconds; the most recent 20 operations are retained.
+A shared printer reservation fences Perilune commands/calibration during application
+and uncertain outcomes. External tools do not share this reservation, and upstream
+file upload offers no atomic CAS; exclusive coordinated use remains required.
+
+Lost acknowledgements and interrupted process state become unknown without replay.
+Only positive Klipper lifecycle responses establish a restart transition, never
+transport errors. Old ready responses cannot establish fresh startup success.
+Final bytes are checked again. Private error prose is retained in the recovery
+record, not the shared dashboard state. Reconciliation reads current bytes and
+printer state, does not replay commands or claim a previously unobserved restart.
+Conflict-checked restore can recover even while Klipper reports an error. Snapshots
+remain downloadable if upstream is offline. Successful restores cannot be toggled
+back to bad configuration by repeated revert clicks. UI drafts remain untouched
+by polling, failures, application and recovery. Server-side parsing/include resolution,
+coordinated printer testing and calibration-proposal application remain follow-ups.

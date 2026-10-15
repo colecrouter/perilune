@@ -2,10 +2,12 @@
 	import { untrack } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import AppShell from '#lib/components/AppShell.svelte';
+	import ConfigurationRecovery from '#lib/components/ConfigurationRecovery.svelte';
 	import ConfigurationEditor from '#lib/components/ConfigurationEditor.svelte';
 	import type { ConfigDocument, ConfigSave, ConfigSaved } from '#lib/domain/configuration.js';
 	let { data } = $props();
 	let dirty = $state(false);
+	let applicationEnabled = $state(false);
 	let retained = $state(untrack(() => data.document));
 	let retainedFiles = $state(untrack(() => data.files));
 	$effect(() => {
@@ -50,6 +52,13 @@
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(request)
 		});
+	const apply = async (request: ConfigSave) => {
+		await api('/api/configuration/application', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ ...request, action: 'apply', confirmedRestart: true })
+		});
+	};
 	const backup = async (path: string, id: string) =>
 		(
 			await api<{ text: string }>(
@@ -73,6 +82,7 @@
 					required to browse, edit, or export them.
 				</p>
 			</section>{:else}
+			<ConfigurationRecovery onEnabled={(value) => (applicationEnabled = value)} />
 			{#if data.issue}<section class="panel">
 					<h2>Could not open that file</h2>
 					<p role="alert">
@@ -86,6 +96,8 @@
 					files={retainedFiles}
 					onRead={read}
 					onSave={save}
+					{applicationEnabled}
+					onApply={apply}
 					onBackup={backup}
 					onDirty={(value) => (dirty = value)}
 				/>

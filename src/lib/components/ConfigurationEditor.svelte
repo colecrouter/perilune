@@ -27,7 +27,9 @@
 		onRead,
 		onSave,
 		onBackup,
-		onDirty
+		onDirty,
+		applicationEnabled = false,
+		onApply
 	}: {
 		document: ConfigDocument;
 		files: ConfigFile[];
@@ -35,6 +37,8 @@
 		onSave: (request: ConfigSave) => Promise<ConfigSaved>;
 		onBackup: (path: string, id: string) => Promise<string>;
 		onDirty?: (dirty: boolean) => void;
+		applicationEnabled?: boolean;
+		onApply?: (request: ConfigSave) => Promise<void>;
 	} = $props();
 	interface Draft {
 		base: ConfigDocument;
@@ -55,6 +59,7 @@
 		failure = $state(''),
 		notice = $state(''),
 		invalidField = $state(false);
+	let restartConfirmed = $state(false);
 	let reviewOpen = $state(false),
 		reviewed = $state<{ request: ConfigSave; base: ConfigDocument }>(),
 		confirmed = $state(false);
@@ -179,9 +184,29 @@
 				}
 			};
 			confirmed = false;
+			restartConfirmed = false;
 			reviewOpen = true;
 		} catch (cause) {
 			failure = cause instanceof Error ? cause.message : 'Check the draft.';
+		}
+	}
+	async function apply() {
+		if (!reviewed || !confirmed || !restartConfirmed || busy || !onApply) return;
+		busy = true;
+		failure = '';
+		try {
+			await onApply(reviewed.request);
+			notice =
+				'Reviewed operation submitted. Follow configuration recovery for the result; file save is not startup verification.';
+			reviewOpen = false;
+		} catch (cause) {
+			failure =
+				cause instanceof Error
+					? cause.message
+					: 'Application request failed. Check recovery before retrying.';
+			reviewOpen = false;
+		} finally {
+			busy = false;
 		}
 	}
 	async function save() {
@@ -453,7 +478,9 @@
 					<p class="muted small">
 						{source.source === 'simulator'
 							? 'Saving creates a backup and changes the simulator file only. It does not apply or restart the printer.'
-							: 'Drafts stay in this tab until exported. No live file is written.'}
+							: applicationEnabled
+								? 'Reviewed application writes this file and restarts Klipper. A previous-file snapshot is kept for recovery. Syntax and hardware compatibility are not guaranteed.'
+								: 'Drafts stay in this tab until exported. No live file is written.'}
 					</p>
 					<div class="toolbar">
 						<button disabled={busy || !mounted || !dirty} onclick={discard}>Discard draft…</button
@@ -490,7 +517,9 @@
 			><Dialog.Description
 				>{source.source === 'simulator'
 					? 'Save the simulator file with an automatic backup. Running printer settings and hardware are unchanged.'
-					: 'Review this draft before exporting. No live printer file will be written.'}</Dialog.Description
+					: applicationEnabled
+						? 'Apply this one file and restart Klipper. A recovery snapshot is stored first. Includes and Jinja syntax are not fully validated. Unsaved runtime calibration may be lost. Other clients must not edit or operate the printer during this operation.'
+						: 'Review this draft before exporting. No live printer file will be written.'}</Dialog.Description
 			>{#if difference}<p class="muted">
 					Change begins at line {difference.line}. Whitespace and line endings are part of the
 					source.
@@ -511,18 +540,30 @@
 					</p>{/if}{/if}<label class="confirmation"
 				><input type="checkbox" bind:checked={confirmed} />I reviewed the source changes.</label
 			>
+			{#if applicationEnabled && source.source === 'moonraker'}<label class="confirmation"
+					><input type="checkbox" bind:checked={restartConfirmed} />Restart Klipper after saving.
+					Unsaved runtime calibration may be lost.</label
+				>{/if}
 			<div class="toolbar">
 				<Dialog.Close class="button secondary" disabled={busy || !mounted}
 					>Keep editing</Dialog.Close
 				><button
 					class="primary"
-					disabled={busy || !confirmed}
-					onclick={source.source === 'simulator' ? save : exportReviewed}
+					disabled={busy ||
+						!confirmed ||
+						(applicationEnabled && source.source === 'moonraker' && !restartConfirmed)}
+					onclick={source.source === 'simulator'
+						? save
+						: applicationEnabled
+							? apply
+							: exportReviewed}
 					>{busy
 						? 'Saving…'
 						: source.source === 'simulator'
 							? 'Save simulator file'
-							: 'Export reviewed draft'}</button
+							: applicationEnabled
+								? 'Apply and restart Klipper'
+								: 'Export reviewed draft'}</button
 				>
 			</div></Dialog.Content
 		></Dialog.Portal
