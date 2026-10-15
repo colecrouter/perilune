@@ -20,6 +20,7 @@ async function simulator(
 		klippy?: string;
 		ignoreInfoAfter?: number;
 		failIdentify?: boolean;
+		ignoreHelp?: boolean;
 		delaySubscribeMs?: number;
 		shutdownDuringSubscribe?: boolean;
 		deltaDuringSubscribe?: boolean;
@@ -92,6 +93,10 @@ async function simulator(
 				case 'server.info':
 					if (++infoCount > (options.ignoreInfoAfter ?? Infinity)) return;
 					result = { klippy_state: klippy };
+					break;
+				case 'printer.gcode.help':
+					if (options.ignoreHelp) return;
+					result = { TEST_MACRO: 'Fixture diagnostic macro' };
 					break;
 				case 'printer.objects.list':
 					result = { objects: options.objects ?? Object.keys(initial) };
@@ -406,4 +411,28 @@ it('retains mesh data but marks it stale until a delayed reconnect subscription 
 	expect(pending.telemetryReady).toBe(false);
 	expect(pending.bedMesh.active?.name).toBe('fixture');
 	await expect.poll(async () => (await fixture.snapshot()).telemetryReady).toBe(true);
+});
+it('optional macro help timeouts do not block telemetry and response text stays bounded', async () => {
+	const printer = await simulator({
+		objects: ['extruder', 'gcode_macro TEST_MACRO'],
+		ignoreHelp: true
+	});
+	await expect.poll(async () => (await printer.snapshot()).telemetryReady).toBe(true);
+	const generation = (await printer.snapshot()).generation;
+	await expect
+		.poll(async () => (await printer.snapshot()).console?.macros[0]?.name)
+		.toBe('TEST_MACRO');
+	printer.clients[0]!.send(
+		JSON.stringify({
+			jsonrpc: '2.0',
+			method: 'notify_gcode_response',
+			params: ['!! ' + 'x'.repeat(4000)]
+		})
+	);
+	await expect
+		.poll(async () => (await printer.snapshot()).console?.responses[0]?.text.length)
+		.toBe(2048);
+	await new Promise((resolve) => setTimeout(resolve, 600));
+	expect((await printer.snapshot()).generation).toBe(generation);
+	expect((await printer.snapshot()).telemetryReady).toBe(true);
 });

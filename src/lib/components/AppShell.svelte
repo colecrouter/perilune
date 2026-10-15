@@ -11,6 +11,7 @@
 		{ label: 'Overview', icon: 'overview', href: '/' },
 		{ label: 'Controls', icon: 'calibration', href: '/controls' },
 		{ label: 'Jobs', icon: 'jobs', href: '/jobs' },
+		{ label: 'Console', icon: 'console', href: '/console' },
 		{ label: 'Calibration', icon: 'calibration', href: '/calibration' },
 		{ label: 'Configuration', icon: 'configuration', href: '/configuration' },
 		{ label: 'Account', icon: 'account', href: '/account' }

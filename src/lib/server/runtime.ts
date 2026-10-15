@@ -1,3 +1,4 @@
+import { ConsoleServiceLive } from './console-service.js';
 import { NotificationServiceLive, NotificationSettings } from './notification-service.js';
 import {
 	ConfigurationApplicationServiceLive,
@@ -140,7 +141,11 @@ const notificationLayer = NotificationServiceLive.pipe(
 	),
 	Layer.provideMerge(applicationLayer)
 );
-export const runtime = ManagedRuntime.make(Layer.merge(notificationLayer, configurationLayer));
+const consoleLayer = ConsoleServiceLive.pipe(
+	Layer.provide(databaseLayer),
+	Layer.provideMerge(notificationLayer)
+);
+export const runtime = ManagedRuntime.make(Layer.merge(consoleLayer, configurationLayer));
 export const shutdownSignal = new AbortController();
 export const integration = createIntegration();
 export const requestEffect = integration.effect;
