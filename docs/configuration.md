@@ -1,0 +1,67 @@
+# Configuration workspace
+
+Open **Configuration** with an owner account. Configuration files can contain
+credentials and private macros, so operators and viewers cannot read the file API,
+backups, or exports. Files never enter the shared printer dashboard stream.
+
+The first workspace supports existing UTF-8 cfg, conf, ini, yaml, yml, and json
+files up to 256 KiB. Simulator files are examples stored in SQLite. Live mode
+reads supported files from Moonraker's config root through the backend; private
+Moonraker addresses and API keys are never returned to the browser.
+
+## Explained settings and raw source
+
+Explained settings provide context, units, and Klipper documentation for a small
+set of scalar printer/extruder/probe settings. They describe the selected file,
+not current runtime readings or the final result of included-file overrides.
+Repeated sections/keys, multiline values, expressions, and unknown settings stay
+in raw source. Local numeric input bounds are editing aids, not hardware validation.
+Klipper must validate the complete configuration, includes, modules, and macros.
+
+A guided edit replaces only the numeric source span. Raw source remains canonical;
+comments, includes, Jinja macros, delimiter choice, and untouched line endings are
+preserved. YAML/JSON files stay raw text rather than being converted to Klipper INI.
+Includes are shown without flattening; wildcard expansion and override resolution
+remain Klipper's responsibility.
+
+Klipper's SAVE_CONFIG header and everything below it appear as an inspectable,
+protected block. Saves compare the complete generated suffix against the opened
+revision and reject changes to it. A malformed header or ordinary text below it
+is explained rather than silently repaired. Add notes and directives above the
+block. This protects file bytes; it does not replace Klipper's autosave parser.
+
+## Drafts, review, and simulator saves
+
+Each file keeps its own draft while switching files in this tab. Failed file
+navigation, refresh errors, and changed saved revisions do not replace drafts.
+Leaving the workspace or closing/reloading the tab prompts while drafts remain.
+Drafts are not persisted in browser storage; export or save before leaving.
+
+**Review changes…** compares the draft with its opened revision. The bounded
+preview shows the changed region (up to 200 lines per side), including unchanged
+lines between separated edits. For larger changes, inspect/export the full raw
+source before confirming. **Save simulator file** writes only the example file;
+it neither changes running printer state nor restarts anything.
+
+A save checks the original revision and writes the previous source as a backup
+in the same transaction. Concurrent edits produce a conflict with the draft intact.
+**Check saved version** retrieves the current source; conflicting changes can be
+inspected before loading the saved version and reapplying your draft manually.
+There is no automatic conflict merge or forced overwrite.
+
+The latest 20 backups per file are retained. **Load backup into draft…** lets you
+review a previous version; saving it creates a new revision and another backup.
+Retries with the same save ID return the original receipt without duplicate backups.
+
+## Live scope
+
+Live mode supports owner-only browsing, local draft editing, change review, and
+UTF-8 export. No upload, deletion, restart, SAVE_CONFIG command, or live write is
+performed by the configuration workspace. Unsaved runtime calibration changes may
+not be represented by the file on disk. Coordinated live writing, include-aware
+validation, configuration creation/renaming, and a reviewed calibration-proposal
+application flow remain follow-ups.
+
+References: [Moonraker file management](https://moonraker.readthedocs.io/en/latest/external_api/file_manager/),
+[Klipper configuration reference](https://www.klipper3d.org/Config_Reference.html),
+[Klipper config/autosave implementation](https://github.com/Klipper3d/klipper/blob/master/klippy/configfile.py).

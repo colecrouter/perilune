@@ -4,6 +4,12 @@ import * as Migrator from 'effect/sql/Migrator';
 
 export const migrate = Migrator.make({})({
 	loader: Migrator.fromRecord({
+		'007_configuration': Effect.gen(function* () {
+			const sql = yield* SqlClient;
+			yield* sql`CREATE TABLE config_files(path TEXT PRIMARY KEY,text TEXT NOT NULL,version TEXT NOT NULL,updated_at INTEGER NOT NULL)`;
+			yield* sql`CREATE TABLE config_backups(id TEXT PRIMARY KEY,path TEXT NOT NULL,text TEXT NOT NULL,created_at INTEGER NOT NULL,actor TEXT NOT NULL)`;
+			yield* sql`CREATE TABLE config_saves(id TEXT PRIMARY KEY,actor_id TEXT NOT NULL,fingerprint TEXT NOT NULL,result TEXT NOT NULL,created_at INTEGER NOT NULL)`;
+		}),
 		'006_extrusion': Effect.gen(function* () {
 			const sql = yield* SqlClient;
 			yield* sql`CREATE TABLE simulator_extrusion (id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL)`;

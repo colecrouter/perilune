@@ -127,7 +127,7 @@ and patched during prepare so its diagnostics also appear in checks.
 2. Real command policies, reconciliation, cancellation macro behavior, priority stop.
 3. Completed: go2rtc camera gateway and source-change propagation; broader media protocols follow.
 4. Completed: built-in authentication; external identity remains optional future work.
-5. Completed: Jobs file library and upload-only slicer gateway; guided simulator calibration is implemented; live calibration and explained configuration editing remain.
+5. Completed: Jobs file library and upload-only slicer gateway; guided simulator calibration, opt-in live cold bed mesh, and the configuration workspace are implemented; broader live controls/configuration writes remain.
 6. Installability, configurable push notifications, and layout preferences.
 
 Built-in authentication protects browser-facing state, actions, and media. Compose
@@ -596,3 +596,43 @@ simulator exports carry an additional warning against applying example data to
 a real printer. Finish/cancel offers an explicit nozzle cooldown choice. Applying
 rotation distance belongs to configuration review, and flow ratio, pressure
 advance, temperature/retraction towers remain later print-based tuning work.
+
+## Configuration workspace
+
+`/configuration` and `/api/configuration` are owner-only surfaces. Operators/viewers
+receive no filenames, content, backups, or exports. Configuration never enters the
+shared dashboard or action history. A process-scoped ConfigurationService owns
+bounded saves and SQLite access; finite HTTP reads use request aborts and deadlines.
+
+Raw text is canonical. Narrow known numeric field edits splice original spans;
+ambiguous/multiline/unknown settings remain raw-only. Comments, includes, macros,
+BOM, delimiters, and untouched line endings survive. The first SAVE_CONFIG marker
+and complete generated tail are protected by source comparison. Unexpected text
+below the header is diagnosed without silently rewriting it. Hints are advisory,
+not a Klipper parser or complete include/runtime validator.
+
+Migration 007 stores simulator files, previous-version backups, and owner-bound
+idempotent save receipts. UUID revision comparison, backup insertion, file update,
+and receipt commit atomically; ten active/pending saves are allowed. Restoring a
+backup stages a draft for a new reviewed revision. Retention is 20 backups per
+file and 100 receipts; old replay attempts still fail revision comparison rather
+than overwriting newer work. Simulator saves do not change running printer state.
+
+Live mode uses only GETs to the fixed Moonraker config root. Validated relative
+paths, encoded segments, file/response limits, redirect refusal, private API-key
+headers, and ten-second deadlines bound the reader. Authorization is checked
+before and after reads; raw bytes are not persisted server-side in live mode.
+The live workspace supports drafts, review and export, with no write/restart.
+
+Per-file browser drafts survive incoming revisions, file switches, failed loads,
+and refresh errors. Leaving/reloading prompts; drafts are intentionally not put
+in browser storage. Conflicts preserve drafts and show current saved source;
+there is no automatic merge/force overwrite. The review preview is bounded and
+labels truncation. Full source remains editable/exportable. A production smoke
+covers owner gates, source preservation, navigation failure, two-client conflict,
+backup restoration, offline drafts, CSRF, 320px layout, and live draft/export
+without RPC/file writes or dashboard leaks.
+
+Coordinated live writing, include-aware validation, new files/renames, and guided
+application of calibration proposals are follow-up milestones. See
+[the configuration guide](configuration.md).
