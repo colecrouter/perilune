@@ -1,15 +1,18 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import type { ReferenceCatalogue } from '#lib/domain/klipper-reference.js';
 	let {
 		value,
 		path,
 		disabled = false,
-		onChange
+		onChange,
+		reference = null
 	}: {
 		value: string;
 		path: string;
 		disabled?: boolean;
 		onChange: (value: string) => void;
+		reference?: ReferenceCatalogue | null;
 	} = $props();
 	let host: HTMLDivElement;
 	let ready = $state(false),
@@ -22,7 +25,14 @@
 			.then(({ createConfigEditor }) => {
 				if (disposed) return;
 				untrack(() => {
-					editor = createConfigEditor(host, value, path, disabled, (next) => onChange(next));
+					editor = createConfigEditor(
+						host,
+						value,
+						path,
+						disabled,
+						(next) => onChange(next),
+						reference
+					);
 				});
 				ready = true;
 			})
@@ -42,10 +52,15 @@
 		const locked = disabled;
 		if (ready) editor?.setDisabled(locked);
 	});
+	$effect(() => {
+		const next = reference;
+		if (ready) editor?.setReference(next);
+	});
 </script>
 
 <p id="config-editor-help" class="help">
-	Search with Ctrl/⌘ F. Use Esc, then Tab to leave the editor. Formatting stays yours.
+	Search with Ctrl/⌘ F. Use Esc, then Tab to leave the editor. Formatting stays yours. Hover a
+	property for help, or use Ctrl/⌘ Shift Space.
 </p>
 <div class="source" bind:this={host}></div>
 {#if !ready}<textarea

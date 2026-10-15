@@ -678,3 +678,12 @@ or completion defaults are introduced. Generated settings remain separately
 inspectable and protected by existing source checks. Browser tests cover history
 reset, keyboard escape, native languages, lifecycle and BOM/CRLF preservation;
 production smoke reads actual exports instead of CodeMirror's virtualized DOM.
+
+Klipper property hover help reuses the public pinned catalogue through a dynamic
+CodeMirror compartment; catalogue arrival does not replace editor state/history.
+Lookup uses the current draft, matches existing unambiguous section/context, and
+ignores values, comments and indented macro bodies. Active keys receive a range
+highlight. Prose is inserted as text, never rendered as HTML. Mouse tooltips are
+bounded to the viewport; Ctrl/⌘ Shift Space opens a focused, labelled nonmodal
+help panel with a keyboard-reachable docs link and Escape return to the editor.
+Edits/selection changes dismiss help; YAML/JSON do not receive Klipper tooltips.
