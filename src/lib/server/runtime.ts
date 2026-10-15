@@ -1,3 +1,4 @@
+import { NotificationServiceLive, NotificationSettings } from './notification-service.js';
 import {
 	ConfigurationApplicationServiceLive,
 	ConfigurationApplicationSettings
@@ -126,16 +127,29 @@ const applicationLayer = ConfigurationApplicationServiceLive.pipe(
 	Layer.provide(databaseLayer),
 	Layer.provideMerge(jobsLayer)
 );
-export const runtime = ManagedRuntime.make(Layer.merge(applicationLayer, configurationLayer));
+const notificationLayer = NotificationServiceLive.pipe(
+	Layer.provide(databaseLayer),
+	Layer.provide(
+		Layer.succeed(NotificationSettings, {
+			origin: process.env.PERILUNE_ORIGIN ?? 'http://localhost:4181',
+			valid: ({ id, epoch }) => {
+				const user = authService?.db.prepare('SELECT authVersion FROM user WHERE id=?').get(id);
+				return Boolean(user && Number(user.authVersion) === epoch);
+			}
+		})
+	),
+	Layer.provideMerge(applicationLayer)
+);
+export const runtime = ManagedRuntime.make(Layer.merge(notificationLayer, configurationLayer));
 export const shutdownSignal = new AbortController();
 export const integration = createIntegration();
 export const requestEffect = integration.effect;
 const lifecycle = {
 	dispose: async () => {
 		shutdownSignal.abort();
-		authService?.close();
 		await integration.dispose();
 		await runtime.dispose();
+		authService?.close();
 	}
 };
 registerDevelopmentLifecycle(import.meta.hot, lifecycle);
