@@ -3,6 +3,7 @@ import { error } from '@sveltejs/kit';
 import { Effect } from 'effect';
 import { authService, requireIdentity } from './auth/index.js';
 import { ConfigurationError, ConfigurationService, type ConfigActor } from './config-service.js';
+import type { ConfigurationApplicationService } from './config-application-service.js';
 import { runtime } from './runtime.js';
 export function configActor(event: RequestEvent): ConfigActor {
 	const identity = requireIdentity(event, 'owner');
@@ -14,7 +15,11 @@ export function configActor(event: RequestEvent): ConfigActor {
 }
 export async function configResult<A>(
 	event: RequestEvent,
-	effect: Effect.Effect<A, ConfigurationError, ConfigurationService>
+	effect: Effect.Effect<
+		A,
+		ConfigurationError,
+		ConfigurationService | ConfigurationApplicationService
+	>
 ) {
 	const result = await runtime.runPromise(effect.pipe(Effect.result), {
 		signal: event.request.signal

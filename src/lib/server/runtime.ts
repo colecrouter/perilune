@@ -1,3 +1,7 @@
+import {
+	ConfigurationApplicationServiceLive,
+	ConfigurationApplicationSettings
+} from './config-application-service.js';
 import { ConfigurationServiceLive, ConfigurationSettings } from './config-service.js';
 import { authService } from './auth/index.js';
 import { mkdirSync } from 'node:fs';
@@ -106,7 +110,23 @@ const configurationLayer = ConfigurationServiceLive.pipe(
 	),
 	Layer.provide(databaseLayer)
 );
-export const runtime = ManagedRuntime.make(Layer.merge(jobsLayer, configurationLayer));
+const applicationLayer = ConfigurationApplicationServiceLive.pipe(
+	Layer.provide(
+		Layer.succeed(ConfigurationApplicationSettings, {
+			enabled: process.env.PERILUNE_LIVE_CONFIGURATION === 'true'
+		})
+	),
+	Layer.provide(
+		Layer.succeed(ConfigurationSettings, {
+			moonrakerUrl: moonrakerUrl ?? '',
+			apiKey: process.env.PERILUNE_MOONRAKER_API_KEY
+		})
+	),
+	Layer.provide(configurationLayer),
+	Layer.provide(databaseLayer),
+	Layer.provideMerge(jobsLayer)
+);
+export const runtime = ManagedRuntime.make(Layer.merge(applicationLayer, configurationLayer));
 export const shutdownSignal = new AbortController();
 export const integration = createIntegration();
 export const requestEffect = integration.effect;

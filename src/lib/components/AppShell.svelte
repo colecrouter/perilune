@@ -2,6 +2,7 @@
 	import { DropdownMenu } from 'bits-ui';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
+	import ConfigurationRecovery from './ConfigurationRecovery.svelte';
 	import MoonMark from './MoonMark.svelte';
 	import type { Snippet } from 'svelte';
 	import Icon from './Icon.svelte';
@@ -87,7 +88,12 @@
 			rel="noreferrer">Built in the open<small>View development on GitHub</small></a
 		>
 	</aside>
-	<main>{@render children()}</main>
+	<main>
+		{#if page.data.user?.role === 'owner' && active !== 'Configuration'}<ConfigurationRecovery
+				compact
+			/>{/if}
+		{@render children()}
+	</main>
 </div>
 
 <style>

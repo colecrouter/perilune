@@ -103,9 +103,9 @@ Retries with the same save ID return the original receipt without duplicate back
 
 ## Live scope
 
-Live mode supports owner-only browsing, local draft editing, change review, and
-UTF-8 export. No upload, deletion, restart, SAVE_CONFIG command, or live write is
-performed by the configuration workspace. Unsaved runtime calibration changes may
+By default, live mode supports owner-only browsing, local draft editing, change
+review and UTF-8 export. Live application is a separate, default-disabled opt-in
+workflow described below. No SAVE_CONFIG command or deletion is issued. Unsaved runtime calibration changes may
 not be represented by the file on disk. Coordinated live writing, include-aware
 validation, configuration creation/renaming, and a reviewed calibration-proposal
 application flow remain follow-ups.
@@ -113,3 +113,45 @@ application flow remain follow-ups.
 References: [Moonraker file management](https://moonraker.readthedocs.io/en/latest/external_api/file_manager/),
 [Klipper configuration reference](https://www.klipper3d.org/Config_Reference.html),
 [Klipper config/autosave implementation](https://github.com/Klipper3d/klipper/blob/master/klippy/configfile.py).
+
+## Reviewed application and recovery (opt-in)
+
+`PERILUNE_LIVE_CONFIGURATION=true` enables one-file reviewed uploads and Klipper
+restarts. Keep this off until coordinated testing with the owner. The initial
+rollout requires exclusive printer use: other interfaces can edit files or send
+commands outside Perilune's reservation, and Moonraker uploads do not provide
+atomic compare-and-swap with external writers.
+
+Review the diff, confirm the source changes, then separately confirm the restart.
+There is no full Klipper/Jinja syntax validation or guarantee of hardware safety.
+Pending SAVE_CONFIG changes, active printing/motion/calibration, and nonzero
+nozzle/bed heater targets block admission. Python/Pyodide language tooling is not
+required; richer browser validation/LSP is tracked in issue #33.
+
+Before upload, SQLite stores the exact previous/proposed file and an operation
+receipt. Only one operation is admitted, with no waiting queue; it expires after
+30 seconds if not dispatched. The backend owns execution across navigation and
+client disconnects. It rechecks owner authorization, printer readiness and saved
+bytes immediately before writing, verifies uploaded bytes, and requests RESTART.
+It never issues SAVE_CONFIG or FIRMWARE_RESTART. Existing generated suffix guards
+apply to new drafts.
+
+A successful HTTP save is not a verified startup. Perilune requires a positive
+observed Klipper startup/disconnection transition followed by ready, and verifies
+that disk bytes still match. Very fast/unobserved restarts, timeouts or lost
+acknowledgements remain unknown. Commands are never automatically replayed.
+
+Recovery is owner-only and remains visible even if opening a configuration file
+fails. An attention banner links to it from other app pages. Startup diagnostics,
+snapshots and operation state survive page and backend restarts. The latest 20
+operations are retained; snapshots are bound to the configured printer connection.
+**Export previous file** works without Moonraker access.
+
+**Revert changes and restart** restores only the latest operation's previous file,
+after checking current bytes still match the operation. It refuses external edits.
+Unknown outcomes first require **Check saved bytes and printer state**, which reads
+without uploading or restarting. Checks never turn an unverified restart into
+verified success. A failed restore can be explicitly retried after its outcome is
+checked; a successful restore cannot be reversed by clicking the button again.
+If both snapshots differ from the current file, export and compare manually.
+Recovery requires Perilune and its database; uploads/restarts also require Moonraker.

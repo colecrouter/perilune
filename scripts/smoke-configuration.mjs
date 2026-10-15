@@ -10,14 +10,70 @@ import { WebSocketServer } from 'ws';
 import { authenticate } from './smoke-auth-helper.mjs';
 const directory = await mkdtemp(join(tmpdir(), 'perilune-configuration-smoke-'));
 const httpRequests = [];
-const liveText = '# fixture-private-config\n[printer]\nmax_velocity: 200\n';
+let liveText = '# fixture-private-config\n[printer]\nmax_velocity: 200\n';
+let startupPolls = 0;
+let startupError = false;
+let configUploads = 0;
 const upstream = createServer((request, response) => {
 	httpRequests.push({
 		url: request.url,
 		method: request.method,
 		key: request.headers['x-api-key']
 	});
-	if (request.url === '/server/files/list?root=config') {
+	if (request.url === '/server/files/upload') {
+		void (async () => {
+			const chunks = [];
+			for await (const chunk of request) chunks.push(chunk);
+			const parsed = await new Request('http://fixture.test', {
+				method: 'POST',
+				headers: { 'Content-Type': request.headers['content-type'] },
+				body: new Blob(chunks)
+			}).formData();
+			assert.equal(parsed.get('root'), 'config');
+			liveText = await parsed.get('file').text();
+			configUploads++;
+			response.setHeader('Content-Type', 'application/json');
+			response.end(JSON.stringify({ result: { item: { root: 'config', path: 'printer.cfg' } } }));
+		})().catch(() => {
+			response.statusCode = 500;
+			response.end('{}');
+		});
+	} else if (request.url === '/printer/restart') {
+		startupPolls = 3;
+		startupError = liveText.includes('bad:');
+		response.end(JSON.stringify({ result: 'ok' }));
+	} else if (request.url === '/server/info') {
+		response.end(
+			JSON.stringify({
+				result: { klippy_state: startupPolls-- > 0 ? 'startup' : startupError ? 'error' : 'ready' }
+			})
+		);
+	} else if (request.url === '/printer/info') {
+		response.end(
+			JSON.stringify({
+				result: {
+					state: startupPolls > 0 ? 'startup' : startupError ? 'error' : 'ready',
+					state_message: startupError
+						? "Option 'bad' is not valid in section 'printer'"
+						: 'Printer is ready'
+				}
+			})
+		);
+	} else if (request.url?.startsWith('/printer/objects/query')) {
+		response.end(
+			JSON.stringify({
+				result: {
+					status: {
+						print_stats: { state: 'standby' },
+						idle_timeout: { state: 'Idle' },
+						configfile: { save_config_pending: false },
+						extruder: { target: 0 },
+						heater_bed: { target: 0 }
+					}
+				}
+			})
+		);
+	} else if (request.url === '/server/files/list?root=config') {
 		response.setHeader('Content-Type', 'application/json');
 		response.end(
 			JSON.stringify({
@@ -66,7 +122,7 @@ async function readSource(target) {
 	const source = await readFile(await download.path(), 'utf8');
 	return source.replace(/\r?\n#\*#.*SAVE_CONFIG[\s\S]*$/, '').replace(/\r\n/g, '\n');
 }
-async function start(port, live) {
+async function start(port, live, configuration = false) {
 	const base = `http://127.0.0.1:${port}`;
 	const filename = join(directory, `${port}.sqlite`);
 	const child = spawn(process.execPath, ['scripts/server.mjs'], {
@@ -79,6 +135,7 @@ async function start(port, live) {
 			PERILUNE_MOONRAKER_URL: live ? `ws://127.0.0.1:${upstreamPort}/websocket` : '',
 			PERILUNE_MOONRAKER_API_KEY: live ? 'fixture-private-key' : '',
 			PERILUNE_LIVE_MESH: 'false',
+			PERILUNE_LIVE_CONFIGURATION: String(configuration),
 			PERILUNE_CAMERA_BASE_URL: '',
 			PERILUNE_CAMERA_SOURCE: ''
 		},
@@ -350,6 +407,65 @@ try {
 	assert.ok(!(await dashboard.content()).includes('fixture-private-config'));
 	assert.ok(httpRequests.every((r) => r.method === 'GET' && r.key === 'fixture-private-key'));
 	assert.ok(!methods.includes('printer.gcode.script'));
+	// Exercise the opt-in write/restart path only against the local protocol fixture.
+	const recoveryApp = await start(4194, true, true);
+	const recoveryContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+	await authenticate(recoveryContext, recoveryApp.base, recoveryApp.filename);
+	const recoveryPage = await recoveryContext.newPage();
+	await recoveryPage.goto(recoveryApp.base + '/configuration');
+	await recoveryPage.getByRole('button', { name: 'Raw source', exact: true }).click();
+	await recoveryPage.locator('.cm-content[contenteditable=true]').waitFor();
+	const originalText = liveText;
+	await recoveryPage
+		.getByRole('textbox', { name: 'Editable configuration source' })
+		.fill(liveText + 'bad: 1\n');
+	await recoveryPage.getByRole('button', { name: 'Review changes…' }).click();
+	await recoveryPage.getByRole('checkbox', { name: 'I reviewed the source changes.' }).check();
+	await recoveryPage.getByRole('checkbox', { name: /Restart Klipper after saving/ }).check();
+	await recoveryPage.getByRole('button', { name: 'Apply and restart Klipper' }).click();
+	await recoveryPage.getByLabel('Klipper startup diagnostic').waitFor({ timeout: 15000 });
+	assert.match(
+		await recoveryPage.getByLabel('Klipper startup diagnostic').textContent(),
+		/Option 'bad'/
+	);
+	assert.equal(configUploads, 1);
+	await recoveryPage.reload();
+	await recoveryPage.getByLabel('Klipper startup diagnostic').waitFor();
+	const latest = await (
+		await recoveryContext.request.get(recoveryApp.base + '/api/configuration/application')
+	).json();
+	assert.equal(latest.application.phase, 'error');
+	const anonymous = await browser.newContext();
+	assert.equal(
+		(await anonymous.request.get(recoveryApp.base + '/api/configuration/application')).status(),
+		401
+	);
+	await anonymous.close();
+	const snapshot = await recoveryContext.request.get(
+		recoveryApp.base +
+			'/api/configuration/application?snapshot=' +
+			latest.application.id +
+			'&side=before'
+	);
+	assert.equal(await snapshot.text(), originalText);
+	await recoveryPage.goto(recoveryApp.base + '/');
+	await recoveryPage.getByRole('heading', { name: 'Configuration needs attention' }).waitFor();
+	await recoveryPage.getByRole('link', { name: 'Open configuration recovery →' }).click();
+	await recoveryPage
+		.getByRole('checkbox', { name: /Restore the snapshot and restart Klipper/ })
+		.check();
+	await recoveryPage.getByRole('button', { name: 'Revert changes and restart' }).click();
+	await recoveryPage
+		.getByRole('heading', { name: 'Configuration startup verified' })
+		.waitFor({ timeout: 15000 });
+	assert.equal(liveText, originalText);
+	assert.equal(configUploads, 2);
+	await recoveryPage.setViewportSize({ width: 320, height: 800 });
+	assert.equal(
+		await recoveryPage.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+		false,
+		'Recovery fits320px'
+	);
 	console.log(
 		'Configuration smoke passed: owner-only SSR/API, guided/raw edits, per-file drafts, reviewed saves, protected tail, conflicts, backup restore, offline draft preservation,CSRF,320px layout,and live read/draft/export with no writes or config leakage to dashboard.'
 	);

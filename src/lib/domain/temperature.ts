@@ -69,6 +69,7 @@ export function temperatureReason(
 	heater?: 'nozzle' | 'bed',
 	includePending = true
 ): string | null {
+	if (state.configurationBusy) return 'Configuration recovery owns the printer.';
 	if (state.mode === 'moonraker')
 		return 'Live temperature controls are read-only until coordinated printer testing.';
 	if (state.connection !== 'connected' || state.klippy !== 'ready')

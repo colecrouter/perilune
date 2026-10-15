@@ -91,6 +91,7 @@ export interface ActionRecord {
 	message: string | null;
 }
 export interface PrinterSnapshot {
+	configurationBusy?: boolean;
 	revision: number;
 	updatedAt: number;
 	mode: 'simulator' | 'moonraker';
@@ -212,6 +213,10 @@ export function applyCommand(
 	file?: JobFile,
 	actor?: CalibrationActor
 ): PrinterSnapshot {
+	if (state.configurationBusy)
+		throw new CommandRejected({
+			message: 'Configuration recovery owns the printer. Finish it before sending commands.'
+		});
 	if ('runId' in command) return applyExtrusion(state, command, actor);
 	if (extrusionActive(state.extrusion) && command.type !== 'cooldown')
 		throw new CommandRejected({
