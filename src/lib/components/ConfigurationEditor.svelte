@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack, onMount } from 'svelte';
+	import ConfigurationSource from './ConfigurationSource.svelte';
 	import ConfigurationReference from './ConfigurationReference.svelte';
 	import {
 		referenceMatches,
@@ -421,17 +422,17 @@
 							</p>
 							<button onclick={() => (mode = 'raw')}>Open raw source</button>
 						</div>{/if}
-				{:else}<label class="raw-label" for="config-raw"
-						>Editable source <span class="muted small"
+				{:else}<p class="raw-label">
+						Editable source <span class="muted small"
 							>Comments, macros, and formatting are preserved.</span
-						></label
-					><textarea
-						id="config-raw"
-						aria-label="Editable configuration source"
-						spellcheck="false"
-						value={parts.editable.replace(/\r\n/g, '\n')}
-						disabled={busy || !mounted}
-						oninput={(event) => rawEdit(event.currentTarget.value)}></textarea>{/if}
+						>
+					</p>
+					{#key source.path}<ConfigurationSource
+							value={parts.editable}
+							path={source.path}
+							disabled={busy || !mounted}
+							onChange={rawEdit}
+						/>{/key}{/if}
 				{#if parts.generated || parts.warning}<section class="generated">
 						<h3>Calibration-generated settings</h3>
 						<p>
@@ -688,24 +689,6 @@
 		gap: 0.4rem;
 		margin: 0.5rem 0 0.8rem;
 		font-weight: 600;
-	}
-	textarea {
-		resize: vertical;
-		width: 100%;
-		min-height: 420px;
-		tab-size: 4;
-		padding: 1rem;
-		border: 1px solid var(--border-strong);
-		border-radius: 0.65rem;
-		background: var(--canvas);
-		color: var(--text);
-		font:
-			0.85rem/1.6 ui-monospace,
-			SFMono-Regular,
-			Consolas,
-			monospace;
-		white-space: pre;
-		overflow: auto;
 	}
 	.includes {
 		display: flex;

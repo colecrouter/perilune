@@ -30,6 +30,25 @@ revision and reject changes to it. A malformed header or ordinary text below it
 is explained rather than silently repaired. Add notes and directives above the
 block. This protects file bytes; it does not replace Klipper's autosave parser.
 
+## Source editor
+
+Raw source uses an on-demand CodeMirror editor with line numbers, search/replace,
+undo/redo, bracket matching, and VS Code keyboard shortcuts. Klipper config
+highlighting distinguishes sections, options, comments, G-code, and template
+expressions. YAML and JSON files use their native language modes. Highlighting
+is descriptive; it does not validate firmware settings or run macros.
+
+Use Ctrl/⌘ F to search and Escape to close search. Tab indents using four spaces;
+Escape followed by Tab moves focus out of the editor. Existing tabs and formatting
+are preserved. Editor text changes pass through the same source-preserving draft
+flow; the generated calibration block stays outside the editable document.
+
+Incoming state that leaves your draft unchanged keeps selection and undo history.
+Replacing the source explicitly (such as loading a backup, discarding, or adding
+an upstream option) starts a fresh undo history. Switching files or editor modes
+keeps draft text but remounts the editor and starts a new history. If the enhanced
+editor cannot load, plain text editing remains available.
+
 ## Upstream reference
 
 **Klipper reference · Find or add a setting** browses upstream option explanations
