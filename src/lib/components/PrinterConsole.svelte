@@ -2,6 +2,7 @@
 	import { Dialog } from 'bits-ui';
 	import { isHttpError } from '@sveltejs/kit';
 	import type { ConsoleSnapshot, ConsoleReceipt } from '#lib/domain/console.js';
+	import { groupConsoleLines, type ConsoleDisplayLine } from '#lib/domain/console-display.js';
 	import { consoleScript } from '#lib/domain/console.js';
 	let {
 		snapshot,
@@ -20,6 +21,7 @@
 		search = $state(''),
 		filter = $state('all'),
 		showInternal = $state(false),
+		compact = $state(true),
 		follow = $state(true);
 	let message = $state(''),
 		pending = $state(false),
@@ -27,6 +29,42 @@
 		reviewOpen = $state(false);
 	let request = $state<{ id: string; script: string } | null>(null),
 		uncertain = $state<{ id: string; script: string } | null>(null);
+	let historyIndex = $state(-1),
+		historyDraft = '',
+		historyEntries: string[] = [];
+	function historyKey(event: KeyboardEvent) {
+		if (
+			event.isComposing ||
+			event.altKey ||
+			event.ctrlKey ||
+			event.metaKey ||
+			event.shiftKey ||
+			!['ArrowUp', 'ArrowDown'].includes(event.key)
+		)
+			return;
+		const input = event.currentTarget as HTMLTextAreaElement;
+		if (input.selectionStart !== input.selectionEnd) return;
+		const up = event.key === 'ArrowUp';
+		if (
+			up
+				? input.value.slice(0, input.selectionStart).includes('\n')
+				: input.value.slice(input.selectionEnd).includes('\n')
+		)
+			return;
+		if (historyIndex === -1) {
+			if (!up) return;
+			historyEntries = [
+				...new Set(
+					[...snapshot.receipts].sort((a, b) => b.createdAt - a.createdAt).map((r) => r.script)
+				)
+			];
+			if (!historyEntries.length) return;
+			historyDraft = draft;
+		}
+		event.preventDefault();
+		historyIndex = up ? Math.min(historyIndex + 1, historyEntries.length - 1) : historyIndex - 1;
+		draft = historyIndex < 0 ? historyDraft : historyEntries[historyIndex]!;
+	}
 	let log = $state<HTMLDivElement | null>(null);
 	const reason = $derived(
 		!connected ? 'Reconnecting to Perilune. Your input is kept.' : snapshot.reason
@@ -44,7 +82,7 @@
 					a.name.localeCompare(b.name)
 			)
 	);
-	const lines = $derived(
+	const lines = $derived<ConsoleDisplayLine[]>(
 		[
 			...snapshot.responses.map((r) => ({ ...r, detail: 'Printer response' })),
 			...snapshot.receipts.map((r) => ({
@@ -55,13 +93,14 @@
 				detail: `Simulator · ${r.status}`,
 				receipt: r
 			}))
-		]
-			.filter(
-				(line) =>
-					filter === 'all' ||
-					(filter === 'errors' ? line.kind === 'error' : line.kind === 'command')
-			)
-			.sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
+		].sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
+	);
+	const groups = $derived(
+		groupConsoleLines(lines, compact).filter(
+			(group) =>
+				filter === 'all' ||
+				(filter === 'errors' ? group.latest.kind === 'error' : group.latest.kind === 'command')
+		)
 	);
 	$effect(() => {
 		void snapshot.revision;
@@ -78,7 +117,10 @@
 		}
 	});
 	function accepted(receipt: ConsoleReceipt) {
-		if (draft.trim() === receipt.script) draft = '';
+		if (draft.trim() === receipt.script) {
+			draft = '';
+			historyIndex = -1;
+		}
 	}
 	function review(script = draft) {
 		message = '';
@@ -225,14 +267,32 @@
 					><option value="commands">Submitted commands</option></select
 				></label
 			><label class="check"><input type="checkbox" bind:checked={follow} />Follow latest</label>
+			<label class="check"
+				><input type="checkbox" bind:checked={compact} />Group repeated responses</label
+			>
 		</div>
 		<!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users must be able to focus and scroll retained output.) -->
 		<div class="log" bind:this={log} role="region" aria-label="Console history" tabindex="0">
-			{#each lines as line (line.id)}<div class:error={line.kind === 'error'} class="log-entry">
+			{#each groups as group (group.id)}{@const line = group.latest}
+				<div class:error={line.kind === 'error'} class="log-entry">
 					<div class="meta">
 						<time>{new Date(line.at).toLocaleTimeString()}</time><span>{line.detail}</span>
 					</div>
-					<pre>{line.text}</pre>
+					{#if group.lines.length > 1}<details class="response-group">
+							<summary
+								><span
+									>{group.temperature ? 'Temperature updates' : 'Repeated response'} · {group.lines
+										.length} messages</span
+								>
+								<pre>{line.text}</pre></summary
+							>
+							<ol>
+								{#each group.lines as original (original.id)}<li>
+										<time>{new Date(original.at).toLocaleTimeString()}</time>
+										<pre>{original.text}</pre>
+									</li>{/each}
+							</ol>
+						</details>{:else}<pre>{line.text}</pre>{/if}
 					{#if 'receipt' in line && line.receipt}<div class="output">
 							{#each line.receipt.output as output}<pre>{output}</pre>{/each}{#if line.receipt.message}<p
 								>
@@ -256,6 +316,11 @@
 		<label class="composer"
 			>Command<textarea
 				bind:value={draft}
+				onkeydown={historyKey}
+				oninput={() => {
+					historyIndex = -1;
+				}}
+				aria-describedby="console-history-hint"
 				rows="3"
 				maxlength="2048"
 				placeholder={snapshot.mode === 'simulator'
@@ -263,6 +328,9 @@
 					: 'Prepare a command for review; live execution is not enabled.'}
 				spellcheck="false"></textarea></label
 		>
+		<p id="console-history-hint" class="muted small">
+			↑ / ↓ at the first / last line recalls recent commands and restores your draft.
+		</p>
 		<p class="muted small">
 			{snapshot.mode === 'simulator'
 				? 'The simulator supports M105, M114, HELP and the listed example macros. Other commands produce a clear error.'
@@ -286,11 +354,12 @@
 <Dialog.Root bind:open={reviewOpen}
 	><Dialog.Portal
 		><Dialog.Overlay class="dialog-overlay" /><Dialog.Content class="dialog-content console-review"
-			><Dialog.Title>Review simulator command</Dialog.Title><Dialog.Description
+			><Dialog.Title class="dialog-title">Review simulator command</Dialog.Title><Dialog.Description
+				class="review-description"
 				>The backend runs this diagnostic once. No physical movement or heating is performed.</Dialog.Description
 			>{#if request}<pre>{request.script}</pre>{/if}{#if reason}<p role="status">{reason}</p>{/if}
 			<div class="review-actions">
-				<Dialog.Close disabled={pending}>Keep editing</Dialog.Close><button
+				<Dialog.Close class="button secondary" disabled={pending}>Keep editing</Dialog.Close><button
 					class="button primary"
 					disabled={!!reason || pending || !!uncertain}
 					onclick={send}>{pending ? 'Submitting…' : 'Run in simulator'}</button
@@ -477,7 +546,39 @@
 		margin-top: 1rem;
 	}
 	:global(.console-review) {
-		max-width: 36rem;
+		width: min(36rem, calc(100vw - 32px));
+		max-height: calc(100dvh - 32px);
+		overflow: auto;
+	}
+	:global(.console-review .review-description) {
+		color: var(--muted);
+		line-height: 1.6;
+	}
+	:global(.console-review) pre {
+		padding: 1rem;
+		margin: 1.25rem 0;
+		background: var(--canvas);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		max-height: 40dvh;
+		overflow: auto;
+	}
+	.response-group summary {
+		cursor: pointer;
+	}
+	.response-group summary > span {
+		font-size: 0.75rem;
+		color: var(--muted);
+	}
+	.response-group ol {
+		padding-left: 1.25rem;
+	}
+	.response-group li {
+		margin-top: 0.75rem;
+	}
+	.response-group li time {
+		color: var(--muted);
+		font-size: 0.7rem;
 	}
 	a {
 		color: var(--accent);
@@ -492,6 +593,12 @@
 		}
 		.panel {
 			padding: 1rem;
+		}
+		.review-actions {
+			flex-direction: column-reverse;
+		}
+		.log-tools > label:first-child {
+			flex-wrap: wrap;
 		}
 		.console-heading {
 			flex-wrap: wrap;
