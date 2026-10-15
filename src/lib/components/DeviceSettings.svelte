@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { dev } from '$app/env';
 	import { defaultNoticePreferences } from '#lib/domain/notifications.js';
 	import { installation } from '#lib/client/install.svelte.js';
 	let installed = $state(false);
@@ -145,6 +146,11 @@
 	{#if ios && !installed}<p class="help">
 			Install Perilune to your Home Screen, open it there, then enable notifications. Requires iOS
 			or iPadOS 16.4 or later.
+		</p>
+	{:else if dev}
+		<p class="help">
+			Notifications are available in the production app. This development preview does not run a
+			service worker.
 		</p>
 	{:else if !supported}<p class="help">
 			Push notifications aren’t available in this browser. Use a supported browser over HTTPS.
