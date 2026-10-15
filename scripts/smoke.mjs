@@ -51,6 +51,21 @@ try {
 		viewport: { width: 1505, height: 1045 },
 		colorScheme: 'light'
 	});
+
+	const publicContext = await browser.newContext();
+	for (const path of [
+		'/manifest.webmanifest',
+		'/service-worker.js',
+		'/icons/app-180.png',
+		'/icons/maskable-512.png',
+		'/icons/monochrome.svg'
+	]) {
+		const response = await publicContext.request.get(`${base}${path}`);
+		assert.equal(response.status(), 200, `${path} is public install metadata`);
+		assert.ok(!response.headers()['cache-control']?.includes('immutable'));
+	}
+	assert.equal((await publicContext.request.get(`${base}/api/notifications`)).status(), 401);
+	await publicContext.close();
 	await authenticate(context, base, join(directory, 'state.sqlite'));
 	const first = await context.newPage();
 	const heldDashboardRequests = new Set();
@@ -64,6 +79,48 @@ try {
 	const errors = [];
 	first.on('pageerror', (error) => errors.push(error.message));
 	await first.goto(base);
+	await first.evaluate(async () => {
+		const registration = await navigator.serviceWorker.ready;
+		if (!registration.active) throw new Error('Service worker did not activate');
+		for (const key of await caches.keys()) {
+			const cache = await caches.open(key);
+			const entries = await cache.keys();
+			if (entries.length)
+				throw new Error(`Unexpected cache ${key}: ${entries.map((x) => x.url).join(', ')}`);
+		}
+	});
+
+	const worker = context.serviceWorkers()[0];
+	assert.ok(worker, 'Production worker exists');
+	const notice = await worker.evaluate(async () => {
+		const original = self.registration.showNotification;
+		let captured;
+		self.registration.showNotification = async (title, options) => {
+			captured = { title, ...options };
+		};
+		try {
+			const event = new PushEvent('push', {
+				data: JSON.stringify({
+					id: 'fixture-event',
+					title: 'Fixture signal',
+					body: 'A print finished.'
+				})
+			});
+			const pending = [];
+			event.waitUntil = (promise) => pending.push(promise);
+			self.dispatchEvent(event);
+			await Promise.all(pending);
+			return captured;
+		} finally {
+			self.registration.showNotification = original;
+		}
+	});
+	assert.equal(
+		notice?.title,
+		'Fixture signal',
+		'The worker actually handles push, rather than a polyfill overwriting it'
+	);
+	assert.equal(notice?.tag, 'fixture-event');
 	await first.getByRole('button', { name: 'Disconnect', exact: true }).waitFor();
 	await first.waitForFunction(() =>
 		document.querySelector('link[rel="icon"]')?.href.startsWith('data:image/png')
@@ -240,6 +297,18 @@ try {
 	await first.getByRole('button', { name: 'Calibration', exact: true }).click();
 	await first.getByRole('menuitem', { name: /Z-offset workshop/ }).click();
 	await first.getByRole('heading', { name: 'Z-offset workshop', exact: true }).waitFor();
+
+	await first.goto(`${base}/account`);
+	await first.getByRole('heading', { name: 'Perilune on this device', exact: true }).waitFor();
+	await first.getByLabel('Quiet hours', { exact: true }).check();
+	await first.getByLabel('From', { exact: true }).fill('21:30');
+	await first.screenshot({ path: 'test-results/device-settings-mobile.png', fullPage: true });
+	assert.equal(
+		await first.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+		true
+	);
+	await first.setViewportSize({ width: 1280, height: 900 });
+	await first.screenshot({ path: 'test-results/device-settings-desktop.png', fullPage: true });
 	assert.deepEqual(errors, [], 'Production browser errors');
 	const polyfills = await fetch(`${base}/legacy-polyfills.js`);
 	assert.equal(polyfills.status, 200, 'Polyfills are served');

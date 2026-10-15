@@ -4,6 +4,13 @@ import * as Migrator from 'effect/sql/Migrator';
 
 export const migrate = Migrator.make({})({
 	loader: Migrator.fromRecord({
+		'009_notifications': Effect.gen(function* () {
+			const sql = yield* SqlClient;
+			yield* sql`CREATE TABLE push_keys (id INTEGER PRIMARY KEY CHECK(id=1), public_key TEXT NOT NULL, private_key TEXT NOT NULL)`;
+			yield* sql`CREATE TABLE push_devices (id TEXT PRIMARY KEY, owner TEXT NOT NULL, epoch INTEGER NOT NULL, endpoint TEXT NOT NULL UNIQUE, subscription TEXT NOT NULL, preferences TEXT NOT NULL, updated INTEGER NOT NULL)`;
+			yield* sql`CREATE TABLE push_deliveries (event TEXT NOT NULL, device TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY(event,device))`;
+			yield* sql`CREATE TABLE push_images (id TEXT PRIMARY KEY, owner TEXT NOT NULL, epoch INTEGER NOT NULL, bytes BLOB NOT NULL, mime TEXT NOT NULL, expires INTEGER NOT NULL)`;
+		}),
 		'008_config_applications': Effect.gen(function* () {
 			const sql = yield* SqlClient;
 			yield* sql`CREATE TABLE config_applications(id TEXT PRIMARY KEY, actor_id TEXT NOT NULL, fingerprint TEXT NOT NULL, record TEXT NOT NULL, before_text TEXT NOT NULL, after_text TEXT NOT NULL, expires_at INTEGER NOT NULL)`;

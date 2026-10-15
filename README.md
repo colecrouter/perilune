@@ -195,7 +195,26 @@ See [architecture](docs/architecture.md), [visual direction](docs/design/README.
 - SQLite persistence with Effect SQL.
 - Live remote queries backed by process-owned services.
 - Mobile-friendly controls, guided calibration, and explained printer configuration.
-- Slicer compatibility, notifications, and broader camera protocols
-  integration follow as explicit milestones.
+- Per-device push notifications and installation are available in Account.
+- Broader camera protocols and layout preferences remain future milestones.
 
 Licensed under GPL-3.0-only. See [LICENSE](LICENSE).
+
+### Install Perilune and enable notifications
+
+Open **Account → Perilune on this device**. Install using the offered button or
+browser menu. On iPhone/iPad, use Share → Add to Home Screen, then open the
+installed app to enable notifications (iOS/iPadOS 16.4+). HTTPS is required remotely.
+Choose completed/failed prints and printer errors, optional private camera captures,
+and quiet hours for each device. Send a test to verify OS permission settings.
+Snapshots may appear on the lock screen on supported devices. Push is best effort;
+missed or quiet-hour events are not replayed. A lost connection can hide a job
+transition, so notifications do not replace checking the printer.
+
+No separate push account or API key is needed. Perilune generates VAPID keys once
+and stores them in its SQLite database. Retain that database across upgrades.
+Outbound HTTPS to the browser's push provider is required. Existing reverse-proxy
+access policies must allow the installed app and worker to access Perilune; an
+expired external login can prevent snapshot retrieval. No private printer content
+is cached for offline operation. Updates offer an explicit reload so edits can be
+saved first. Monochrome/maskable icons are supplied, but OS tinting varies.

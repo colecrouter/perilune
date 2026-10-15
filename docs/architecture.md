@@ -128,7 +128,7 @@ and patched during prepare so its diagnostics also appear in checks.
 3. Completed: go2rtc camera gateway and source-change propagation; broader media protocols follow.
 4. Completed: built-in authentication; external identity remains optional future work.
 5. Completed: Jobs file library and upload-only slicer gateway; guided simulator calibration, opt-in live cold bed mesh, and the configuration workspace are implemented; broader live controls/configuration writes remain.
-6. Installability, configurable push notifications, and layout preferences.
+6. Physical-device push/install acceptance and layout preferences.
 
 Built-in authentication protects browser-facing state, actions, and media. Compose
 binds only to loopback by default. Internet exposure requires a configured HTTPS origin. Live mode is read-only by default. The explicitly enabled live bed mesh controller
@@ -717,3 +717,53 @@ remain downloadable if upstream is offline. Successful restores cannot be toggle
 back to bad configuration by repeated revert clicks. UI drafts remain untouched
 by polling, failures, application and recovery. Server-side parsing/include resolution,
 coordinated printer testing and calibration-proposal application remain follow-ups.
+
+## Installability and device notifications
+
+A public, revalidated manifest, opaque 192/512 icons, 180px Apple touch icon,
+maskable safe-zone asset and alpha-only monochrome mark preserve the textured
+crescent and floating dot. Assets are reproducible with
+`node scripts/generate-app-icons.mjs`. OS tinting remains platform-controlled;
+native Android adaptive-icon XML and Apple Icon Composer are not PWA APIs.
+The print-progress tab favicon remains separate.
+
+Kit builds/registers a minimal service worker. No fetch interception or app/API/media
+caching is installed. Updated workers wait for an explicit reload action; other
+open tabs are not forced to reload. The global client captures deferred install
+prompts before account navigation. Account settings provide browser menu/iOS
+Home Screen guidance, opt-in permissions, per-device event preferences, quiet
+hours with an IANA timezone, disable and rate-limited test actions.
+
+Migration 009 stores installation VAPID keys, account/epoch-bound subscriptions,
+seven-day delivery claims and five-minute private snapshot bytes. Keys live only
+in the protected SQLite database; back it up. A process-scoped Effect service
+subscribes independently of browsers. Fast transition detection feeds a dropping
+16-event queue; delivery uses concurrency four and skips events older than 60
+seconds. Snapshots are captured once per event only when opted in. Quiet hours
+are checked at event and dispatch time; skipped events are never replayed.
+
+Observed completed/failed jobs and ready-to-error/shutdown Klipper transitions
+produce generic text with no filename, upstream errors or private addresses.
+Cold-start historical state is not announced. Live telemetry lacks a stable run
+identifier: reconnects reset the baseline, deliberately skipping ambiguous
+transitions. Delivery is best effort, with persisted claims before dispatch and
+no automatic retry after unknown outcome. Browser notification tags suppress
+same-event duplicates. This is not a durable alarm or print-history replacement.
+
+Subscriptions require authenticated same-origin requests, strict supported-provider
+HTTPS destinations, bounded keys/input and a 200-device installation limit.
+Delivery rechecks current account epoch; 404/410 subscriptions are deleted.
+Snapshots require the matching signed-in account/epoch and expire after five
+minutes (periodic byte deletion). The push provider receives an opaque image
+path, never camera bytes. The worker fetches it with same-origin credentials;
+expired/signed-out/unsupported cases fall back to text. OS support for notification
+images varies. Stale subscriptions expire after 180 days without a settings update.
+
+Tests cover transitions, cold starts, run changes/reconnect ambiguity, quiet hours,
+revocation, ownership, image epoch/expiry, provider restrictions, delivery claims,
+rate limits and expired endpoints. Production smoke checks public install assets,
+active service-worker registration and push handling, absence of cached responses,
+and mobile/desktop settings. Legacy polyfill plugins apply only to the client
+environment so their fixed worker output cannot overwrite the actual worker.
+Actual Home Screen tinting and background push on physical iOS/Android devices
+remain manual acceptance checks; automated tests never contact push providers.

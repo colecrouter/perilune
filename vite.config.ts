@@ -23,7 +23,13 @@ export default defineConfig({
 			compilerOptions: { experimental: { async: true } },
 			inspector: true
 		}),
-		legacy({ modernTargets: ['Safari >= 16.4', 'Chrome >= 110', 'Firefox >= 115'] })
+		...legacy({ modernTargets: ['Safari >= 16.4', 'Chrome >= 110', 'Firefox >= 115'] }).map(
+			(plugin) => ({
+				...plugin,
+				// Kit's worker uses a fixed output filename. Legacy polyfills must never overwrite it.
+				applyToEnvironment: (environment: { name: string }) => environment.name === 'client'
+			})
+		)
 	]),
 	ssr: { noExternal: ['@tanstack/svelte-table', '@tanstack/svelte-store'] },
 	test: {
