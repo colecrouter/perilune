@@ -10,7 +10,8 @@ import { WebSocketServer } from 'ws';
 import { authenticate } from './smoke-auth-helper.mjs';
 const directory = await mkdtemp(join(tmpdir(), 'perilune-configuration-smoke-'));
 const httpRequests = [];
-let liveText = '# fixture-private-config\n[printer]\nmax_velocity: 200\n';
+let liveText =
+	'# fixture-private-config\n[printer]\nmax_velocity: 200\n[extruder]\nrotation_distance: 7.5 # keep\ngear_ratio: 50:10\n';
 let startupPolls = 0;
 let startupError = false;
 let configUploads = 0;
@@ -402,6 +403,71 @@ try {
 		).status(),
 		409
 	);
+
+	// Carry a real manual calculator result through client navigation, stage a draft,
+	// and export through the existing review without any printer write.
+	const handoffPage = await liveContext.newPage();
+	handoffPage.on('pageerror', (error) => errors.push(error.message));
+	await handoffPage.goto(live.base + '/calibration/extrusion');
+	await handoffPage.getByRole('spinbutton', { name: 'Current rotation distance (mm)' }).fill('7.5');
+	await handoffPage.getByRole('spinbutton', { name: 'Remaining after 50 mm (mm)' }).fill('22');
+	await handoffPage.getByRole('button', { name: 'Calculate proposal', exact: true }).click();
+	await handoffPage.getByRole('button', { name: 'Review in configuration' }).click();
+	await handoffPage.getByRole('heading', { name: 'Review extrusion distance' }).waitFor();
+	await handoffPage.getByRole('spinbutton', { name: 'Maximum velocity', exact: true }).fill('180');
+	await handoffPage.getByRole('checkbox', { name: /repeated the measurement/ }).check();
+	await handoffPage.getByRole('button', { name: 'Add to this draft' }).click();
+	assert.equal(
+		await handoffPage
+			.getByRole('spinbutton', { name: 'Extruder rotation distance', exact: true })
+			.inputValue(),
+		'7.200'
+	);
+	assert.equal(
+		await handoffPage
+			.getByRole('spinbutton', { name: 'Maximum velocity', exact: true })
+			.inputValue(),
+		'180'
+	);
+	await handoffPage.screenshot({
+		path: 'test-results/calibration-config-desktop.png',
+		fullPage: true
+	});
+	await handoffPage.getByRole('button', { name: 'Review changes…' }).click();
+	await handoffPage.getByRole('checkbox', { name: 'I reviewed the source changes.' }).check();
+	const proposalDownload = handoffPage.waitForEvent('download');
+	await handoffPage.getByRole('button', { name: 'Export reviewed draft' }).click();
+	const proposalText = await readFile(await (await proposalDownload).path(), 'utf8');
+	assert.ok(proposalText.includes('rotation_distance: 7.200 # keep'));
+	assert.ok(proposalText.includes('max_velocity: 180'));
+	assert.ok(proposalText.includes('gear_ratio: 50:10'));
+	await handoffPage.keyboard.press('Escape');
+	await handoffPage.setViewportSize({ width: 320, height: 800 });
+	assert.equal(
+		await handoffPage.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+		false
+	);
+	await handoffPage.screenshot({
+		path: 'test-results/calibration-config-mobile.png',
+		fullPage: true
+	});
+	assert.equal(
+		await (
+			await liveContext.request.get(live.base + '/api/configuration?file=printer.cfg')
+		)
+			.json()
+			.then((result) => result.text),
+		liveText
+	);
+	handoffPage.on('dialog', (dialog) => dialog.accept());
+	await handoffPage.reload();
+	await handoffPage.getByRole('heading', { name: 'printer.cfg', exact: true }).waitFor();
+	assert.equal(
+		await handoffPage.getByRole('heading', { name: 'Review extrusion distance' }).count(),
+		0,
+		'Handoff is cleared on full reload'
+	);
+	assert.deepEqual(errors, []);
 	const dashboard = await liveContext.newPage();
 	await dashboard.goto(live.base + '/');
 	assert.ok(!(await dashboard.content()).includes('fixture-private-config'));

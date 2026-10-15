@@ -1,10 +1,18 @@
 <script lang="ts">
 	import '#lib/styles.css';
+	import { calibrationHandoff } from '#lib/client/calibration-draft.svelte.js';
 	import AppUpdate from '#lib/components/AppUpdate.svelte';
 	import PrintFavicon from '#lib/components/PrintFavicon.svelte';
 	import favicon from '#lib/assets/favicon.svg';
 	import type { LayoutProps } from './$types';
 	let { children, data }: LayoutProps = $props();
+	$effect(() => {
+		if (
+			calibrationHandoff.proposal &&
+			(data.user?.role !== 'owner' || data.user.id !== calibrationHandoff.proposal.ownerId)
+		)
+			calibrationHandoff.proposal = null;
+	});
 </script>
 
 <svelte:head

@@ -141,5 +141,18 @@ data. Editing live calculator inputs clears the previous result until recalculat
 **Finish measurement** and cancellation offer an explicit nozzle cooldown choice.
 A finished simulator proposal survives restart; unfinished work is interrupted on
 printer disconnect, access revocation, expiry, or backend restart and never replayed.
-Configuration editing/saving and print-based flow/pressure-advance tuning follow
-as separate milestones.
+Owners can choose **Review in configuration** to carry the result into a local
+configuration draft. Choose the file containing the existing `[extruder]`
+`rotation_distance`, confirm the repeated measurement and review other configuration
+sources/runtime overrides. Perilune requires the draft's old value to match the
+measurement and changes only that numeric value. Missing/ambiguous/generated
+settings require manual review. Simulator results cannot be staged into live files.
+The handoff is private to this tab, clears on refresh/account changes, and expires
+after 30 minutes. It is not stored in URLs or browser storage. Other draft edits
+remain intact. Use the normal source-diff review/export/save/application flow next;
+adding a proposal never writes or restarts the printer. Live application remains
+default-off pending coordinated testing.
+
+Z-offset and bed-mesh saves remain in their dedicated Klipper workflows; this
+handoff does not rewrite generated calibration blocks or synthesize mesh data.
+Print-based flow/pressure-advance tuning remains a separate milestone.

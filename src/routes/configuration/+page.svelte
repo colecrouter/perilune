@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { calibrationHandoff } from '#lib/client/calibration-draft.svelte.js';
 	import { untrack } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import AppShell from '#lib/components/AppShell.svelte';
@@ -99,6 +100,10 @@
 					{applicationEnabled}
 					onApply={apply}
 					onBackup={backup}
+					calibrationProposal={calibrationHandoff.proposal?.ownerId === data.user?.id
+						? calibrationHandoff.proposal
+						: null}
+					onDismissProposal={() => (calibrationHandoff.proposal = null)}
 					onDirty={(value) => (dirty = value)}
 				/>
 			{:else if !data.issue}<section class="panel">

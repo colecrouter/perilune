@@ -13,13 +13,15 @@
 		connected,
 		userId,
 		role,
-		onSubmit
+		onSubmit,
+		onReviewProposal
 	}: {
 		snapshot: PrinterSnapshot;
 		connected: boolean;
 		userId: string;
 		role: string;
 		onSubmit: (command: PrinterCommand) => Promise<string>;
+		onReviewProposal?: (proposal: ExtrusionProposal) => void;
 	} = $props();
 	let rotationDistance = $state<number | undefined>();
 	let before = $state<number | undefined>(70);
@@ -371,6 +373,12 @@
 						: 'Repeat the test to confirm the result before changing printer settings.'}
 				</p>
 				<button onclick={exportProposal}>Export proposal</button>
+				{#if role === 'owner' && onReviewProposal}<button
+						onclick={() => onReviewProposal?.(proposal)}>Review in configuration</button
+					>{:else if role !== 'owner'}<p class="muted">
+						An owner can add this result to a reviewed configuration draft. You can export the
+						proposal for them.
+					</p>{/if}
 				<p class="muted">
 					This does not apply or save a printer setting. Review the exported snippet against your
 					existing [extruder] section.
