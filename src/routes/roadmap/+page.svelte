@@ -24,7 +24,8 @@
 				cancellation controls, and contextual documentation. Bed mesh inspection now visualizes
 				reported samples and compatible profile differences. Opt-in cold live probing now supports
 				result review, temporary use/restoration and saving with restart verification. Filament
-				handling, extrusion calibration, and first-layer test prints remain planned.
+				handling and extrusion-distance measurement now have a guided simulator workflow and a
+				manual live calculator. Live extrusion and print-based tuning remain planned.
 			</p>
 		</section>
 		<section id="configuration">

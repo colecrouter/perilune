@@ -25,3 +25,12 @@ cross-workflow heater disabling. Tests run headless.
 Live extrusion/heating remain disabled. The live calculator accepts measurements
 from an externally performed test; neither calculator nor export writes printer
 configuration. Simulator exports explicitly identify their example source.
+
+Validation completed locally: `pnpm validate` passed all nine headless production
+smokes and the suite; final headless domain/browser run passed 241 tests in 30
+files after adding two review regressions. `pnpm check`, formatting, linting, and
+Compose configuration checks passed. The production smoke verified a full 50-second
+run across navigation, export contents, cooldown, reload persistence, no runtime
+errors, and desktop/320px layouts. Collaborative preview independently verified
+route identity/content and no overflow at 1280px/320px; its snapshot endpoint failed,
+so screenshots were inspected from the existing automated smoke artifacts.
