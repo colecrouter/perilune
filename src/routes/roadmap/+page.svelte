@@ -22,8 +22,9 @@
 			<p>
 				The simulator Z-offset workshop now includes prerequisites, separate adjustment and
 				cancellation controls, and contextual documentation. Bed mesh inspection now visualizes
-				reported samples and compatible profile differences. Live probing, filament handling,
-				extrusion calibration, and first-layer test prints remain planned.
+				reported samples and compatible profile differences. Opt-in cold live probing now supports
+				result review, temporary use/restoration and saving with restart verification. Filament
+				handling, extrusion calibration, and first-layer test prints remain planned.
 			</p>
 		</section>
 		<section id="configuration">

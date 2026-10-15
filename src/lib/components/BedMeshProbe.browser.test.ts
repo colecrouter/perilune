@@ -77,3 +77,112 @@ test('cancel dialogs retain the reviewed run identity through incoming replaceme
 		force: false
 	});
 });
+test('live preparation explains physical homing and requires manual acknowledgments', async () => {
+	const snapshot = ready();
+	snapshot.mode = 'moonraker';
+	snapshot.heaters.bed.current = 23;
+	snapshot.heaters.nozzle.current = 23;
+	snapshot.motion.homed = [];
+	snapshot.liveMesh = {
+		enabled: true,
+		pendingConfig: false,
+		plan: { min: [30, 30], max: [200, 200], offset: [0, 0], columns: 5, rows: 5, samples: 2 }
+	};
+	const onSubmit = vi.fn().mockResolvedValue(crypto.randomUUID());
+	const screen = await render(BedMeshProbe, {
+		snapshot,
+		connected: true,
+		userId: actor.id,
+		role: actor.role,
+		onSubmit
+	});
+	await screen.getByRole('button', { name: 'Probe bed…', exact: true }).click();
+	await expect.element(screen.getByRole('button', { name: 'Home and probe bed' })).toBeDisabled();
+	await screen.getByRole('checkbox', { name: /bed and probe cleanliness/ }).click();
+	await screen.getByRole('checkbox', { name: /physical clearance/ }).click();
+	await screen.getByRole('checkbox', { name: /printer will move and probe/ }).click();
+	await expect
+		.element(screen.getByRole('checkbox', { name: /automatic homing/ }))
+		.not.toBeChecked();
+	await screen.getByRole('button', { name: 'Home and probe bed' }).click();
+	expect(onSubmit).toHaveBeenCalledWith(
+		expect.objectContaining({ type: 'meshProbeBegin', confirmed: true })
+	);
+});
+test('live probing does not offer queued cancellation as a physical stop', async () => {
+	const snapshot = ready();
+	snapshot.mode = 'moonraker';
+	snapshot.heaters.bed.current = 23;
+	snapshot.heaters.nozzle.current = 23;
+	snapshot.liveMesh = {
+		enabled: true,
+		pendingConfig: false,
+		plan: { min: [30, 30], max: [200, 200], offset: [0, 0], columns: 5, rows: 5, samples: 2 }
+	};
+	snapshot.meshProbe.session = {
+		id: crypto.randomUUID(),
+		ownerId: actor.id,
+		ownerName: actor.name,
+		stage: 'probing',
+		live: true,
+		plan: snapshot.liveMesh.plan!,
+		completedSamples: 2,
+		startedAt: Date.now(),
+		expiresAt: Date.now() + 600000,
+		result: null,
+		message: null
+	};
+	const screen = await render(BedMeshProbe, {
+		snapshot,
+		connected: true,
+		userId: actor.id,
+		role: actor.role,
+		onSubmit: vi.fn()
+	});
+	await expect
+		.element(screen.getByRole('button', { name: 'Restore previous mesh…' }))
+		.toBeDisabled();
+	await expect.element(screen.getByText(/Normal queued commands cannot interrupt/)).toBeVisible();
+});
+test('live review waits for motion to settle before enabling finish controls', async () => {
+	const snapshot = ready();
+	snapshot.mode = 'moonraker';
+	snapshot.heaters.bed.current = 23;
+	snapshot.heaters.nozzle.current = 23;
+	snapshot.motion.busy = true;
+	snapshot.liveMesh = {
+		enabled: true,
+		pendingConfig: true,
+		plan: { min: [20, 20], max: [200, 200], offset: [0, 0], columns: 5, rows: 5, samples: 1 }
+	};
+	snapshot.meshProbe.session = {
+		id: crypto.randomUUID(),
+		ownerId: actor.id,
+		ownerName: actor.name,
+		stage: 'review',
+		live: true,
+		plan: snapshot.liveMesh.plan!,
+		completedSamples: 25,
+		startedAt: Date.now(),
+		expiresAt: Date.now() + 600000,
+		result: snapshot.bedMesh.active,
+		message: null
+	};
+	const screen = await render(BedMeshProbe, {
+		snapshot,
+		connected: true,
+		userId: actor.id,
+		role: actor.role,
+		onSubmit: vi.fn()
+	});
+	await expect.element(screen.getByRole('button', { name: 'Save profile…' })).toBeDisabled();
+	await expect
+		.element(screen.getByText(/Waiting for the printer to finish movement/))
+		.toBeVisible();
+	await screen.rerender({ snapshot: { ...snapshot, motion: { ...snapshot.motion, busy: false } } });
+	await expect.element(screen.getByRole('button', { name: 'Save profile…' })).toBeEnabled();
+	await screen.rerender({
+		snapshot: { ...snapshot, telemetryReady: false, motion: { ...snapshot.motion, busy: false } }
+	});
+	await expect.element(screen.getByRole('button', { name: 'Save profile…' })).toBeDisabled();
+});

@@ -77,8 +77,8 @@ run `node scripts/auth.mjs setup-reset --server-stopped`, generate a new setup t
 Owners invite others from **Account**, selecting viewer, operator, or owner.
 Invitation links are single-use and expire after 24 hours. Viewers can watch
 status and camera; operators can use available controls; owners also manage
-accounts and invitations. All roles currently have read-only access to real
-printers. Owners can revoke invitations and other accounts. Revocation closes
+accounts and invitations. Real printer controls are read-only by default; the
+explicit live bed mesh option below enables operator access to that workflow. Owners can revoke invitations and other accounts. Revocation closes
 active live updates and camera streams; checks across processes run every second.
 
 Signed-in users can add a passkey from Account. Passkeys need an HTTPS hostname
@@ -111,7 +111,11 @@ volume. Back up both. An optional `PERILUNE_AUTH_SECRET` of at least 32 characte
 can supply the secret instead; preserve it across restarts. No ORM is needed:
 Better Auth uses its SQLite adapter, and app state continues to use Effect SQL.
 
-## Connect a real printer (read-only)
+## Connect a real printer
+
+Live controls are read-only by default. Set `PERILUNE_LIVE_MESH=true` to opt into the
+[cold bed mesh workflow](docs/calibration.md#live-cold-bed-mesh-probing): physical homing/probing, temporary use/restoration, and explicitly confirmed
+configuration saving with a Klipper restart. Other live controls remain disabled.
 
 Set a direct Moonraker WebSocket endpoint on the **backend**:
 
@@ -129,8 +133,8 @@ Live mode discovers available objects and displays job state and temperatures.
 Missing readings appear as unknown. Perilune and Moonraker reconnect independently;
 last telemetry and editable drafts remain visible. Klipper startup, shutdown, and
 unavailable states are separate from the Moonraker connection. Controls are disabled
-and the backend rejects all actions in live mode, including simulator commands.
-No physical commands are sent. Remove the URL to return to simulator mode.
+for generic actions, including simulator commands. The explicit live mesh option
+above enables only its reviewed physical workflow. Remove the URL to return to simulator mode.
 
 The backend connects directly to Moonraker; existing browser-facing Cloudflare
 Access protection does not authenticate this connection. Perilune authenticates browser access independently of Moonraker.

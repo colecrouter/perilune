@@ -1,7 +1,8 @@
 import { emptyBedMesh, normalizeBedMesh, type BedMeshState } from '#lib/domain/bed-mesh.js';
 import { temperatureFields, type TemperatureSensor } from '#lib/domain/temperature.js';
 import { axes, emptyMotion, type MotionSnapshot } from '#lib/domain/motion.js';
-import { Context, Effect, Layer, SubscriptionRef } from 'effect';
+import { liveMeshPlan, type LiveMeshPlan } from '#lib/domain/live-mesh.js';
+import { Context, Data, Effect, Layer, SubscriptionRef } from 'effect';
 
 export interface MoonrakerSettings {
 	url: string;
@@ -11,6 +12,7 @@ export interface MoonrakerSettings {
 	reconnectMinMs?: number;
 	reconnectMaxMs?: number;
 	discoverWebcams?: boolean;
+	liveMeshEnabled?: boolean;
 }
 export class MoonrakerConfig extends Context.Service<MoonrakerConfig, MoonrakerSettings>()(
 	'perilune/MoonrakerConfig'
@@ -27,6 +29,8 @@ export interface MoonrakerSnapshot {
 	additionalTemperatures: TemperatureSensor[];
 	motion: MotionSnapshot;
 	bedMesh: BedMeshState;
+	liveMesh: { enabled: boolean; plan: LiveMeshPlan | null; pendingConfig: boolean };
+	probeResponses: Array<{ sequence: number; x: number; y: number; space?: 'probe' | 'nozzle' }>;
 	job: {
 		filename: string;
 		state: 'standby' | 'printing' | 'paused' | 'complete' | 'cancelled' | 'error';
@@ -40,13 +44,50 @@ export interface MoonrakerSnapshot {
 		bed: { current: number | null; target: number | null };
 	};
 }
+export class MoonrakerCommandError extends Data.TaggedError('MoonrakerCommandError')<{
+	sent: boolean;
+}> {}
+export type MeshOperation =
+	| { type: 'home' }
+	| { type: 'probe'; name: string }
+	| { type: 'restore'; name: string | null; remove: string }
+	| { type: 'keep'; remove: string }
+	| { type: 'save'; name: string; remove: string };
+export function meshScript(operation: MeshOperation): string {
+	for (const name of [
+		'name' in operation ? operation.name : null,
+		'remove' in operation ? operation.remove : null
+	])
+		if (name !== null && !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(name))
+			throw new Error('Invalid mesh profile identifier');
+	switch (operation.type) {
+		case 'home':
+			return 'G28';
+		case 'probe':
+			return `BED_MESH_CALIBRATE PROFILE=${operation.name}`;
+		case 'restore':
+			return `${operation.name ? `BED_MESH_PROFILE LOAD=${operation.name}` : 'BED_MESH_CLEAR'}\nBED_MESH_PROFILE REMOVE=${operation.remove}`;
+		case 'keep':
+			return `BED_MESH_PROFILE REMOVE=${operation.remove}`;
+		case 'save':
+			return `BED_MESH_PROFILE SAVE=${operation.name}\nBED_MESH_PROFILE REMOVE=${operation.remove}\nSAVE_CONFIG`;
+	}
+}
 export class MoonrakerService extends Context.Service<
 	MoonrakerService,
-	{ state: SubscriptionRef.SubscriptionRef<MoonrakerSnapshot> }
+	{
+		state: SubscriptionRef.SubscriptionRef<MoonrakerSnapshot>;
+		command: (
+			operation: MeshOperation,
+			generation: number
+		) => Effect.Effect<void, MoonrakerCommandError>;
+		refresh: (generation: number) => Effect.Effect<MoonrakerSnapshot, MoonrakerCommandError>;
+	}
 >()('perilune/MoonrakerService') {}
 
 type ObjectStatus = Record<string, Record<string, unknown>>;
 const wanted: Record<string, string[]> = {
+	configfile: ['config', 'save_config_pending'],
 	bed_mesh: ['profile_name', 'mesh_min', 'mesh_max', 'probed_matrix', 'profiles'],
 	webhooks: ['state'],
 	toolhead: ['position', 'axis_minimum', 'axis_maximum', 'homed_axes'],
@@ -74,6 +115,8 @@ export const emptyMoonrakerSnapshot = (): MoonrakerSnapshot => ({
 	additionalTemperatures: [],
 	motion: emptyMotion(),
 	bedMesh: emptyBedMesh(),
+	liveMesh: { enabled: false, plan: null, pendingConfig: false },
+	probeResponses: [],
 	job: {
 		filename: '',
 		state: 'standby',
@@ -102,6 +145,11 @@ export function normalizeMoonrakerStatus(
 		updatedAt: Date.now(),
 		telemetryReady: true,
 		motion: normalizeMotion(status),
+		liveMesh: {
+			enabled: previous.liveMesh.enabled,
+			plan: liveMeshPlan(status.configfile?.config),
+			pendingConfig: status.configfile?.save_config_pending === true
+		},
 		bedMesh: normalizeBedMesh(status.bed_mesh, previous.availableObjects.includes('bed_mesh')),
 		additionalTemperatures: previous.availableObjects
 			.filter((name) => name !== 'extruder' && name !== 'heater_bed' && temperatureFields(name))
@@ -147,7 +195,7 @@ const klippyState = (value: unknown): KlippyState =>
 		? (value as KlippyState)
 		: 'unknown';
 
-/** Process-scoped, read-only transport. There is deliberately no arbitrary RPC/command API. */
+/** Process-scoped transport with a narrow, generation-fenced mesh command API. */
 export const MoonrakerServiceLive = Layer.effect(
 	MoonrakerService,
 	Effect.gen(function* () {
@@ -157,6 +205,9 @@ export const MoonrakerServiceLive = Layer.effect(
 		const heartbeat = config.heartbeatMs ?? 15_000;
 		const reconnectMin = config.reconnectMinMs ?? 500;
 		const reconnectMax = config.reconnectMaxMs ?? 30_000;
+		let dispatch: ((operation: MeshOperation, generation: number) => Promise<void>) | undefined;
+		let refresh: ((generation: number) => Promise<MoonrakerSnapshot>) | undefined;
+		let responseSequence = 0;
 		const worker = Effect.promise(async (signal) => {
 			let current = emptyMoonrakerSnapshot();
 			const publish = async (next: MoonrakerSnapshot) => {
@@ -179,6 +230,7 @@ export const MoonrakerServiceLive = Layer.effect(
 				let subscribed = false;
 				let readinessVersion = 0;
 				let subscribing = false;
+				let refreshing: Array<{ delta: Record<string, unknown>; time: number | null }> | undefined;
 				let buffered: Array<{ delta: Record<string, unknown>; time: number | null }> = [];
 				let wake: (() => void) | undefined;
 				let cancelOpen: (() => void) | undefined;
@@ -201,12 +253,14 @@ export const MoonrakerServiceLive = Layer.effect(
 						connection: current.generation === 0 ? 'connecting' : 'reconnecting',
 						klippy: 'unknown',
 						telemetryReady: false,
-						generation: current.generation + 1
+						generation: current.generation + 1,
+						liveMesh: { ...current.liveMesh, enabled: config.liveMeshEnabled === true },
+						probeResponses: []
 					});
 					if (signal.aborted) break;
 					socket = new WebSocket(config.url);
 					const ws = socket;
-					const request = (method: string, params?: unknown) =>
+					const request = (method: string, params?: unknown, requestTimeout = timeout) =>
 						new Promise<unknown>((resolve, reject) => {
 							if (closed || ws.readyState !== WebSocket.OPEN) {
 								reject(new Error('Connection unavailable'));
@@ -217,7 +271,7 @@ export const MoonrakerServiceLive = Layer.effect(
 								pending.delete(id);
 								reject(new Error('Request timed out'));
 								close();
-							}, timeout);
+							}, requestTimeout);
 							pending.set(id, {
 								resolve,
 								reject: () => reject(new Error('Request failed')),
@@ -244,7 +298,26 @@ export const MoonrakerServiceLive = Layer.effect(
 							else entry.resolve(message.result);
 							return;
 						}
-						if (message.method === 'notify_status_update' && (subscribed || subscribing)) {
+						if (message.method === 'notify_gcode_response' && config.liveMeshEnabled) {
+							const line = String(Array.isArray(message.params) ? message.params[0] : '');
+							const old = /probe at (-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?) is z=/.exec(line);
+							const modern =
+								/probe: at (-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?) bed will contact at z=/.exec(line);
+							const match = modern ?? old;
+							if (match)
+								void publish({
+									...current,
+									probeResponses: [
+										...current.probeResponses,
+										{
+											sequence: ++responseSequence,
+											x: Number(match[1]),
+											y: Number(match[2]),
+											space: modern ? ('probe' as const) : ('nozzle' as const)
+										}
+									].slice(-256)
+								});
+						} else if (message.method === 'notify_status_update' && (subscribed || subscribing)) {
 							const delta = record(Array.isArray(message.params) ? message.params[0] : undefined);
 							if (subscribing) {
 								buffered.push({
@@ -253,12 +326,18 @@ export const MoonrakerServiceLive = Layer.effect(
 								});
 								return;
 							}
+							if (refreshing)
+								refreshing.push({
+									delta,
+									time: number(Array.isArray(message.params) ? message.params[1] : undefined)
+								});
 							mergeStatus(status, delta);
 							void publish(normalizeMoonrakerStatus(status, current));
 						} else if (message.method === 'notify_webcams_changed') {
 							wake?.();
 						} else if (message.method === 'notify_klippy_ready') {
 							readinessVersion++;
+							current = { ...current, generation: current.generation + 1 };
 							subscribed = false;
 							void publish({ ...current, telemetryReady: false });
 							wake?.();
@@ -267,6 +346,7 @@ export const MoonrakerServiceLive = Layer.effect(
 							message.method === 'notify_klippy_disconnected'
 						) {
 							readinessVersion++;
+							current = { ...current, generation: current.generation + 1 };
 							subscribed = false;
 							void publish({
 								...current,
@@ -339,7 +419,11 @@ export const MoonrakerServiceLive = Layer.effect(
 								? list.objects.filter((name): name is string => typeof name === 'string')
 								: [];
 							const requested = Object.fromEntries([
-								...objects.filter((name) => name in wanted).map((name) => [name, wanted[name]]),
+								...objects
+									.filter(
+										(name) => name in wanted && (name !== 'configfile' || config.liveMeshEnabled)
+									)
+									.map((name) => [name, wanted[name]]),
 								...objects
 									.filter((name) => !(name in wanted) && temperatureFields(name))
 									.slice(0, 30)
@@ -367,6 +451,59 @@ export const MoonrakerServiceLive = Layer.effect(
 								normalizeMoonrakerStatus(status, { ...current, availableObjects: objects })
 							);
 						}
+						const fence = (generation: number) => {
+							if (
+								!config.liveMeshEnabled ||
+								closed ||
+								signal.aborted ||
+								!subscribed ||
+								current.klippy !== 'ready' ||
+								!current.telemetryReady ||
+								current.generation !== generation
+							)
+								throw new MoonrakerCommandError({ sent: false });
+						};
+						dispatch = async (operation, generation) => {
+							fence(generation);
+							const script = meshScript(operation);
+							try {
+								await request(
+									'printer.gcode.script',
+									{ script },
+									operation.type === 'save' ? 30_000 : 10 * 60 * 1000
+								);
+							} catch {
+								throw new MoonrakerCommandError({ sent: true });
+							}
+						};
+						refresh = async (generation) => {
+							fence(generation);
+							if (refreshing) throw new MoonrakerCommandError({ sent: false });
+							refreshing = [];
+							try {
+								const result = record(
+									await request('printer.objects.query', {
+										objects: Object.fromEntries(
+											Object.entries(wanted).filter(([name]) =>
+												current.availableObjects.includes(name)
+											)
+										)
+									})
+								);
+								fence(generation);
+								mergeStatus(status, record(result.status));
+								const at = number(result.eventtime);
+								for (const delta of refreshing)
+									if (at === null || delta.time === null || delta.time >= at)
+										mergeStatus(status, delta.delta);
+								await publish(normalizeMoonrakerStatus(status, current));
+								return current;
+							} catch {
+								throw new MoonrakerCommandError({ sent: false });
+							} finally {
+								refreshing = undefined;
+							}
+						};
 						if (klippy !== 'ready') subscribed = false;
 						failures = 0;
 						await new Promise<void>((resolve) => {
@@ -382,6 +519,8 @@ export const MoonrakerServiceLive = Layer.effect(
 				} catch {
 					/* Public state deliberately excludes private URLs, credentials and server errors. */
 				} finally {
+					dispatch = undefined;
+					refresh = undefined;
 					close();
 					signal.removeEventListener('abort', close);
 				}
@@ -406,7 +545,28 @@ export const MoonrakerServiceLive = Layer.effect(
 			}
 		});
 		yield* worker.pipe(Effect.forkScoped);
-		return { state };
+		return {
+			state,
+			command: (operation, generation) =>
+				Effect.tryPromise({
+					try: () =>
+						dispatch
+							? dispatch(operation, generation)
+							: Promise.reject(new MoonrakerCommandError({ sent: false })),
+					catch: (cause) =>
+						cause instanceof MoonrakerCommandError
+							? cause
+							: new MoonrakerCommandError({ sent: false })
+				}),
+			refresh: (generation) =>
+				Effect.tryPromise({
+					try: () =>
+						refresh
+							? refresh(generation)
+							: Promise.reject(new MoonrakerCommandError({ sent: false })),
+					catch: () => new MoonrakerCommandError({ sent: false })
+				})
+		};
 	})
 );
 

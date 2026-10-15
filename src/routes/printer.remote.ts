@@ -1,3 +1,4 @@
+import { LiveMeshService } from '#lib/server/live-mesh-service.js';
 import { command, getRequestEvent, query } from '$app/server';
 import { error } from '@sveltejs/kit';
 import { Effect, Schema, Stream, SubscriptionRef } from 'effect';
@@ -95,9 +96,13 @@ export const submitAction = command(Schema.toStandardSchemaV1(ActionRequest), as
 	const result = await requestEffect(
 		Effect.promise(() =>
 			runtime.runPromise(
-				Effect.flatMap(PrinterService, (service) => service.submit(request, actor)).pipe(
-					Effect.result
-				)
+				Effect.gen(function* () {
+					const service = yield* PrinterService;
+					const snapshot = yield* SubscriptionRef.get(service.state);
+					if (snapshot.mode === 'moonraker')
+						return yield* (yield* LiveMeshService).submit(request, actor);
+					return yield* service.submit(request, actor);
+				}).pipe(Effect.result)
 			)
 		)
 	);

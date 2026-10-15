@@ -3,6 +3,7 @@
 	import { isHttpError } from '@sveltejs/kit';
 	import CancelDialog from './CancelDialog.svelte';
 	import { meshProbeActive, meshProbeReason, probeSample } from '#lib/domain/mesh-probe.js';
+	import { liveMeshReason } from '#lib/domain/live-mesh.js';
 	import { allAxesHomed } from '#lib/domain/motion.js';
 	import { heaterTargetsOff } from '#lib/domain/temperature.js';
 	import { meshStats } from '#lib/domain/bed-mesh.js';
@@ -20,6 +21,9 @@
 		role: string;
 		onSubmit: (command: PrinterCommand) => Promise<string>;
 	} = $props();
+	const live = $derived(snapshot.mode === 'moonraker');
+	const plan = $derived(snapshot.meshProbe.session?.plan ?? snapshot.liveMesh.plan);
+	const total = $derived(live && plan ? plan.columns * plan.rows : 25);
 	let open = $state(false);
 	let stopOpen = $state(false);
 	let finishOpen = $state(false);
@@ -39,10 +43,18 @@
 	const owns = $derived(session?.ownerId === userId);
 	const canOperate = $derived(['owner', 'operator'].includes(role));
 	const ready = $derived(
-		connected && snapshot.connection === 'connected' && snapshot.klippy === 'ready'
+		connected &&
+			snapshot.connection === 'connected' &&
+			snapshot.klippy === 'ready' &&
+			snapshot.telemetryReady
 	);
 	const homed = $derived(ready && allAxesHomed(snapshot));
 	const off = $derived(ready && heaterTargetsOff(snapshot));
+	const liveIdle = $derived(
+		!live ||
+			(snapshot.motion.busy === false &&
+				!snapshot.actions.some((a) => ['queued', 'sending'].includes(a.status)))
+	);
 	const idle = $derived(ready && ['standby', 'complete', 'cancelled'].includes(snapshot.job.state));
 	const pending = $derived(
 		submitting || snapshot.actions.some((action) => ['queued', 'sending'].includes(action.status))
@@ -52,10 +64,14 @@
 			? 'An operator account is required.'
 			: !connected
 				? 'Reconnecting to Perilune.'
-				: meshProbeReason(snapshot)
+				: live
+					? liveMeshReason(snapshot)
+					: meshProbeReason(snapshot)
 	);
 	const currentSample = $derived(
-		session?.stage === 'probing' ? probeSample(Math.min(24, session.completedSamples)) : null
+		!live && session?.stage === 'probing'
+			? probeSample(Math.min(24, session.completedSamples))
+			: null
 	);
 	const stats = $derived(session?.result ? meshStats(session.result) : null);
 	const sessionId = $derived(session?.id);
@@ -113,15 +129,14 @@
 </script>
 
 <section class="probe-workflow" aria-label="Guided bed mesh probing">
-	{#if snapshot.mode === 'moonraker'}<div class="probe-entry">
+	{#if live && !snapshot.liveMesh.enabled}<div class="probe-entry">
 			<button
 				class="button primary"
 				disabled
-				title="Live probing requires coordinated printer testing.">Probe bed…</button
+				title="Live mesh commands are disabled on this server.">Probe bed…</button
 			>
 			<p class="fine-hint">
-				Live probing will be enabled after coordinated printer testing. Mesh inspection is available
-				now.
+				Live mesh commands are disabled on this server. Mesh inspection is available.
 			</p>
 		</div>
 	{:else if !active}<div class="probe-entry">
@@ -131,7 +146,9 @@
 				onclick={() => (open = true)}>Probe bed…</button
 			>
 			<p class="fine-hint">
-				Guided simulator run · review the plan, follow progress, then choose what to keep.
+				{live
+					? 'Review the configured path, follow probing, then keep or save the result.'
+					: 'Guided simulator run · review the plan, follow progress, then choose what to keep.'}
 			</p>
 		</div>{/if}
 	{#if receipt && ['failed', 'unknown'].includes(receipt.status)}<p role="alert" class="error-text">
@@ -142,18 +159,28 @@
 		{#if active}<div class="probe-panel">
 				<div class="probe-heading">
 					<div>
-						<p class="eyebrow">Simulator probing · {session.ownerName}</p>
-						<h2>{session.stage === 'probing' ? 'Mapping the bed' : 'Review your mesh'}</h2>
+						<p class="eyebrow">
+							{live ? 'Live probing' : 'Simulator probing'} · {session.ownerName}
+						</p>
+						<h2>
+							{session.stage === 'uncertain'
+								? 'Check the printer'
+								: session.stage === 'saving'
+									? 'Saving and restarting'
+									: session.stage === 'probing'
+										? 'Mapping the bed'
+										: 'Review your mesh'}
+						</h2>
 					</div>
-					<span class="mode-badge">Synthetic samples</span>
+					<span class="mode-badge">{live ? 'Measured samples' : 'Synthetic samples'}</span>
 				</div>
 				{#if !ready}<p class="notice" role="status">
 						Reconnecting. This workflow is owned by the backend; check its state when the connection
 						returns.
 					</p>{/if}
 				{#if session.stage === 'probing'}<label class="progress-label"
-						>{session.completedSamples} of 25 samples<progress
-							max="25"
+						>{session.completedSamples} of {total} samples<progress
+							max={total}
 							value={session.completedSamples}
 						></progress></label
 					>
@@ -161,27 +188,38 @@
 						{currentSample ? `Next sample: X ${currentSample.x} · Y ${currentSample.y} mm` : ''}
 					</p>
 					<p class="muted">
-						No motors, heaters or probe are operated. Leaving this page does not stop the simulator
-						run.
+						{live
+							? 'Homing runs first if needed. Leaving this page does not stop probing. Normal queued commands cannot interrupt probing; use the printer’s emergency stop if movement must stop immediately.'
+							: 'No motors, heaters or probe are operated. Leaving this page does not stop the simulator run.'}
+					</p>
+				{:else if session.stage === 'saving' || session.stage === 'uncertain'}<p role="status">
+						{session.message}
 					</p>
 				{:else if stats}<p>
-						The candidate below contains 25 synthetic samples with a {stats.range.toFixed(3)} mm range.
-						Your active mesh and saved profiles have not changed.
+						The result below contains {total}
+						{live ? 'measured' : 'synthetic'} samples with a {stats.range.toFixed(3)} mm range. {live
+							? 'Klipper has already activated this mesh. Your default profile has not been overwritten.'
+							: 'Your active mesh and saved profiles have not changed.'}
 					</p>
+					{#if live && !liveIdle}<p class="notice" role="status">
+							Waiting for the printer to finish movement before keeping, restoring, or saving this
+							mesh.
+						</p>{/if}
 					<div class="review-actions">
 						<button
 							class="button primary"
-							disabled={!owns || !canOperate || !ready || pending}
+							disabled={!owns || !canOperate || !ready || pending || !liveIdle}
 							onclick={() => review('apply')}>Use temporarily…</button
 						><button
 							class="button secondary"
-							disabled={!owns || !canOperate || !ready || pending}
+							disabled={!owns || !canOperate || !ready || pending || !liveIdle}
 							onclick={() => review('save')}>Save profile…</button
 						>
 					</div>
 					<p class="fine-hint">
-						Temporary use ends on restart. Saving creates a new simulator profile without activating
-						it. Unsaved review expires after ten minutes from the start.
+						{live
+							? 'Keeping this mesh is temporary. Saving writes all pending Klipper configuration and restarts it. Your start macro must load the saved profile to use it for prints.'
+							: 'Temporary use ends on restart. Saving creates a new simulator profile without activating it. Unsaved review expires after ten minutes from the start.'}
 					</p>{/if}
 				{#if !owns}<p class="notice">
 						{session.ownerName} owns this workflow. You can follow progress; an account owner can cancel
@@ -190,8 +228,18 @@
 				<div class="cancel-area">
 					<button
 						class="button secondary"
-						disabled={!canOperate || (!owns && role !== 'owner') || !ready || pending}
-						onclick={cancel}>{owns ? 'Cancel and discard…' : 'Cancel abandoned workflow…'}</button
+						disabled={!canOperate ||
+							(!owns && role !== 'owner') ||
+							!ready ||
+							pending ||
+							!liveIdle ||
+							(live && ['probing', 'saving'].includes(session.stage))}
+						onclick={cancel}
+						>{live
+							? 'Restore previous mesh…'
+							: owns
+								? 'Cancel and discard…'
+								: 'Cancel abandoned workflow…'}</button
 					>
 				</div>
 			</div>{:else if session.message}<p class="notice" role="status">{session.message}</p>{/if}
@@ -202,39 +250,42 @@
 		><Dialog.Overlay class="dialog-overlay" /><Dialog.Content class="dialog-content probe-dialog"
 			><Dialog.Title class="dialog-title">Prepare to probe the bed</Dialog.Title><Dialog.Description
 				class="muted"
-				>A cold simulator exercise: 25 synthetic samples across X 20–200 and Y 20–200 mm. No
-				movement, heating, actual probing or printer configuration write occurs.</Dialog.Description
+				>{live && plan
+					? `Cold probing: ${total} points across X ${plan.min[0]}–${plan.max[0]} and Y ${plan.min[1]}–${plan.max[1]} mm, with ${plan.samples} readings per point. The printer will home if needed, then probe and activate the result. Heater targets remain off.`
+					: 'A cold simulator exercise: 25 synthetic samples across X 20–200 and Y 20–200 mm. No movement, heating, actual probing or printer configuration write occurs.'}</Dialog.Description
 			>
 			<div class="automatic-checks" aria-label="Automatic probing checks">
 				<label><input type="checkbox" checked={ready} disabled />Printer connected and ready</label
 				><label><input type="checkbox" checked={idle} disabled />No running or paused job</label
-				><label><input type="checkbox" checked={homed} disabled />All axes homed</label><label
-					><input type="checkbox" checked={off} disabled />Heater targets off</label
-				>
+				><label
+					><input type="checkbox" checked={homed} disabled />{live
+						? 'All axes homed (automatic homing if needed)'
+						: 'All axes homed'}</label
+				><label><input type="checkbox" checked={off} disabled />Heater targets off</label>
 			</div>
-			<div class="prepare-actions">
-				<button
-					class="button secondary"
-					disabled={!canOperate || !ready || pending || homed || !idle || active}
-					title={homed ? 'All axes are already homed.' : undefined}
-					onclick={() => basic({ type: 'home', axes: 'all' })}>Home all axes</button
-				><button
-					class="button secondary"
-					disabled={!canOperate || !ready || pending || off || active}
-					title={off ? 'Both heater targets are already off.' : undefined}
-					onclick={() => basic({ type: 'cooldown' })}>Turn heater targets off</button
-				>{#if ['printing', 'paused'].includes(snapshot.job.state)}<button
+			{#if !live}<div class="prepare-actions">
+					<button
 						class="button secondary"
-						disabled={!canOperate || !ready || pending}
-						onclick={() => {
-							stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
-							stopOpen = true;
-						}}>Stop current simulation…</button
-					>{/if}
-			</div>
+						disabled={!canOperate || !ready || pending || homed || !idle || active}
+						title={homed ? 'All axes are already homed.' : undefined}
+						onclick={() => basic({ type: 'home', axes: 'all' })}>Home all axes</button
+					><button
+						class="button secondary"
+						disabled={!canOperate || !ready || pending || off || active}
+						title={off ? 'Both heater targets are already off.' : undefined}
+						onclick={() => basic({ type: 'cooldown' })}>Turn heater targets off</button
+					>{#if ['printing', 'paused'].includes(snapshot.job.state)}<button
+							class="button secondary"
+							disabled={!canOperate || !ready || pending}
+							onclick={() => {
+								stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
+								stopOpen = true;
+							}}>Stop current simulation…</button
+						>{/if}
+				</div>{/if}
 			<p class="fine-hint">
 				The automatic checks follow printer state. An off target does not mean the heater has
-				cooled. Live probing will need a reviewed heating and probing plan for the printer.
+				cooled. This workflow measures a cold bed; a warm-bed workflow will be a separate option.
 			</p>
 			<p class="fine-hint">
 				For a real run: inspect the bed and probe for debris, clear prints and obstructions from the
@@ -247,8 +298,9 @@
 					><input type="checkbox" bind:checked={clear} />I reviewed physical clearance across the
 					probing area.</label
 				><label
-					><input type="checkbox" bind:checked={understand} />I understand this run uses synthetic
-					simulator samples.</label
+					><input type="checkbox" bind:checked={understand} />{live
+						? 'I understand the printer will move and probe, and the result becomes active immediately.'
+						: 'I understand this run uses synthetic simulator samples.'}</label
 				>
 			</div>
 			{#if reason}<p class="notice">{reason}</p>{/if}{#if failure}<p
@@ -263,7 +315,12 @@
 				><button
 					class="button primary"
 					disabled={Boolean(reason) || pending || !clean || !clear || !understand}
-					onclick={begin}>{submitting ? 'Submitting…' : 'Begin simulator probing'}</button
+					onclick={begin}
+					>{submitting
+						? 'Submitting…'
+						: live
+							? 'Home and probe bed'
+							: 'Begin simulator probing'}</button
 				>
 			</div>
 		</Dialog.Content></Dialog.Portal
@@ -282,12 +339,18 @@
 		><Dialog.Overlay class="dialog-overlay" /><Dialog.Content class="dialog-content"
 			><Dialog.Title class="dialog-title"
 				>{reviewed?.outcome === 'save'
-					? 'Save a simulator profile?'
+					? live
+						? 'Write configuration and restart?'
+						: 'Save a simulator profile?'
 					: 'Use this mesh temporarily?'}</Dialog.Title
 			><Dialog.Description class="muted"
 				>{reviewed?.outcome === 'save'
-					? 'Create a new saved profile from the reviewed result. This survives restart and does not change the active mesh.'
-					: 'Use the reviewed result as the active mesh for this simulator process. Restarting clears temporary application.'}</Dialog.Description
+					? live
+						? 'Save a new mesh profile, write ALL pending Klipper configuration changes, and restart Klipper. Existing profiles are never overwritten. Your start macro must load this name to use it for prints.'
+						: 'Create a new saved profile from the reviewed result. This survives restart and does not change the active mesh.'
+					: live
+						? 'Keep the already active mesh until Klipper restarts or another mesh is loaded. The start macro may load a different mesh.'
+						: 'Use the reviewed result as the active mesh for this simulator process. Restarting clears temporary application.'}</Dialog.Description
 			>
 			{#if reviewed?.outcome === 'save'}<label class="profile-name"
 					>Profile name<input
@@ -297,8 +360,9 @@
 					/></label
 				>
 				<p class="fine-hint">
-					1–40 letters, numbers, spaces, underscores or hyphens. Existing profiles are never
-					overwritten.
+					{live
+						? '1–40 letters, numbers, underscores or hyphens. Default and internal names are reserved.'
+						: '1–40 letters, numbers, spaces, underscores or hyphens. Existing profiles are never overwritten.'}
 				</p>{/if}
 			{#if failure}<p class="error-text" role="alert">{failure}</p>{/if}
 			<div class="dialog-actions">
@@ -308,6 +372,7 @@
 					disabled={!canOperate ||
 						!owns ||
 						!ready ||
+						!liveIdle ||
 						pending ||
 						!reviewed ||
 						(reviewed.outcome === 'save' && !name.trim())}
@@ -324,7 +389,12 @@
 						} catch {
 							/* retained in dialog */
 						}
-					}}>{reviewed?.outcome === 'save' ? 'Save profile' : 'Use temporarily'}</button
+					}}
+					>{reviewed?.outcome === 'save'
+						? live
+							? 'Write and restart'
+							: 'Save profile'
+						: 'Use temporarily'}</button
 				>
 			</div>
 		</Dialog.Content></Dialog.Portal
@@ -335,14 +405,15 @@
 		><Dialog.Overlay class="dialog-overlay" /><Dialog.Content class="dialog-content"
 			><Dialog.Title class="dialog-title">Cancel this bed mesh workflow?</Dialog.Title
 			><Dialog.Description class="muted"
-				>Discard the unfinished run or unsaved result belonging to {reviewed?.owner}. The previous
-				active mesh and saved profiles are retained.</Dialog.Description
+				>{live
+					? 'Confirm the printer has stopped. Restore the previously active saved profile (or clear compensation if none was active) and remove this temporary profile. This does not undo configuration that was already written.'
+					: `Discard the unfinished run or unsaved result belonging to ${reviewed?.owner}. The previous active mesh and saved profiles are retained.`}</Dialog.Description
 			>{#if failure}<p class="error-text" role="alert">{failure}</p>{/if}
 			<div class="dialog-actions">
 				<Dialog.Close class="button secondary" disabled={submitting}>Keep going</Dialog.Close
 				><button
 					class="button danger"
-					disabled={!ready || pending || !reviewed}
+					disabled={!ready || !liveIdle || pending || !reviewed}
 					onclick={async () => {
 						if (!reviewed) return;
 						try {
@@ -356,7 +427,7 @@
 						} catch {
 							/* retained in dialog */
 						}
-					}}>Cancel and discard</button
+					}}>{live ? 'Restore previous mesh' : 'Cancel and discard'}</button
 				>
 			</div></Dialog.Content
 		></Dialog.Portal

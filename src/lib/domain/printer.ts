@@ -24,6 +24,7 @@ import {
 } from './motion.js';
 import { startReason, type JobFile } from './jobs.js';
 import { Schema } from 'effect';
+import type { LiveMeshPlan } from './live-mesh.js';
 import { CommandRejected } from './errors.js';
 export { CommandRejected } from './errors.js';
 
@@ -110,6 +111,7 @@ export interface PrinterSnapshot {
 	calibration: CalibrationState;
 	bedMesh: BedMeshState;
 	meshProbe: MeshProbeState;
+	liveMesh: { enabled: boolean; plan: LiveMeshPlan | null; pendingConfig: boolean };
 	actions: ActionRecord[];
 }
 export const initialSnapshot = (): PrinterSnapshot => ({
@@ -138,6 +140,7 @@ export const initialSnapshot = (): PrinterSnapshot => ({
 	calibration: emptyCalibration(),
 	bedMesh: simulatedBedMesh(),
 	meshProbe: emptyMeshProbe(),
+	liveMesh: { enabled: false, plan: null, pendingConfig: false },
 	actions: []
 });
 export function actionLabel(command: PrinterCommand): string {

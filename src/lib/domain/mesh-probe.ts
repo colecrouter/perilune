@@ -3,6 +3,7 @@ import { simulatedBedMesh, type BedMesh } from './bed-mesh.js';
 import { CommandRejected } from './errors.js';
 import { motionReason } from './motion.js';
 import type { CalibrationActor } from './calibration.js';
+import type { LiveMeshPlan } from './live-mesh.js';
 import type { PrinterSnapshot } from './printer.js';
 export const MESH_PROBE_IDLE_MS = 10 * 60 * 1000;
 export const probePlan = { min: [20, 20], max: [200, 200], columns: 5, rows: 5 } as const;
@@ -27,7 +28,19 @@ export interface MeshProbeSession {
 	id: string;
 	ownerId: string;
 	ownerName: string;
-	stage: 'probing' | 'review' | 'applied' | 'saved' | 'cancelled' | 'interrupted';
+	stage:
+		| 'probing'
+		| 'review'
+		| 'applied'
+		| 'saved'
+		| 'cancelled'
+		| 'interrupted'
+		| 'uncertain'
+		| 'saving';
+	live?: boolean;
+	plan?: LiveMeshPlan;
+	previousProfile?: string | null;
+	previousMesh?: BedMesh | null;
 	completedSamples: number;
 	startedAt: number;
 	expiresAt: number;
@@ -40,7 +53,9 @@ export interface MeshProbeState {
 }
 export const emptyMeshProbe = (): MeshProbeState => ({ savedProfiles: [], session: null });
 export const meshProbeActive = (state: MeshProbeState) =>
-	Boolean(state.session && ['probing', 'review'].includes(state.session.stage));
+	Boolean(
+		state.session && ['probing', 'review', 'uncertain', 'saving'].includes(state.session.stage)
+	);
 export function interruptMeshProbe(state: MeshProbeState, message: string): MeshProbeState {
 	return meshProbeActive(state) || state.session?.stage === 'applied'
 		? { ...state, session: { ...state.session!, stage: 'interrupted', result: null, message } }

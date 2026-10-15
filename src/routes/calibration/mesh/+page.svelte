@@ -39,7 +39,11 @@
 				</p>
 			</div>
 			<span class="mode-badge"
-				>{snapshot.mode === 'simulator' ? 'Simulator examples' : 'Read-only inspection'}</span
+				>{snapshot.mode === 'simulator'
+					? 'Simulator examples'
+					: snapshot.liveMesh.enabled
+						? 'Live calibration'
+						: 'Read-only inspection'}</span
 			>
 		</header>
 		<BedMeshProbe
@@ -54,13 +58,17 @@
 					class="candidate-inspection"
 					aria-label="Candidate mesh review"
 				>
-					<h2>Candidate result · not active</h2>
+					<h2>
+						{snapshot.mode === 'moonraker'
+							? 'Measured result · currently active'
+							: 'Candidate result · not active'}
+					</h2>
 					<BedMeshInspector
 						activeLabel="Candidate"
 						showProfiles={false}
 						meshState={{ status: 'ready', active: candidate, profiles: [], omittedProfiles: 0 }}
 						{fresh}
-						simulator={true}
+						simulator={snapshot.mode === 'simulator'}
 					/>
 				</section>{/key}
 		{/if}
@@ -100,8 +108,8 @@
 			</div>
 			<p>
 				Inspecting a profile does not activate it. The simulator workflow supports probing, result
-				review, temporary use and saving new profiles. Live probing and printer profile changes
-				require coordinated testing.
+				review, temporary use and saving new profiles. Servers can opt into the cold live probing
+				workflow; other live calibration remains planned.
 			</p>
 			<a href="https://www.klipper3d.org/Bed_Mesh.html" target="_blank" rel="noreferrer"
 				>Understanding bed mesh in Klipper ↗</a

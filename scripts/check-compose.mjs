@@ -5,6 +5,7 @@ const output = execFileSync('docker', ['compose', 'config', '--format', 'json'],
 	env: {
 		...process.env,
 		PERILUNE_ORIGIN: origin,
+		PERILUNE_LIVE_MESH: 'true',
 		PERILUNE_MOONRAKER_URL: 'ws://printer.example.invalid:7125/websocket',
 		PERILUNE_MOONRAKER_API_KEY: 'example-test-key',
 		PERILUNE_CAMERA_BASE_URL: 'http://go2rtc.example.invalid:1984/',
@@ -14,6 +15,7 @@ const output = execFileSync('docker', ['compose', 'config', '--format', 'json'],
 });
 const config = JSON.parse(output);
 assert.equal(config.services.perilune.environment.PERILUNE_ORIGIN, origin);
+assert.equal(config.services.perilune.environment.PERILUNE_LIVE_MESH, 'true');
 assert.equal(
 	config.services.perilune.environment.PERILUNE_MOONRAKER_URL,
 	'ws://printer.example.invalid:7125/websocket'

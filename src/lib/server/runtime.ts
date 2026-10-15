@@ -12,6 +12,7 @@ import { MoonrakerConfig, MoonrakerServiceLive } from './moonraker.js';
 import { MoonrakerBridgeLive } from './moonraker-bridge.js';
 import { CameraConfig, CameraServiceLive } from './camera.js';
 import { JobServiceLive, JobsConfig } from './job-service.js';
+import { LiveMeshServiceLive, LiveMeshDisabled } from './live-mesh-service.js';
 import { WebcamBridgeLive } from './webcam-discovery.js';
 
 const filename = process.env.PERILUNE_DATABASE ?? './data/perilune.sqlite';
@@ -45,9 +46,10 @@ if (moonrakerUrl) {
 			'PERILUNE_MOONRAKER_URL must be a ws/wss endpoint without credentials, query, or fragment. Use PERILUNE_MOONRAKER_API_KEY for authentication.'
 		);
 }
+const databaseLayer = SqliteClient.layer({ filename });
+const actionStoreLayer = ActionStoreLive.pipe(Layer.provide(databaseLayer));
 const printerLayer = (moonrakerUrl ? makePrinterService('moonraker') : PrinterServiceLive).pipe(
-	Layer.provide(ActionStoreLive),
-	Layer.provide(SqliteClient.layer({ filename }))
+	Layer.provide(actionStoreLayer)
 );
 const liveServices = Layer.mergeAll(
 	printerLayer,
@@ -57,6 +59,7 @@ const liveServices = Layer.mergeAll(
 			Layer.succeed(MoonrakerConfig, {
 				url: moonrakerUrl ?? '',
 				discoverWebcams: Boolean(cameraBaseUrl && !cameraSource),
+				liveMeshEnabled: process.env.PERILUNE_LIVE_MESH === 'true',
 				...(process.env.PERILUNE_MOONRAKER_API_KEY
 					? { apiKey: process.env.PERILUNE_MOONRAKER_API_KEY }
 					: {})
@@ -67,6 +70,14 @@ const liveServices = Layer.mergeAll(
 const coreLayer = moonrakerUrl
 	? Layer.merge(MoonrakerBridgeLive, WebcamBridgeLive).pipe(Layer.provideMerge(liveServices))
 	: Layer.merge(printerLayer, cameraLayer);
+const commandsLayer = moonrakerUrl
+	? LiveMeshServiceLive.pipe(
+			Layer.provide(actionStoreLayer),
+			Layer.provide(databaseLayer),
+			Layer.provideMerge(coreLayer),
+			Layer.provide(liveServices)
+		)
+	: Layer.merge(coreLayer, LiveMeshDisabled);
 const jobsLayer = JobServiceLive.pipe(
 	Layer.provide(
 		Layer.succeed(JobsConfig, {
@@ -83,7 +94,7 @@ const jobsLayer = JobServiceLive.pipe(
 		})
 	),
 	Layer.provide(SqliteClient.layer({ filename })),
-	Layer.provideMerge(coreLayer)
+	Layer.provideMerge(commandsLayer)
 );
 export const runtime = ManagedRuntime.make(jobsLayer);
 export const shutdownSignal = new AbortController();

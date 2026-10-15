@@ -31,7 +31,7 @@ printer disconnect or backend restart interrupts it and discards unsaved work.
 A storage failure reports an unknown outcome; check the saved default once storage
 recovers. Perilune does not automatically replay the failed command.
 
-Live calibration remains disabled pending coordinated printer testing. Probe
+Live Z-offset calibration remains disabled. The opt-in live bed mesh workflow is described below. Probe
 reference calibration and first-layer print tuning are separate workflows.
 
 References: [Klipper paper test](https://www.klipper3d.org/Bed_Level.html#the-paper-test),
@@ -83,3 +83,29 @@ a new named simulator profile without activation; it survives restart. Existing
 profiles are never overwritten. Interrupted/unknown actions are explained and not
 retried automatically; storage recovery may reveal a profile whose commit succeeded
 before its acknowledgement was lost. No live probing or printer config write occurs.
+
+## Live cold bed mesh probing
+
+Set `PERILUNE_LIVE_MESH=true` alongside the backend Moonraker connection to enable
+this workflow. Other live commands remain disabled. Review the printer-derived
+rectangular probing bounds and readings per point, clear the bed, and check the
+probe/nozzle. Heater targets must be off and both temperatures at most 40°C.
+**Home and probe bed** homes automatically if needed, then measures the mesh.
+Leaving the page does not stop it. Normal queued commands cannot interrupt probing;
+use the printer's emergency stop if movement must stop immediately.
+
+Klipper activates the result immediately. **Use temporarily…** keeps that active
+compensation until Klipper restarts or another profile is loaded. **Restore previous
+mesh…** restores the previously active saved profile (or clears compensation if
+there was none). It is available only after probing, with fresh idle printer state.
+
+**Save profile…** explicitly confirms writing ALL pending Klipper configuration
+and restarting it. Choose a new identifier; default and internal names are reserved
+and existing names cannot be overwritten. Completion is verified from the profile
+reported after restart. Perilune does not edit your start macro: it must load the
+saved profile if you want prints to use it. An uncertain outcome is never retried;
+verify the printer is stopped before restoring/clearing the workflow.
+
+The initial live workflow supports cold rectangular meshes with discrete probes.
+Warm-bed preparation, standalone profile management and live probe-reference /
+Z-offset calibration remain separate milestones.

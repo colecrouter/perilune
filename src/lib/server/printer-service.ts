@@ -55,7 +55,10 @@ export class PrinterService extends Context.Service<
 				'connection' | 'klippy' | 'telemetryAt' | 'availableObjects' | 'job' | 'heaters'
 			> &
 				Partial<
-					Pick<PrinterSnapshot, 'motion' | 'additionalTemperatures' | 'bedMesh' | 'telemetryReady'>
+					Pick<
+						PrinterSnapshot,
+						'motion' | 'additionalTemperatures' | 'bedMesh' | 'telemetryReady' | 'liveMesh'
+					>
 				>
 		) => Effect.Effect<void>;
 	}
@@ -288,6 +291,7 @@ export const makePrinterService = (
 				);
 			});
 			const work = Effect.gen(function* () {
+				if (mode !== 'simulator') return;
 				const snapshot = yield* SubscriptionRef.get(state);
 				if (snapshot.storage === 'degraded') {
 					yield* recoverStorage;
@@ -703,6 +707,12 @@ export const makePrinterService = (
 						: update((snapshot) => ({
 								...snapshot,
 								...telemetry,
+								motion: {
+									...(telemetry.motion ?? snapshot.motion),
+									calibration: Boolean(
+										telemetry.motion?.calibration || meshProbeActive(snapshot.meshProbe)
+									)
+								},
 								connectionGeneration:
 									snapshot.connectionGeneration +
 									(snapshot.connection !== telemetry.connection ||
