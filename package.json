@@ -20,7 +20,7 @@
 		"lint": "vp lint",
 		"format": "vp fmt && prettier --write \"src/**/*.svelte\"",
 		"format:check": "vp fmt --check && prettier --check \"src/**/*.svelte\"",
-		"validate": "vp run format:check && vp run lint && vp run check && vp run test && vp run build && vp run test:smoke && vp run test:smoke:live && vp run test:smoke:camera && vp run test:smoke:auth && vp run test:smoke:jobs && vp run test:smoke:calibration && vp run test:smoke:mesh-probe && vp run test:smoke:live-mesh && vp run test:smoke:extrusion && vp run test:smoke:configuration",
+		"validate": "vp run format:check && vp run lint && vp run check && vp run test && vp run build && vp run test:smoke && vp run test:smoke:live && vp run test:smoke:camera && vp run test:smoke:auth && vp run test:smoke:jobs && vp run test:smoke:calibration && vp run test:smoke:mesh-probe && vp run test:smoke:live-mesh && vp run test:smoke:extrusion && vp run test:smoke:configuration && vp run test:smoke:console",
 		"test:smoke": "node scripts/smoke.mjs",
 		"test:compose": "node scripts/check-compose.mjs",
 		"test:smoke:live": "node scripts/smoke-live.mjs",
@@ -31,7 +31,8 @@
 		"test:smoke:calibration": "node scripts/smoke-calibration.mjs",
 		"test:smoke:live-mesh": "node scripts/smoke-live-mesh.mjs",
 		"test:smoke:extrusion": "node scripts/smoke-extrusion.mjs",
-		"test:smoke:configuration": "node scripts/smoke-configuration.mjs"
+		"test:smoke:configuration": "node scripts/smoke-configuration.mjs",
+		"test:smoke:console": "node scripts/smoke-console.mjs"
 	},
 	"dependencies": {
 		"@better-auth/passkey": "1.7.7",

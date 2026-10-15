@@ -4,6 +4,7 @@
 		size = 20
 	}: {
 		name:
+			| 'console'
 			| 'account'
 			| 'overview'
 			| 'jobs'
@@ -22,6 +23,7 @@
 		size?: number;
 	} = $props();
 	const paths = {
+		console: 'm4 6 6 6-6 6 M13 18h7',
 		account: 'M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M4 21v-2a8 8 0 0 1 16 0v2',
 		overview: 'M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z',
 		jobs: 'M6 3h8l5 5v13H6z M14 3v6h5',

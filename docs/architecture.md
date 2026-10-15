@@ -793,3 +793,36 @@ exports reviewed source without writes, checks desktop/320px layout and clears t
 handoff on reload. The simulator extrusion smoke stages and saves through the normal
 review. Z-offset/mesh continue using their dedicated generated-settings workflows;
 include resolution and physical application acceptance remain pending.
+
+## Macros and operator console
+
+`ConsoleService` is a process-scoped Effect service, not a request/browser worker.
+Migration 010 persists simulator receipts and per-account macro shortcuts. Admission
+is serialized, idempotent by UUID plus actor/script, bounded to 20 pending commands,
+and expires after 30 seconds. Execution rechecks authorization, connection generation,
+workflow ownership and readiness. Restart marks in-flight records unknown; connection
+loss never retries. Storage uncertainty quarantines pending work before recovery.
+Console examples are diagnostic-only and never mutate motion/heaters; all live
+execution is rejected independently of other live feature flags. A shared physical
+reservation/command policy remains required before broad live execution (#10).
+
+The existing Moonraker socket provides bounded macro-name/help discovery and G-code
+responses. Help runs after telemetry readiness, is optional, and cannot disconnect
+healthy telemetry on timeout. Only loaded macro names and plain descriptions are
+retained, not config bodies/parameter guesses. Responses are limited to 200 × 2,048
+characters; macros to 200 × 500-character descriptions. This operator-only data stays
+in MoonrakerSnapshot, never forwarded by the explicit PrinterSnapshot bridge.
+`console.remote.ts` gates every read/write to operators/owners, binds stream lifetime
+to request/process/auth lease signals, and closes its iterator on abort. Pins and
+receipt lookups are account-bound; shared log reads are intentionally operator-wide.
+
+The UI preserves input through state changes/reconnect, reviews exact commands,
+displays explicit receipt lifecycle and reconciles an uncertain submission without
+resending. Macro review preserves another typed draft. Shortcuts sync per account;
+filters and follow-latest apply locally. Receipts retain up to seven days/2,000 rows,
+with only the latest 100 visible; private live responses remain in process memory.
+Domain/service/browser tests cover bounds, expiry, idempotence, restart no-replay,
+revocation/throwing auth checks, source text safety and draft preservation. A headless
+production smoke checks shared receipts, pin sync, reconnect inputs, viewer/CSRF
+rejection, private live responses, one socket, no write RPC and desktop/320px layout.
+See [the console guide](console.md). Physical execution remains coordinated/pending.

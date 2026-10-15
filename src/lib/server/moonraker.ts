@@ -1,3 +1,9 @@
+import {
+	discoverMacros,
+	cleanConsoleText,
+	type PrinterMacro,
+	type ConsoleLine
+} from '#lib/domain/console.js';
 import { emptyBedMesh, normalizeBedMesh, type BedMeshState } from '#lib/domain/bed-mesh.js';
 import { temperatureFields, type TemperatureSensor } from '#lib/domain/temperature.js';
 import { axes, emptyMotion, type MotionSnapshot } from '#lib/domain/motion.js';
@@ -19,6 +25,8 @@ export class MoonrakerConfig extends Context.Service<MoonrakerConfig, MoonrakerS
 ) {}
 export type KlippyState = 'unknown' | 'ready' | 'startup' | 'shutdown' | 'error' | 'disconnected';
 export interface MoonrakerSnapshot {
+	/** Operator-only data; never forwarded into PrinterSnapshot/dashboard. */
+	console?: { macros: PrinterMacro[]; responses: ConsoleLine[] };
 	connection: 'connecting' | 'connected' | 'reconnecting';
 	klippy: KlippyState;
 	generation: number;
@@ -117,6 +125,7 @@ export const emptyMoonrakerSnapshot = (): MoonrakerSnapshot => ({
 	bedMesh: emptyBedMesh(),
 	liveMesh: { enabled: false, plan: null, pendingConfig: false },
 	probeResponses: [],
+	console: { macros: [], responses: [] },
 	job: {
 		filename: '',
 		state: 'standby',
@@ -260,7 +269,12 @@ export const MoonrakerServiceLive = Layer.effect(
 					if (signal.aborted) break;
 					socket = new WebSocket(config.url);
 					const ws = socket;
-					const request = (method: string, params?: unknown, requestTimeout = timeout) =>
+					const request = (
+						method: string,
+						params?: unknown,
+						requestTimeout = timeout,
+						closeOnTimeout = true
+					) =>
 						new Promise<unknown>((resolve, reject) => {
 							if (closed || ws.readyState !== WebSocket.OPEN) {
 								reject(new Error('Connection unavailable'));
@@ -270,7 +284,7 @@ export const MoonrakerServiceLive = Layer.effect(
 							const timer = setTimeout(() => {
 								pending.delete(id);
 								reject(new Error('Request timed out'));
-								close();
+								if (closeOnTimeout) close();
 							}, requestTimeout);
 							pending.set(id, {
 								resolve,
@@ -297,6 +311,27 @@ export const MoonrakerServiceLive = Layer.effect(
 							if (message.error) entry.reject();
 							else entry.resolve(message.result);
 							return;
+						}
+						if (message.method === 'notify_gcode_response') {
+							const response = Array.isArray(message.params) ? message.params[0] : null;
+							if (typeof response === 'string') {
+								const text = cleanConsoleText(response);
+								void publish({
+									...current,
+									console: {
+										macros: current.console?.macros ?? [],
+										responses: [
+											...(current.console?.responses ?? []),
+											{
+												id: crypto.randomUUID(),
+												at: Date.now(),
+												kind: text.startsWith('!!') ? ('error' as const) : ('response' as const),
+												text
+											}
+										].slice(-200)
+									}
+								});
+							}
 						}
 						if (message.method === 'notify_gcode_response' && config.liveMeshEnabled) {
 							const line = String(Array.isArray(message.params) ? message.params[0] : '');
@@ -448,8 +483,30 @@ export const MoonrakerServiceLive = Layer.effect(
 							buffered = [];
 							subscribed = true;
 							await publish(
-								normalizeMoonrakerStatus(status, { ...current, availableObjects: objects })
+								normalizeMoonrakerStatus(status, {
+									...current,
+									availableObjects: objects,
+									console: {
+										macros: discoverMacros(objects, {}),
+										responses: current.console?.responses ?? []
+									}
+								})
 							);
+							if (current.console?.macros.length)
+								void request('printer.gcode.help', undefined, timeout, false)
+									.then((help) => {
+										if (closed || signal.aborted || version !== readinessVersion) return;
+										return publish({
+											...current,
+											console: {
+												macros: discoverMacros(objects, help),
+												responses: current.console?.responses ?? []
+											}
+										});
+									})
+									.catch(() => {
+										/* Optional descriptions never interrupt telemetry readiness. */
+									});
 						}
 						const fence = (generation: number) => {
 							if (

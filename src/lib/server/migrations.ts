@@ -4,6 +4,11 @@ import * as Migrator from 'effect/sql/Migrator';
 
 export const migrate = Migrator.make({})({
 	loader: Migrator.fromRecord({
+		'010_console': Effect.gen(function* () {
+			const sql = yield* SqlClient;
+			yield* sql`CREATE TABLE console_commands(id TEXT PRIMARY KEY,owner TEXT NOT NULL,script TEXT NOT NULL,status TEXT NOT NULL,created INTEGER NOT NULL,message TEXT,output TEXT NOT NULL)`;
+			yield* sql`CREATE TABLE macro_shortcuts(owner TEXT NOT NULL,name TEXT NOT NULL,PRIMARY KEY(owner,name))`;
+		}),
 		'009_notifications': Effect.gen(function* () {
 			const sql = yield* SqlClient;
 			yield* sql`CREATE TABLE push_keys (id INTEGER PRIMARY KEY CHECK(id=1), public_key TEXT NOT NULL, private_key TEXT NOT NULL)`;
