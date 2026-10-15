@@ -1,0 +1,36 @@
+# Extrusion calibration review
+
+Independent reviewer: `extrusion_review` agent, 2026-10-14.
+
+Scope: simulator filament handling and actor-owned extrusion-distance workflow,
+SQLite lifecycle/recovery, manual live calculator, unapplied proposal exports,
+responsive interface, tests, and deployment assumptions.
+
+The reviewer requested five changes, all resolved:
+
+- Reject baselines that can round a proposal to zero at three decimals.
+- Invalidate manual results and export controls when measurement drafts change.
+- Reset loaded-filament/clearance checks between workflows, preserving them during
+  ordinary telemetry updates and reconnects.
+- Exercise SQLite acknowledgement failures before and after committing a feed,
+  verifying unknown outcomes, released leases, and no physical-command replay.
+- Disable and explain heater targeting while another calibration owns controls.
+
+The reviewer subsequently approved the implementation with no remaining blocking
+findings, contingent on passing validation/CI. The reviewer also inspected finished
+proposal reconciliation after a lost commit acknowledgement; an additional service
+regression covers this path. Browser coverage verifies acknowledgment reset and
+cross-workflow heater disabling. Tests run headless.
+
+Live extrusion/heating remain disabled. The live calculator accepts measurements
+from an externally performed test; neither calculator nor export writes printer
+configuration. Simulator exports explicitly identify their example source.
+
+Validation completed locally: `pnpm validate` passed all nine headless production
+smokes and the suite; final headless domain/browser run passed 241 tests in 30
+files after adding two review regressions. `pnpm check`, formatting, linting, and
+Compose configuration checks passed. The production smoke verified a full 50-second
+run across navigation, export contents, cooldown, reload persistence, no runtime
+errors, and desktop/320px layouts. Collaborative preview independently verified
+route identity/content and no overflow at 1280px/320px; its snapshot endpoint failed,
+so screenshots were inspected from the existing automated smoke artifacts.

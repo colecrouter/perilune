@@ -1,4 +1,11 @@
 import {
+	ExtrusionCommand,
+	emptyExtrusion,
+	applyExtrusion,
+	extrusionActive,
+	type ExtrusionState
+} from './extrusion.js';
+import {
 	MeshProbeCommand,
 	emptyMeshProbe,
 	applyMeshProbe,
@@ -34,6 +41,7 @@ const expectedJob = Schema.optional(
 	Schema.Struct({ filename: Schema.String, runId: Schema.NullOr(Schema.String) })
 );
 export const PrinterCommand = Schema.Union([
+	ExtrusionCommand,
 	CalibrationCommand,
 	MeshProbeCommand,
 	Schema.Struct({ type: Schema.Literal('start'), fileId: Schema.String.check(Schema.isUUID()) }),
@@ -111,6 +119,7 @@ export interface PrinterSnapshot {
 	calibration: CalibrationState;
 	bedMesh: BedMeshState;
 	meshProbe: MeshProbeState;
+	extrusion: ExtrusionState;
 	liveMesh: { enabled: boolean; plan: LiveMeshPlan | null; pendingConfig: boolean };
 	actions: ActionRecord[];
 }
@@ -140,11 +149,22 @@ export const initialSnapshot = (): PrinterSnapshot => ({
 	calibration: emptyCalibration(),
 	bedMesh: simulatedBedMesh(),
 	meshProbe: emptyMeshProbe(),
+	extrusion: emptyExtrusion(),
 	liveMesh: { enabled: false, plan: null, pendingConfig: false },
 	actions: []
 });
 export function actionLabel(command: PrinterCommand): string {
 	switch (command.type) {
+		case 'extrusionBegin':
+			return 'Begin measured simulator extrusion';
+		case 'extrusionFeed':
+			return `Simulator filament ${command.distance > 0 ? 'feed' : 'retract'} ${Math.abs(command.distance)} mm`;
+		case 'extrusionMeasure':
+			return 'Record filament measurement';
+		case 'extrusionFinish':
+			return 'Finish extrusion measurement (proposal only)';
+		case 'extrusionCancel':
+			return 'Cancel filament workflow';
 		case 'meshProbeBegin':
 			return 'Begin simulator bed mesh probing';
 		case 'meshProbeFinish':
@@ -192,6 +212,11 @@ export function applyCommand(
 	file?: JobFile,
 	actor?: CalibrationActor
 ): PrinterSnapshot {
+	if ('runId' in command) return applyExtrusion(state, command, actor);
+	if (extrusionActive(state.extrusion) && command.type !== 'cooldown')
+		throw new CommandRejected({
+			message: 'Filament calibration owns the printer. Finish or cancel it first.'
+		});
 	if ('probeId' in command) return applyMeshProbe(state, command, actor);
 	if (meshProbeActive(state.meshProbe) && command.type !== 'cooldown')
 		throw new CommandRejected({

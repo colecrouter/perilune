@@ -131,9 +131,10 @@ and patched during prepare so its diagnostics also appear in checks.
 6. Installability, configurable push notifications, and layout preferences.
 
 Built-in authentication protects browser-facing state, actions, and media. Compose
-binds only to loopback by default. Internet exposure requires a configured HTTPS origin. No real
-printer commands, migrations, configuration writes, heating, or motion are performed
-by live mode. Simulator commands only alter demo state.
+binds only to loopback by default. Internet exposure requires a configured HTTPS origin. Live mode is read-only by default. The explicitly enabled live bed mesh controller
+can home, probe, manage mesh profiles, and save configuration through its reviewed
+workflow. Other real movement, heating, job commands, and configuration editing
+remain disabled. Simulator commands only alter demo state.
 
 ## Protocol references
 
@@ -560,3 +561,38 @@ privacy, and mobile preparation. Authorized hardware testing verified cold probi
 a new saved profile after restart, and restoration of the original default mesh.
 A real transport interruption preserved an uncertain reservation without replay.
 The subsequent explicit recovery/fresh-run test passed with heater targets off.
+
+## Filament handling and extrusion distance
+
+`/calibration/extrusion` adds slow simulator feed/retract (5/10/25 mm) and a
+50 mm at 1 mm/s measurement workflow. E-only readiness does not require homing;
+it does require an idle, ready printer, settled nozzle temperature, healthy
+storage, no competing workflow, and explicit loaded-filament/clearance checks.
+The simulator supports 170–280°C; these are demo bounds, not detected hardware
+limits. The baseline rotation distance is explicitly entered, never invented
+from demo data or confused with a potentially overridden configured value.
+
+Actor-bound UUID submissions use the existing bounded queue, execution-time
+validation, expiry, and unknown-outcome rules. A process-owned worker advances
+the feed independently of browser lifetimes. The action receipt acknowledges
+starting the workflow; its separate stage/progress records ongoing simulated
+movement. The lease remains held through manual measurement and proposal review.
+Disconnect, revocation, cooldown, expiry, and restart interrupt unfinished work
+without replay. Migration 006 stores simulator checkpoints and atomically
+commits command transitions with action statuses. Storage recovery reconciles
+committed state and releases unfinished leases without repeating a feed.
+
+Measured travel is initial mark minus remaining distance. The proposal is
+`old rotation_distance × measured / 50`, rounded to three decimal places. Invalid
+or implausible measurements are rejected; differences over 2 mm prompt a repeat.
+Inputs and measurement acknowledgments survive normal telemetry/reconnects;
+physical acknowledgments reset between workflows. Manual calculator exports are
+invalidated when drafts change. Finished simulator proposals survive restart.
+
+The live page offers the same calculator for an externally performed 50 mm test,
+including while disconnected. Live heating/extrusion and configuration writes
+are not enabled by this milestone. Exports are explicitly unapplied snippets;
+simulator exports carry an additional warning against applying example data to
+a real printer. Finish/cancel offers an explicit nozzle cooldown choice. Applying
+rotation distance belongs to configuration review, and flow ratio, pressure
+advance, temperature/retraction towers remain later print-based tuning work.

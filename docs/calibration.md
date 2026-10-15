@@ -109,3 +109,37 @@ verify the printer is stopped before restoring/clearing the workflow.
 The initial live workflow supports cold rectangular meshes with discrete probes.
 Warm-bed preparation, standalone profile management and live probe-reference /
 Z-offset calibration remain separate milestones.
+
+## Filament and extrusion distance
+
+Open **Calibration → Filament & extrusion**. Simulator controls require an idle
+printer and a nozzle settled at the selected filament temperature; XYZ homing is
+unnecessary for extrusion alone. Confirm loaded filament and nozzle clearance.
+Use the slow feed/retract buttons for 5, 10, or 25 mm, or begin a measured 50 mm run
+at 1 mm/s. The shared backend keeps running through page navigation and reserves
+the printer until measurement review finishes. Another operator can observe;
+the account owner can end an abandoned workflow.
+
+For a real measurement, mark the filament about 70 mm from a fixed point at the
+extruder intake and measure precisely. Enter the current `rotation_distance`,
+including any runtime override; do not substitute slicer flow or change
+`gear_ratio`. After feeding 50 mm slowly, measure from that same point to the mark.
+The live page calculates from an externally performed test, even while offline;
+it does not heat or extrude through Perilune yet. The simulator uses entered
+example measurements, not physical observations.
+
+The calculation is `old rotation_distance × (initial − remaining) / 50`, rounded
+to three decimal places. Repeat with a fresh mark to confirm; discrepancies over
+2 mm explicitly recommend another measurement. Large or impossible deviations
+are rejected so a slipped filament or blocked nozzle is investigated first.
+See [Klipper’s rotation-distance guidance](https://www.klipper3d.org/Rotation_Distance.html#calibrating-rotation_distance-on-extruders).
+
+**Export proposal** downloads an unapplied configuration snippet and measurement
+notes. Review it against the existing `[extruder]` section; exporting never saves
+or restarts the printer. Simulator exports explicitly warn against applying example
+data. Editing live calculator inputs clears the previous result until recalculated.
+**Finish measurement** and cancellation offer an explicit nozzle cooldown choice.
+A finished simulator proposal survives restart; unfinished work is interrupted on
+printer disconnect, access revocation, expiry, or backend restart and never replayed.
+Configuration editing/saving and print-based flow/pressure-advance tuning follow
+as separate milestones.

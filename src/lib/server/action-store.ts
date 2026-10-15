@@ -1,3 +1,4 @@
+import { emptyExtrusion, type ExtrusionState } from '#lib/domain/extrusion.js';
 import { emptyMeshProbe, type MeshProbeState } from '#lib/domain/mesh-probe.js';
 import { emptyCalibration, type CalibrationState } from '#lib/domain/calibration.js';
 import { Context, Effect, Layer } from 'effect';
@@ -10,6 +11,14 @@ import { migrate } from './migrations.js';
 export class ActionStore extends Context.Service<
 	ActionStore,
 	{
+		extrusion: Effect.Effect<ExtrusionState, SqlError>;
+		writeExtrusion: (state: ExtrusionState) => Effect.Effect<void, SqlError>;
+		commitExtrusion: (
+			id: string,
+			status: ActionStatus,
+			message: string | null,
+			state: ExtrusionState
+		) => Effect.Effect<void, SqlError>;
 		meshProbe: Effect.Effect<MeshProbeState, SqlError>;
 		writeMeshProbe: (state: MeshProbeState) => Effect.Effect<void, SqlError>;
 		commitMeshProbe: (
@@ -80,7 +89,24 @@ export const ActionStoreLive = Layer.effect(
 			sql`INSERT INTO simulator_mesh_probe (id, state) VALUES (1, ${JSON.stringify(state)}) ON CONFLICT(id) DO UPDATE SET state=excluded.state`.pipe(
 				Effect.asVoid
 			);
+		const writeExtrusion = (state: ExtrusionState) =>
+			sql`INSERT INTO simulator_extrusion (id,state) VALUES (1,${JSON.stringify(state)}) ON CONFLICT(id) DO UPDATE SET state=excluded.state`.pipe(
+				Effect.asVoid
+			);
 		return {
+			extrusion: sql<{ state: string }>`SELECT state FROM simulator_extrusion WHERE id=1`.pipe(
+				Effect.map((rows) =>
+					rows[0] ? (JSON.parse(rows[0].state) as ExtrusionState) : emptyExtrusion()
+				)
+			),
+			writeExtrusion,
+			commitExtrusion: (id, status, message, state) =>
+				sql.withTransaction(
+					Effect.gen(function* () {
+						yield* writeExtrusion(state);
+						yield* sql`UPDATE actions SET status=${status}, message=${message} WHERE id=${id}`;
+					})
+				),
 			meshProbe: sql<{ state: string }>`SELECT state FROM simulator_mesh_probe WHERE id=1`.pipe(
 				Effect.map((rows) =>
 					rows[0] ? (JSON.parse(rows[0].state) as MeshProbeState) : emptyMeshProbe()
