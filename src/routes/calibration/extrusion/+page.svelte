@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { calibrationHandoff } from '#lib/client/calibration-draft.svelte.js';
+	import { calculateExtrusion, type ExtrusionProposal } from '#lib/domain/extrusion.js';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import ExtrusionWorkshop from '#lib/components/ExtrusionWorkshop.svelte';
 	import type { PrinterCommand } from '#lib/domain/printer.js';
@@ -7,6 +10,21 @@
 	const dashboard = getDashboard();
 	const initial = await dashboard;
 	const snapshot = $derived(dashboard.current?.printer ?? initial.printer);
+	function reviewProposal(measurement: ExtrusionProposal) {
+		if (data.user?.role !== 'owner') return;
+		calibrationHandoff.proposal = {
+			id: crypto.randomUUID(),
+			ownerId: data.user.id,
+			createdAt: Date.now(),
+			source: snapshot.mode === 'simulator' ? 'simulator' : 'moonraker',
+			measurement: calculateExtrusion(
+				measurement.rotationDistance,
+				measurement.before,
+				measurement.after
+			)
+		};
+		void goto('/configuration');
+	}
 	async function submit(command: PrinterCommand) {
 		return (
 			await submitAction({
@@ -34,6 +52,7 @@
 			userId={data.user?.id ?? ''}
 			role={data.user?.role ?? 'viewer'}
 			onSubmit={submit}
+			onReviewProposal={reviewProposal}
 		/>
 	</div></AppShell
 >

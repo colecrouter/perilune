@@ -90,6 +90,19 @@ try {
 		'Extrusion fits320px'
 	);
 	await page.screenshot({ path: 'test-results/extrusion-mobile.png', fullPage: true });
+
+	await page.getByRole('button', { name: 'Review in configuration' }).click();
+	await page.getByRole('heading', { name: 'Review extrusion distance' }).waitFor();
+	await page.getByRole('checkbox', { name: /repeated the measurement/ }).check();
+	await page.getByRole('checkbox', { name: /reviewed included files/ }).check();
+	await page.getByRole('button', { name: 'Add to this draft' }).click();
+	await page.getByRole('button', { name: 'Review changes…' }).click();
+	await page.getByRole('checkbox', { name: 'I reviewed the source changes.' }).check();
+	await page.getByRole('button', { name: 'Save simulator file' }).click();
+	const saved = await (
+		await context.request.get(base + '/api/configuration?file=printer.cfg')
+	).json();
+	assert.ok(saved.text.includes('rotation_distance: 7.200'));
 	assert.deepEqual(errors, []);
 	console.log(
 		'Extrusion smoke passed: preparation,50-second backend-owned run through navigation,manual measurement,unapplied export,cooldown,persistent proposal,and320px layout.'

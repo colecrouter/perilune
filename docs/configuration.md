@@ -155,3 +155,19 @@ verified success. A failed restore can be explicitly retried after its outcome i
 checked; a successful restore cannot be reversed by clicking the button again.
 If both snapshots differ from the current file, export and compare manually.
 Recovery requires Perilune and its database; uploads/restarts also require Moonraker.
+
+## Calibration proposals
+
+An owner can use **Review in configuration** on an extrusion-distance result.
+The proposal appears above the editor. Choose the file containing the numeric
+`[extruder] rotation_distance` and confirm the repeated measurement and review of
+other config sources/runtime overrides. **Add to this draft** verifies the old
+value and splices only the proposed number. Comments, gearing, other edits and the
+protected generated suffix stay intact. A changed value, repeated/multiline setting,
+missing option, generated override, simulator/live mismatch or expired proposal
+blocks the handoff rather than guessing a target. No settings are inserted.
+
+The handoff stays in memory in the current tab for 30 minutes and clears on refresh
+or account change. It does not save/apply automatically. The ordinary review,
+export, conflict checks and opt-in application/recovery flow still apply. Z-offset
+and mesh persistence remain in their existing dedicated calibration workflows.

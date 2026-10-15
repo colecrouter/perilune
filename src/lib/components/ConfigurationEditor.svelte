@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { untrack, onMount } from 'svelte';
+	import CalibrationDraft from './CalibrationDraft.svelte';
+	import type { CalibrationDraftProposal } from '#lib/domain/calibration-draft.js';
 	import ConfigurationSource from './ConfigurationSource.svelte';
 	import ConfigurationReference from './ConfigurationReference.svelte';
 	import {
@@ -29,7 +31,9 @@
 		onBackup,
 		onDirty,
 		applicationEnabled = false,
-		onApply
+		onApply,
+		calibrationProposal = null,
+		onDismissProposal
 	}: {
 		document: ConfigDocument;
 		files: ConfigFile[];
@@ -39,6 +43,8 @@
 		onDirty?: (dirty: boolean) => void;
 		applicationEnabled?: boolean;
 		onApply?: (request: ConfigSave) => Promise<void>;
+		calibrationProposal?: CalibrationDraftProposal | null;
+		onDismissProposal?: () => void;
 	} = $props();
 	interface Draft {
 		base: ConfigDocument;
@@ -100,7 +106,7 @@
 		current.text = change.text;
 		failure = '';
 		invalidField = false;
-		notice = 'Option added to your draft. Review changes before saving.';
+		notice = 'Change added to your draft. Review changes before saving.';
 	}
 
 	function rawEdit(value: string) {
@@ -306,6 +312,16 @@
 		</p>
 	</aside>
 	{#if current}<div class="editor-column">
+			{#if calibrationProposal}{#key calibrationProposal.id}<CalibrationDraft
+						proposal={calibrationProposal}
+						text={current.text}
+						path={source.path}
+						source={source.source}
+						includesPresent={files.length > 1}
+						disabled={busy || !mounted || conflict}
+						onAdd={addFromReference}
+						onDismiss={() => onDismissProposal?.()}
+					/>{/key}{/if}
 			<section class="panel">
 				<header class="file-heading">
 					<div>

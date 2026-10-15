@@ -154,3 +154,49 @@ test('CodeMirror edits preserve BOM, CRLF, comments and the protected suffix thr
 		expect.objectContaining({ text: text.replace('200 #', '180 #') })
 	);
 });
+test('calibration staging preserves other edits and uses the existing reviewed save', async () => {
+	const doc = file(
+		'printer.cfg',
+		'[extruder]\nrotation_distance: 7.5 # keep\ngear_ratio: 50:10\n[printer]\nmax_velocity: 200\n' +
+			tail
+	);
+	const calls = callbacks(doc);
+	const screen = await render(ConfigurationEditor, {
+		document: doc,
+		files: [doc],
+		...calls,
+		calibrationProposal: {
+			id: 'proposal',
+			ownerId: 'owner',
+			source: 'simulator',
+			createdAt: Date.now(),
+			measurement: {
+				rotationDistance: 7.5,
+				before: 70,
+				after: 22,
+				actual: 48,
+				proposed: 7.2,
+				repeat: false
+			}
+		}
+	});
+	await screen.getByRole('spinbutton', { name: 'Maximum velocity', exact: true }).fill('180');
+	await screen.getByRole('checkbox', { name: /repeated the measurement/ }).click();
+	await screen.getByRole('button', { name: 'Add to this draft' }).click();
+	await expect
+		.element(screen.getByRole('spinbutton', { name: 'Extruder rotation distance', exact: true }))
+		.toHaveValue(7.2);
+	await expect
+		.element(screen.getByRole('spinbutton', { name: 'Maximum velocity', exact: true }))
+		.toHaveValue(180);
+	expect(calls.onSave).not.toHaveBeenCalled();
+	await screen.getByRole('button', { name: 'Review changes…' }).click();
+	await screen.getByRole('checkbox', { name: 'I reviewed the source changes.' }).click();
+	await screen.getByRole('button', { name: 'Save simulator file' }).click();
+	expect(calls.onSave).toHaveBeenCalledWith(
+		expect.objectContaining({
+			expectedVersion: 'original',
+			text: doc.text.replace('7.5', '7.200').replace('200\n', '180\n')
+		})
+	);
+});
