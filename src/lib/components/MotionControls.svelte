@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import ActionForm from './ActionForm.svelte';
 	import type { PrinterSnapshot, PrinterCommand } from '#lib/domain/printer.js';
 	import {
 		motionReason,
@@ -10,17 +12,19 @@
 	let {
 		snapshot,
 		canOperate = true,
+		progressive = false,
 		transportConnected = true,
 		onSubmit
 	}: {
 		snapshot: PrinterSnapshot;
 		canOperate?: boolean;
+		progressive?: boolean;
 		transportConnected?: boolean;
 		onSubmit: (command: PrinterCommand) => Promise<unknown>;
 	} = $props();
-	let x = $state<number | undefined>();
-	let y = $state<number | undefined>();
-	let z = $state<number | undefined>();
+	let x = $state<number | undefined>(untrack(() => snapshot.motion.position.x ?? undefined));
+	let y = $state<number | undefined>(untrack(() => snapshot.motion.position.y ?? undefined));
+	let z = $state<number | undefined>(untrack(() => snapshot.motion.position.z ?? undefined));
 	let base = $state<Position | null>(null);
 	let step = $state(1);
 	let pending = $state(false);
@@ -203,12 +207,20 @@
 		<div>
 			<h3>Home the printer</h3>
 			<div class="jog-buttons">
-				<button
-					class="button primary home-all"
-					disabled={!!homeAllReason || pending || alreadyHomed}
-					title={alreadyHomed ? 'All axes are already homed.' : (homeAllReason ?? undefined)}
-					onclick={() => submit({ type: 'home', axes: 'all' })}>Home All</button
-				>
+				{#if progressive}<ActionForm fields={{ intent: 'home', axes: 'all' }}
+						>{#snippet children({ pending: submitting, uncertain })}<button
+								class="button primary home-all"
+								disabled={!!homeAllReason || pending || submitting || uncertain || alreadyHomed}
+								title={alreadyHomed ? 'All axes are already homed.' : (homeAllReason ?? undefined)}
+								>Home All</button
+							>{/snippet}</ActionForm
+					>{:else}
+					<button
+						class="button primary home-all"
+						disabled={!!homeAllReason || pending || alreadyHomed}
+						title={alreadyHomed ? 'All axes are already homed.' : (homeAllReason ?? undefined)}
+						onclick={() => submit({ type: 'home', axes: 'all' })}>Home All</button
+					>{/if}
 			</div>
 			<p class="help">
 				Homing establishes the printer's position.{alreadyHomed

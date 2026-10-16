@@ -56,7 +56,7 @@ if (moonrakerUrl) {
 const databaseLayer = SqliteClient.layer({ filename });
 const actionStoreLayer = ActionStoreLive.pipe(Layer.provide(databaseLayer));
 const printerLayer = (moonrakerUrl ? makePrinterService('moonraker') : PrinterServiceLive).pipe(
-	Layer.provide(actionStoreLayer)
+	Layer.provideMerge(actionStoreLayer)
 );
 const liveServices = Layer.mergeAll(
 	printerLayer,
