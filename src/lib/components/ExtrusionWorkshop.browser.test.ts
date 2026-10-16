@@ -42,7 +42,8 @@ test('retains measurement drafts and acknowledgments through reconnects and disa
 			rotationDistance: 7.5,
 			before: 70,
 			confirmed: true
-		})
+		}),
+		expect.any(String)
 	);
 });
 test('manual calculator works offline and exports no printer action', async () => {
@@ -161,7 +162,8 @@ test('live workflow starts physical measurement and retains drafts across teleme
 	await screen.getByRole('checkbox', { name: /nozzle has clearance/ }).click();
 	await screen.getByRole('button', { name: 'Extrude 50 mm · live printer' }).click();
 	expect(onSubmit).toHaveBeenCalledWith(
-		expect.objectContaining({ type: 'extrusionBegin', confirmed: true })
+		expect.objectContaining({ type: 'extrusionBegin', confirmed: true }),
+		expect.any(String)
 	);
 	await screen.rerender({
 		snapshot: { ...snapshot, connection: 'disconnected' },
@@ -173,4 +175,44 @@ test('live workflow starts physical measurement and retains drafts across teleme
 	await expect
 		.element(screen.getByRole('button', { name: 'Extrude 50 mm · live printer' }))
 		.toBeDisabled();
+});
+
+test('an ambiguous physical submission stays blocked until its recorded receipt arrives', async () => {
+	const snapshot = {
+		...ready(),
+		mode: 'moonraker' as const,
+		liveControls: true,
+		liveFilament: true,
+		filament: { canExtrude: true, position: 100, active: 'extruder', maxDistance: 50, minTemp: 170 }
+	};
+	const onSubmit = vi.fn().mockRejectedValue(new TypeError('connection lost'));
+	const screen = await render(ExtrusionWorkshop, {
+		snapshot,
+		connected: true,
+		userId: actor.id,
+		role: actor.role,
+		onSubmit
+	});
+	await screen.getByRole('checkbox', { name: /Filament is loaded/ }).click();
+	await screen.getByRole('checkbox', { name: /nozzle has clearance/ }).click();
+	await screen.getByRole('button', { name: 'Feed 5 mm', exact: true }).click();
+	await expect
+		.element(screen.getByRole('button', { name: 'Feed 5 mm', exact: true }))
+		.toBeDisabled();
+	await expect
+		.element(screen.getByRole('link', { name: 'Check unconfirmed submission receipt' }))
+		.toBeVisible();
+	expect(onSubmit).toHaveBeenCalledTimes(1);
+	const id = onSubmit.mock.calls[0][1];
+	await screen.rerender({
+		snapshot: {
+			...snapshot,
+			actions: [
+				{ id, label: 'Feed', status: 'failed', createdAt: Date.now(), message: 'Not dispatched' }
+			]
+		}
+	});
+	await expect
+		.element(screen.getByRole('button', { name: 'Feed 5 mm', exact: true }))
+		.toBeEnabled();
 });

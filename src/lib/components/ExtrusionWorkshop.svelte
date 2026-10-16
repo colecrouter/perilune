@@ -20,7 +20,7 @@
 		connected: boolean;
 		userId: string;
 		role: string;
-		onSubmit: (command: PrinterCommand) => Promise<string>;
+		onSubmit: (command: PrinterCommand, id?: string) => Promise<string>;
 		onReviewProposal?: (proposal: ExtrusionProposal) => void;
 	} = $props();
 	let rotationDistance = $state<number | undefined>();
@@ -33,6 +33,7 @@
 	let submitting = $state(false);
 	let failure = $state('');
 	let lastAction = $state('');
+	let uncertain = $state(false);
 	let manualResult = $state<ExtrusionProposal | null>(null);
 	const live = $derived(snapshot.mode === 'moonraker');
 	const interactive = $derived(!live || snapshot.liveFilament === true);
@@ -41,7 +42,9 @@
 	const owns = $derived(session?.ownerId === userId);
 	const operator = $derived(['owner', 'operator'].includes(role));
 	const pending = $derived(
-		submitting || snapshot.actions.some((a) => ['queued', 'sending'].includes(a.status))
+		submitting ||
+			uncertain ||
+			snapshot.actions.some((a) => ['queued', 'sending'].includes(a.status))
 	);
 	const ready = $derived(
 		connected &&
@@ -78,6 +81,12 @@
 		manualResult = null;
 	});
 	const receipt = $derived(snapshot.actions.find((a) => a.id === lastAction));
+	$effect(() => {
+		if (uncertain && receipt) {
+			uncertain = false;
+			failure = '';
+		}
+	});
 	const proposal = $derived(interactive ? (session?.proposal ?? null) : manualResult);
 	const running = $derived(session?.stage === 'extruding' || session?.stage === 'feeding');
 	const validStart = $derived(
@@ -90,16 +99,21 @@
 			before <= 200
 	);
 	async function send(command: PrinterCommand) {
+		if (uncertain) return;
 		failure = '';
+		lastAction =
+			'runId' in command && ['extrusionBegin', 'extrusionFeed'].includes(command.type)
+				? command.runId
+				: crypto.randomUUID();
 		submitting = true;
 		try {
-			lastAction = await onSubmit(command);
+			await onSubmit(command, lastAction);
 		} catch (cause) {
-			failure = isHttpError(cause)
-				? cause.body.message
-				: cause instanceof Error
-					? cause.message
-					: 'Could not submit the action.';
+			if (!isHttpError(cause) || ![400, 401, 403, 404, 409, 413, 422].includes(cause.status)) {
+				uncertain = true;
+				failure =
+					'Submission is unconfirmed. Check its receipt or wait for activity before another action; nothing will be resent.';
+			} else failure = cause.body.message;
 		} finally {
 			submitting = false;
 		}
@@ -160,6 +174,9 @@
 			role="alert"
 		>
 			{failure || receipt?.message || 'The action outcome is unknown. It will not be retried.'}
+		</p>{/if}
+	{#if uncertain}<p role="alert">
+			<a href={`/actions/${lastAction}`}>Check unconfirmed submission receipt</a>
 		</p>{/if}
 	{#if !interactive}<p class="notice">
 			Live filament movement is not enabled yet. You can calculate a proposal from a manually
