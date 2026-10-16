@@ -20,16 +20,19 @@ const status = {
 		homed_axes: 'xyz'
 	},
 	idle_timeout: { state: 'Idle' },
+	manual_probe: { is_active: false, z_position: 20 },
 	print_stats: { state: 'complete', filename: 'fixture.gcode', print_duration: 0 },
 	virtual_sdcard: { progress: 0 },
 	extruder: { temperature: 25, target: 0, can_extrude: true },
 	heater_bed: { temperature: 25, target: 0 },
 	configfile: {
 		config: {
+			bltouch: { x_offset: '-24', y_offset: '-13', z_offset: '1.2' },
 			extruder: { min_temp: '0', max_temp: '280' },
 			heater_bed: { min_temp: '0', max_temp: '130' }
 		},
-		save_config_pending: false
+		save_config_pending: false,
+		save_config_pending_items: {}
 	}
 };
 let safetyShutdown = false;
@@ -102,6 +105,19 @@ protocol.on('connection', (socket) => {
 					return;
 				}
 				const script = req.params.script;
+				if (script.startsWith('PROBE_CALIBRATE')) {
+					status.manual_probe.is_active = true;
+					status.manual_probe.z_position = 5;
+				}
+				if (script.startsWith('TESTZ'))
+					status.manual_probe.z_position += Number(script.match(/Z=(-?[\d.]+)/)[1]);
+				if (script.startsWith('ABORT')) status.manual_probe.is_active = false;
+				if (script.startsWith('ACCEPT')) {
+					status.manual_probe.is_active = false;
+					status.configfile.save_config_pending = true;
+					status.configfile.save_config_pending_items = { bltouch: { z_offset: '1.234' } };
+				}
+
 				const extrusion = script.match(/G1 E(-?[\d.]+) F60/);
 				if (extrusion) status.toolhead.position[3] += Number(extrusion[1]);
 				for (const m of script.matchAll(/HEATER=(heater_bed|extruder) TARGET=([\d.]+)/g))
@@ -153,6 +169,7 @@ const app = spawn(process.execPath, ['scripts/server.mjs'], {
 		PERILUNE_MOONRAKER_URL: `ws://127.0.0.1:${upstream.address().port}/websocket`,
 		PERILUNE_LIVE_CONTROLS: 'true',
 		PERILUNE_LIVE_FILAMENT: 'true',
+		PERILUNE_LIVE_Z_CALIBRATION: 'true',
 		PERILUNE_LIVE_MESH: 'false',
 		PERILUNE_LIVE_CONFIGURATION: 'false',
 		PERILUNE_MOONRAKER_API_KEY: '',
@@ -301,6 +318,29 @@ try {
 		.waitFor();
 	assert.equal(status.toolhead.position[3], 150);
 	assert.equal(status.extruder.target, 0);
+
+	await page.goto(base + '/calibration');
+	await page.getByRole('checkbox', { name: 'The nozzle and bed are clean' }).check();
+	await page
+		.getByRole('checkbox', { name: 'The bed is clear and I am watching the printer' })
+		.check();
+	await page
+		.getByRole('checkbox', { name: 'I have paper ready and understand that adjustment moves Z' })
+		.check();
+	await page.getByRole('button', { name: 'Begin paper test', exact: true }).click();
+	await page.getByRole('button', { name: 'Z +', exact: true }).waitFor();
+	await page.getByRole('button', { name: 'Z +', exact: true }).click();
+	await page.getByText('5.010 mm', { exact: true }).waitFor();
+	await page.getByRole('button', { name: 'Abort paper test…', exact: true }).click();
+	await page
+		.getByRole('dialog')
+		.getByRole('button', { name: 'Abort paper test', exact: true })
+		.click();
+	await page
+		.getByText('Manual probing aborted. No calibration setting was saved.', { exact: true })
+		.waitFor();
+	assert.equal(status.manual_probe.is_active, false);
+	assert.equal(status.configfile.save_config_pending, false);
 	await page.goto(base + '/controls');
 	drop = true;
 	await page.getByRole('button', { name: 'Disengage motors', exact: true }).click();

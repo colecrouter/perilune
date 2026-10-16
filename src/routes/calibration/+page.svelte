@@ -4,6 +4,7 @@
 	import { Dialog } from 'bits-ui';
 	import { isHttpError } from '@sveltejs/kit';
 	import { resolve } from '$app/paths';
+	import LiveZCalibration from '#lib/components/LiveZCalibration.svelte';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import CancelDialog from '#lib/components/CancelDialog.svelte';
 	import {
@@ -169,403 +170,421 @@
 </script>
 
 <svelte:head><title>Calibration · Perilune</title></svelte:head>
-<AppShell {snapshot} active="Calibration">
-	<div class="calibration-page serif">
-		<header>
-			<div>
-				<p class="eyebrow">A better first layer</p>
-				<h1>Z-offset workshop</h1>
-				<p class="muted">
-					Understand the gap, make small changes, and know exactly what you’ve kept.
-				</p>
-			</div>
-			<span class="mode-badge"
-				>{snapshot.mode === 'simulator'
-					? 'Simulator workshop'
-					: 'Live calibration unavailable'}</span
-			>
-		</header>
-		<p class="scope-note">
-			This workshop changes simulator offsets only. The diagrams are illustrations; no probe, test
-			print, motor movement or printer configuration write is performed.
-		</p>
-		{#if !updates.available || snapshot.connection !== 'connected'}<p role="status" class="notice">
-				Reconnecting. Your checklist and adjustment choices are retained.
-			</p>{/if}
-		{#if failure}<p role="alert" class="error-text">{failure}</p>{/if}
-		{#if receipt}<p role="status" class="action-status">
-				{receipt.label}: {receipt.status}{receipt.message ? ` — ${receipt.message}` : ''}
-			</p>{/if}
-		{#if snapshot.mode === 'simulator'}
-			<div class="offset-summary panel">
+<AppShell {snapshot} active="Calibration"
+	>{#if snapshot.mode === 'moonraker'}<div class="page serif">
+			<h1>Z calibration</h1>
+			<LiveZCalibration
+				{snapshot}
+				userId={data.user?.id ?? ''}
+				role={data.user?.role ?? 'viewer'}
+				connected={updates.available}
+				onSubmit={(command, id) => submitAction({ id, command })}
+			/>
+		</div>{:else}
+		<div class="calibration-page serif">
+			<header>
 				<div>
-					<span>Applied in this process</span><strong
-						>{offsetLabel(calibration.appliedOffset)}</strong
-					>
+					<p class="eyebrow">A better first layer</p>
+					<h1>Z-offset workshop</h1>
+					<p class="muted">
+						Understand the gap, make small changes, and know exactly what you’ve kept.
+					</p>
 				</div>
-				<div>
-					<span>Saved simulator default</span><strong>{offsetLabel(calibration.savedOffset)}</strong
-					>
-				</div>
-				<p class="muted">
-					Positive adjustment increases clearance. Negative adjustment brings the nozzle closer.
-					This is a relative adjustment, not a measured probe offset.
-				</p>
-			</div>{/if}
-		{#if active && session}
-			<div class="session-notice">
-				<span
-					>{owns
-						? 'You own this session.'
-						: `${session.ownerName} owns this session. You can follow along.`}</span
-				><small>Expires after 10 minutes without a step change or adjustment.</small>
-			</div>
-			<ol class="workflow" aria-label="Calibration steps">
-				<li
-					class:current={session.stage === 'adjusting'}
-					aria-current={session.stage === 'adjusting' ? 'step' : undefined}
+				<span class="mode-badge"
+					>{snapshot.mode === 'simulator'
+						? 'Simulator workshop'
+						: 'Live calibration unavailable'}</span
 				>
-					1 · Adjust
-				</li>
-				<li
-					class:current={session.stage === 'first-layer'}
-					aria-current={session.stage === 'first-layer' ? 'step' : undefined}
+			</header>
+			<p class="scope-note">
+				This workshop changes simulator offsets only. The diagrams are illustrations; no probe, test
+				print, motor movement or printer configuration write is performed.
+			</p>
+			{#if !updates.available || snapshot.connection !== 'connected'}<p
+					role="status"
+					class="notice"
 				>
-					2 · First layer
-				</li>
-				<li
-					class:current={session.stage === 'review'}
-					aria-current={session.stage === 'review' ? 'step' : undefined}
-				>
-					3 · Finish
-				</li>
-			</ol>
-			{#if session.stage === 'adjusting'}
-				<section class="panel adjustment">
+					Reconnecting. Your checklist and adjustment choices are retained.
+				</p>{/if}
+			{#if failure}<p role="alert" class="error-text">{failure}</p>{/if}
+			{#if receipt}<p role="status" class="action-status">
+					{receipt.label}: {receipt.status}{receipt.message ? ` — ${receipt.message}` : ''}
+				</p>{/if}
+			{#if snapshot.mode === 'simulator'}
+				<div class="offset-summary panel">
 					<div>
-						<p class="eyebrow">Small steps, clear direction</p>
-						<h2>Find your clearance</h2>
-						<p class="muted">
-							Try the controls to see how a relative offset changes clearance. On a real printer,
-							paper-test probing and print-time fine tuning are separate operations.
-						</p>
-						<fieldset class="increments" disabled={blocked}>
-							<legend>Adjustment per click (mm)</legend>
-							<div role="group" aria-label="Fine adjustment">
-								{#each calibrationSteps as value}<button
-										class:chosen={step === value}
-										aria-label={`${value} mm`}
-										aria-pressed={step === value}
-										onclick={() => (step = value)}>{value}</button
-									>{/each}
+						<span>Applied in this process</span><strong
+							>{offsetLabel(calibration.appliedOffset)}</strong
+						>
+					</div>
+					<div>
+						<span>Saved simulator default</span><strong
+							>{offsetLabel(calibration.savedOffset)}</strong
+						>
+					</div>
+					<p class="muted">
+						Positive adjustment increases clearance. Negative adjustment brings the nozzle closer.
+						This is a relative adjustment, not a measured probe offset.
+					</p>
+				</div>{/if}
+			{#if active && session}
+				<div class="session-notice">
+					<span
+						>{owns
+							? 'You own this session.'
+							: `${session.ownerName} owns this session. You can follow along.`}</span
+					><small>Expires after 10 minutes without a step change or adjustment.</small>
+				</div>
+				<ol class="workflow" aria-label="Calibration steps">
+					<li
+						class:current={session.stage === 'adjusting'}
+						aria-current={session.stage === 'adjusting' ? 'step' : undefined}
+					>
+						1 · Adjust
+					</li>
+					<li
+						class:current={session.stage === 'first-layer'}
+						aria-current={session.stage === 'first-layer' ? 'step' : undefined}
+					>
+						2 · First layer
+					</li>
+					<li
+						class:current={session.stage === 'review'}
+						aria-current={session.stage === 'review' ? 'step' : undefined}
+					>
+						3 · Finish
+					</li>
+				</ol>
+				{#if session.stage === 'adjusting'}
+					<section class="panel adjustment">
+						<div>
+							<p class="eyebrow">Small steps, clear direction</p>
+							<h2>Find your clearance</h2>
+							<p class="muted">
+								Try the controls to see how a relative offset changes clearance. On a real printer,
+								paper-test probing and print-time fine tuning are separate operations.
+							</p>
+							<fieldset class="increments" disabled={blocked}>
+								<legend>Adjustment per click (mm)</legend>
+								<div role="group" aria-label="Fine adjustment">
+									{#each calibrationSteps as value}<button
+											class:chosen={step === value}
+											aria-label={`${value} mm`}
+											aria-pressed={step === value}
+											onclick={() => (step = value)}>{value}</button
+										>{/each}
+								</div>
+							</fieldset>
+							<div class="adjust-buttons">
+								<button
+									class="button secondary"
+									disabled={blocked || candidate + step > 2}
+									onclick={() => sessionCommand({ type: 'calibrationAdjust', delta: step })}
+									>Z + · farther</button
+								><button
+									class="button primary"
+									disabled={blocked || candidate - step < -2}
+									onclick={() =>
+										sessionCommand({
+											type: 'calibrationAdjust',
+											delta: -step as Extract<
+												CalibrationCommand,
+												{ type: 'calibrationAdjust' }
+											>['delta']
+										})}>Z − · closer</button
+								>
 							</div>
-						</fieldset>
-						<div class="adjust-buttons">
-							<button
-								class="button secondary"
-								disabled={blocked || candidate + step > 2}
-								onclick={() => sessionCommand({ type: 'calibrationAdjust', delta: step })}
-								>Z + · farther</button
-							><button
-								class="button primary"
-								disabled={blocked || candidate - step < -2}
-								onclick={() =>
-									sessionCommand({
-										type: 'calibrationAdjust',
-										delta: -step as Extract<
-											CalibrationCommand,
-											{ type: 'calibrationAdjust' }
-										>['delta']
-									})}>Z − · closer</button
+							<p class="fine-hint">
+								Range: −2 to +2 mm in the simulator. Each click waits for acknowledgement.
+							</p>
+						</div>
+						<div class="clearance">
+							<svg
+								viewBox="0 0 320 210"
+								role="img"
+								aria-label="Illustration of relative nozzle clearance"
+								><defs
+									><pattern
+										id="calibration-stars"
+										width="47"
+										height="43"
+										patternUnits="userSpaceOnUse"
+										><circle cx="19" cy="14" r=".7" fill="currentColor" opacity=".18" /></pattern
+									></defs
+								><rect width="320" height="210" rx="16" fill="url(#calibration-stars)" /><g
+									style={`transform: translateY(${Math.max(-28, Math.min(28, -change * 80))}px)`}
+									><path d="M123 36h74v45l-25 31h-24l-25-31z" fill="var(--accent)" /><path
+										d="M148 112h24l-12 13z"
+										fill="var(--text)"
+									/></g
+								><path
+									d="M38 167h244"
+									stroke="var(--muted)"
+									stroke-width="6"
+									stroke-linecap="round"
+								/><path d="M38 181h244" stroke="var(--border)" stroke-width="2" /><text
+									x="160"
+									y="202"
+									text-anchor="middle">Build surface · schematic</text
+								></svg
+							><strong>{offsetLabel(candidate)}</strong><span>Candidate offset</span><small
+								>{offsetLabel(change)} from this session’s starting value</small
 							>
 						</div>
-						<p class="fine-hint">
-							Range: −2 to +2 mm in the simulator. Each click waits for acknowledgement.
-						</p>
-					</div>
-					<div class="clearance">
-						<svg
-							viewBox="0 0 320 210"
-							role="img"
-							aria-label="Illustration of relative nozzle clearance"
-							><defs
-								><pattern
-									id="calibration-stars"
-									width="47"
-									height="43"
-									patternUnits="userSpaceOnUse"
-									><circle cx="19" cy="14" r=".7" fill="currentColor" opacity=".18" /></pattern
-								></defs
-							><rect width="320" height="210" rx="16" fill="url(#calibration-stars)" /><g
-								style={`transform: translateY(${Math.max(-28, Math.min(28, -change * 80))}px)`}
-								><path d="M123 36h74v45l-25 31h-24l-25-31z" fill="var(--accent)" /><path
-									d="M148 112h24l-12 13z"
-									fill="var(--text)"
-								/></g
-							><path
-								d="M38 167h244"
-								stroke="var(--muted)"
-								stroke-width="6"
-								stroke-linecap="round"
-							/><path d="M38 181h244" stroke="var(--border)" stroke-width="2" /><text
-								x="160"
-								y="202"
-								text-anchor="middle">Build surface · schematic</text
-							></svg
-						><strong>{offsetLabel(candidate)}</strong><span>Candidate offset</span><small
-							>{offsetLabel(change)} from this session’s starting value</small
-						>
-					</div>
-					<div class="step-actions">
-						<button
-							class="button primary"
-							disabled={blocked}
-							onclick={() => {
-								observation = null;
-								sessionCommand({ type: 'calibrationStage', stage: 'first-layer' });
-							}}>Explore first-layer examples →</button
-						>
-					</div>
-				</section>
-			{:else if session.stage === 'first-layer'}
-				<section class="panel">
-					<p class="eyebrow">Learn what to look for</p>
-					<h2>Read the first layer</h2>
-					<p class="muted">
-						These examples explain the effect of clearance. Choose the example you would aim for on
-						a real test print. Perilune has not printed or inspected a layer.
-					</p>
-					<div class="layer-samples">
-						{#each samples as sample}<button
-								class="sample"
-								class:chosen={observation === sample.id}
-								disabled={blocked}
-								aria-pressed={observation === sample.id}
-								onclick={() => (observation = sample.id)}
-								><svg viewBox="0 0 220 130" aria-hidden="true"
-									><rect
-										width="220"
-										height="130"
-										rx="12"
-										fill="var(--surface)"
-									/>{#each Array.from({ length: 6 }) as _, index}<rect
-											x="20"
-											y={18 + index * (sample.id === 'high' ? 18 : 15)}
-											width="180"
-											height={sample.id === 'high' ? 10 : 16}
-											rx={sample.id === 'high' ? 5 : 2}
-											fill={sample.id === 'low' && index % 2 ? 'var(--muted)' : 'var(--accent)'}
-										/>{/each}</svg
-								><strong>{sample.title}</strong><span>{sample.description}</span></button
-							>{/each}
-					</div>
-					{#if observation && observation !== 'even'}<p class="notice">
-							{observation === 'high'
-								? 'Gaps suggest the nozzle is too far away. Return to adjustment and try Z −.'
-								: 'Ridges suggest the nozzle is too close. Return to adjustment and try Z +.'}
-						</p>{/if}
-					<div class="step-actions">
-						<button
-							class="button secondary"
-							disabled={blocked}
-							onclick={() => sessionCommand({ type: 'calibrationStage', stage: 'adjusting' })}
-							>← Back to adjustment</button
-						><button
-							class="button primary"
-							disabled={blocked || observation !== 'even'}
-							onclick={() =>
-								sessionCommand({ type: 'calibrationStage', stage: 'review', confirmed: true })}
-							>Review this offset →</button
-						>
-					</div>
-				</section>
-			{:else}<section class="panel finish">
-					<p class="eyebrow">No surprises when you finish</p>
-					<h2>Keep this adjustment?</h2>
-					<div class="candidate-value">{offsetLabel(candidate)}</div>
-					<p class="muted">
-						Your starting value was {offsetLabel(session.baseline)}. Choose whether this candidate
-						lasts until restart or becomes the saved simulator default. Neither choice writes your
-						printer’s configuration.
-					</p>
-					<div class="finish-options">
-						<div>
-							<h3>Try it temporarily</h3>
-							<p>Apply it in this simulator process. Restarting restores the saved default.</p>
-							<button
-								class="button secondary"
-								disabled={blocked}
-								onclick={() => sessionCommand({ type: 'calibrationFinish', outcome: 'apply' })}
-								>Apply until restart</button
-							>
-						</div>
-						<div>
-							<h3>Keep it for next time</h3>
-							<p>Save it to Perilune’s database as the simulator default.</p>
+						<div class="step-actions">
 							<button
 								class="button primary"
 								disabled={blocked}
 								onclick={() => {
-									review();
-									saveOpen = true;
-								}}>Save simulator default…</button
+									observation = null;
+									sessionCommand({ type: 'calibrationStage', stage: 'first-layer' });
+								}}>Explore first-layer examples →</button
 							>
 						</div>
-					</div>
-					<button
-						class="button secondary"
-						disabled={blocked}
-						onclick={() => sessionCommand({ type: 'calibrationStage', stage: 'adjusting' })}
-						>← Adjust again</button
-					>
-				</section>{/if}
-			<section class="session-exit">
-				<p class="muted">
-					Cancel discards this session’s candidate and releases the printer controls.
-				</p>
-				{#if owns}<button
-						class="button danger"
-						disabled={blocked}
-						onclick={() => {
-							review();
-							cancelOpen = true;
-						}}>Cancel calibration…</button
-					>{:else if data.user?.role === 'owner'}<button
-						class="button secondary"
-						disabled={pending ||
-							submitting ||
-							!updates.available ||
-							snapshot.connection !== 'connected'}
-						onclick={() => {
-							review(true);
-							cancelOpen = true;
-						}}>End abandoned session…</button
-					>{/if}
-			</section>
-		{:else}
-			{#if session}<section class="panel outcome" role="status">
-					<p class="eyebrow">Session {session.stage}</p>
-					<h2>
-						{session.stage === 'saved'
-							? 'Saved for your next session.'
-							: session.stage === 'applied'
-								? 'Applied until restart.'
-								: session.stage === 'cancelled'
-									? 'Adjustments discarded.'
-									: 'Session interrupted.'}
-					</h2>
-					<p>{session.message}</p>
-				</section>{/if}
-			<section class="panel preparation">
-				<p class="eyebrow">Before we begin</p>
-				<h2>Prepare your workspace</h2>
-				<p class="muted">
-					A real paper test needs a clean nozzle and bed at room temperature. Here, the checklist
-					rehearses that preparation while the simulator is idle and homed.
-				</p>
-				<ul class="prerequisites" aria-label="Automatic printer checks">
-					<li>
-						<label
-							><input type="checkbox" checked={ready} disabled /> Printer connected and ready</label
+					</section>
+				{:else if session.stage === 'first-layer'}
+					<section class="panel">
+						<p class="eyebrow">Learn what to look for</p>
+						<h2>Read the first layer</h2>
+						<p class="muted">
+							These examples explain the effect of clearance. Choose the example you would aim for
+							on a real test print. Perilune has not printed or inspected a layer.
+						</p>
+						<div class="layer-samples">
+							{#each samples as sample}<button
+									class="sample"
+									class:chosen={observation === sample.id}
+									disabled={blocked}
+									aria-pressed={observation === sample.id}
+									onclick={() => (observation = sample.id)}
+									><svg viewBox="0 0 220 130" aria-hidden="true"
+										><rect
+											width="220"
+											height="130"
+											rx="12"
+											fill="var(--surface)"
+										/>{#each Array.from({ length: 6 }) as _, index}<rect
+												x="20"
+												y={18 + index * (sample.id === 'high' ? 18 : 15)}
+												width="180"
+												height={sample.id === 'high' ? 10 : 16}
+												rx={sample.id === 'high' ? 5 : 2}
+												fill={sample.id === 'low' && index % 2 ? 'var(--muted)' : 'var(--accent)'}
+											/>{/each}</svg
+									><strong>{sample.title}</strong><span>{sample.description}</span></button
+								>{/each}
+						</div>
+						{#if observation && observation !== 'even'}<p class="notice">
+								{observation === 'high'
+									? 'Gaps suggest the nozzle is too far away. Return to adjustment and try Z −.'
+									: 'Ridges suggest the nozzle is too close. Return to adjustment and try Z +.'}
+							</p>{/if}
+						<div class="step-actions">
+							<button
+								class="button secondary"
+								disabled={blocked}
+								onclick={() => sessionCommand({ type: 'calibrationStage', stage: 'adjusting' })}
+								>← Back to adjustment</button
+							><button
+								class="button primary"
+								disabled={blocked || observation !== 'even'}
+								onclick={() =>
+									sessionCommand({ type: 'calibrationStage', stage: 'review', confirmed: true })}
+								>Review this offset →</button
+							>
+						</div>
+					</section>
+				{:else}<section class="panel finish">
+						<p class="eyebrow">No surprises when you finish</p>
+						<h2>Keep this adjustment?</h2>
+						<div class="candidate-value">{offsetLabel(candidate)}</div>
+						<p class="muted">
+							Your starting value was {offsetLabel(session.baseline)}. Choose whether this candidate
+							lasts until restart or becomes the saved simulator default. Neither choice writes your
+							printer’s configuration.
+						</p>
+						<div class="finish-options">
+							<div>
+								<h3>Try it temporarily</h3>
+								<p>Apply it in this simulator process. Restarting restores the saved default.</p>
+								<button
+									class="button secondary"
+									disabled={blocked}
+									onclick={() => sessionCommand({ type: 'calibrationFinish', outcome: 'apply' })}
+									>Apply until restart</button
+								>
+							</div>
+							<div>
+								<h3>Keep it for next time</h3>
+								<p>Save it to Perilune’s database as the simulator default.</p>
+								<button
+									class="button primary"
+									disabled={blocked}
+									onclick={() => {
+										review();
+										saveOpen = true;
+									}}>Save simulator default…</button
+								>
+							</div>
+						</div>
+						<button
+							class="button secondary"
+							disabled={blocked}
+							onclick={() => sessionCommand({ type: 'calibrationStage', stage: 'adjusting' })}
+							>← Adjust again</button
 						>
-					</li>
-					<li>
-						<label><input type="checkbox" checked={idle} disabled /> No running or paused job</label
-						>
-					</li>
-					<li><label><input type="checkbox" checked={homed} disabled /> All axes homed</label></li>
-					<li>
-						<label
-							><input type="checkbox" checked={heatersOff} disabled /> Heater targets off for this exercise</label
-						>
-					</li>
-				</ul>
-				<p class="fine-hint">
-					Printer conditions check automatically. Cleanliness and physical clearance still need your
-					review.
-				</p>
-				<div class="preparation-controls">
-					{#if currentJob}<button
+					</section>{/if}
+				<section class="session-exit">
+					<p class="muted">
+						Cancel discards this session’s candidate and releases the printer controls.
+					</p>
+					{#if owns}<button
+							class="button danger"
+							disabled={blocked}
+							onclick={() => {
+								review();
+								cancelOpen = true;
+							}}>Cancel calibration…</button
+						>{:else if data.user?.role === 'owner'}<button
+							class="button secondary"
+							disabled={pending ||
+								submitting ||
+								!updates.available ||
+								snapshot.connection !== 'connected'}
+							onclick={() => {
+								review(true);
+								cancelOpen = true;
+							}}>End abandoned session…</button
+						>{/if}
+				</section>
+			{:else}
+				{#if session}<section class="panel outcome" role="status">
+						<p class="eyebrow">Session {session.stage}</p>
+						<h2>
+							{session.stage === 'saved'
+								? 'Saved for your next session.'
+								: session.stage === 'applied'
+									? 'Applied until restart.'
+									: session.stage === 'cancelled'
+										? 'Adjustments discarded.'
+										: 'Session interrupted.'}
+						</h2>
+						<p>{session.message}</p>
+					</section>{/if}
+				<section class="panel preparation">
+					<p class="eyebrow">Before we begin</p>
+					<h2>Prepare your workspace</h2>
+					<p class="muted">
+						A real paper test needs a clean nozzle and bed at room temperature. Here, the checklist
+						rehearses that preparation while the simulator is idle and homed.
+					</p>
+					<ul class="prerequisites" aria-label="Automatic printer checks">
+						<li>
+							<label
+								><input type="checkbox" checked={ready} disabled /> Printer connected and ready</label
+							>
+						</li>
+						<li>
+							<label
+								><input type="checkbox" checked={idle} disabled /> No running or paused job</label
+							>
+						</li>
+						<li>
+							<label><input type="checkbox" checked={homed} disabled /> All axes homed</label>
+						</li>
+						<li>
+							<label
+								><input type="checkbox" checked={heatersOff} disabled /> Heater targets off for this exercise</label
+							>
+						</li>
+					</ul>
+					<p class="fine-hint">
+						Printer conditions check automatically. Cleanliness and physical clearance still need
+						your review.
+					</p>
+					<div class="preparation-controls">
+						{#if currentJob}<button
+								class="button secondary"
+								disabled={!canOperate ||
+									pending ||
+									submitting ||
+									snapshot.mode !== 'simulator' ||
+									!updates.available}
+								onclick={() => {
+									stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
+									stopOpen = true;
+								}}>Stop current simulation…</button
+							>{/if}<button
+							class="button secondary"
+							disabled={!canOperate ||
+								currentJob ||
+								homed ||
+								pending ||
+								submitting ||
+								snapshot.mode !== 'simulator' ||
+								!updates.available}
+							title={homed ? 'All axes are already homed.' : undefined}
+							onclick={() => void send({ type: 'home', axes: 'all' }).catch(() => {})}
+							>Home all axes</button
+						><button
 							class="button secondary"
 							disabled={!canOperate ||
 								pending ||
 								submitting ||
 								snapshot.mode !== 'simulator' ||
-								!updates.available}
-							onclick={() => {
-								stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
-								stopOpen = true;
-							}}>Stop current simulation…</button
-						>{/if}<button
-						class="button secondary"
-						disabled={!canOperate ||
-							currentJob ||
-							homed ||
-							pending ||
-							submitting ||
-							snapshot.mode !== 'simulator' ||
-							!updates.available}
-						title={homed ? 'All axes are already homed.' : undefined}
-						onclick={() => void send({ type: 'home', axes: 'all' }).catch(() => {})}
-						>Home all axes</button
-					><button
-						class="button secondary"
-						disabled={!canOperate ||
-							pending ||
-							submitting ||
-							snapshot.mode !== 'simulator' ||
-							!updates.available ||
-							heatersOff}
-						title={heatersOff ? 'Both heater targets are already off.' : undefined}
-						onclick={() => void send({ type: 'cooldown' }).catch(() => {})}
-						>Turn heater targets off</button
+								!updates.available ||
+								heatersOff}
+							title={heatersOff ? 'Both heater targets are already off.' : undefined}
+							onclick={() => void send({ type: 'cooldown' }).catch(() => {})}
+							>Turn heater targets off</button
+						>
+					</div>
+					{#if homed || heatersOff}<p class="fine-hint">
+							{homed ? 'All axes are already homed.' : ''}
+							{heatersOff ? 'Heater targets are already off; surfaces may still be cooling.' : ''}
+						</p>{/if}
+					<div class="checklist">
+						<label
+							><input type="checkbox" bind:checked={clean} disabled={!canOperate} /> I’ve reviewed clean-nozzle
+							and clean-bed preparation.</label
+						><label
+							><input type="checkbox" bind:checked={clear} disabled={!canOperate} /> I’ve reviewed physical
+							bed clearance.</label
+						><label
+							><input type="checkbox" bind:checked={understand} disabled={!canOperate} /> I understand
+							this is a simulator exercise, not a probe measurement.</label
+						>
+					</div>
+					{#if startReason}<p class="notice">{startReason}</p>{/if}<button
+						class="button primary begin"
+						disabled={Boolean(startReason) || !clean || !clear || !understand || submitting}
+						onclick={() =>
+							void send({
+								type: 'calibrationBegin',
+								sessionId: crypto.randomUUID(),
+								expectedOffset: calibration.appliedOffset,
+								confirmed: true
+							}).catch(() => {})}>Begin simulator calibration</button
 					>
-				</div>
-				{#if homed || heatersOff}<p class="fine-hint">
-						{homed ? 'All axes are already homed.' : ''}
-						{heatersOff ? 'Heater targets are already off; surfaces may still be cooling.' : ''}
-					</p>{/if}
-				<div class="checklist">
-					<label
-						><input type="checkbox" bind:checked={clean} disabled={!canOperate} /> I’ve reviewed clean-nozzle
-						and clean-bed preparation.</label
-					><label
-						><input type="checkbox" bind:checked={clear} disabled={!canOperate} /> I’ve reviewed physical
-						bed clearance.</label
-					><label
-						><input type="checkbox" bind:checked={understand} disabled={!canOperate} /> I understand this
-						is a simulator exercise, not a probe measurement.</label
-					>
-				</div>
-				{#if startReason}<p class="notice">{startReason}</p>{/if}<button
-					class="button primary begin"
-					disabled={Boolean(startReason) || !clean || !clear || !understand || submitting}
-					onclick={() =>
-						void send({
-							type: 'calibrationBegin',
-							sessionId: crypto.randomUUID(),
-							expectedOffset: calibration.appliedOffset,
-							confirmed: true
-						}).catch(() => {})}>Begin simulator calibration</button
-				>
-			</section>
-		{/if}
-		<aside class="panel resources">
-			<h2>Understand the next step</h2>
-			<p>
-				Probe calibration establishes a reference. First-layer tuning adjusts printing clearance.
-				They need different validation before Perilune can safely drive them on your printer.
-			</p>
-			<a
-				href="https://www.klipper3d.org/Bed_Level.html#the-paper-test"
-				target="_blank"
-				rel="noreferrer">Klipper: the paper test ↗</a
-			><a href="https://www.klipper3d.org/Probe_Calibrate.html" target="_blank" rel="noreferrer"
-				>Klipper: calibrating a probe ↗</a
-			><a href={resolve('/controls')}>Open motion controls →</a>
-		</aside>
-	</div>
-</AppShell>
+				</section>
+			{/if}
+			<aside class="panel resources">
+				<h2>Understand the next step</h2>
+				<p>
+					Probe calibration establishes a reference. First-layer tuning adjusts printing clearance.
+					They need different validation before Perilune can safely drive them on your printer.
+				</p>
+				<a
+					href="https://www.klipper3d.org/Bed_Level.html#the-paper-test"
+					target="_blank"
+					rel="noreferrer">Klipper: the paper test ↗</a
+				><a href="https://www.klipper3d.org/Probe_Calibrate.html" target="_blank" rel="noreferrer"
+					>Klipper: calibrating a probe ↗</a
+				><a href={resolve('/controls')}>Open motion controls →</a>
+			</aside>
+		</div>
+	{/if}</AppShell
+>
 <CancelDialog
 	available={ready}
 	bind:open={stopOpen}

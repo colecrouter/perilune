@@ -64,6 +64,7 @@ export class PrinterService extends Context.Service<
 				Partial<
 					Pick<
 						PrinterSnapshot,
+						| 'zProbe'
 						| 'filament'
 						| 'motion'
 						| 'additionalTemperatures'

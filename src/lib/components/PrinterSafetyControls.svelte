@@ -19,6 +19,11 @@
 					label="Stop current job"
 					disabled={!['printing', 'paused'].includes(snapshot.job.state)}
 				/>
+				{#if snapshot.zProbe?.active}<SafetyButton
+						{snapshot}
+						intent="abortProbe"
+						label="Abort manual probe"
+					/>{/if}
 				<SafetyButton {snapshot} intent="cooldown" label="Turn off heaters" />
 			{/if}
 			{#if owner && (safety.halted || safety.actions.some((a) => a.status === 'unknown' && !a.reviewedAt))}<SafetyButton

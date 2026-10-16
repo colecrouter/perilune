@@ -950,3 +950,24 @@ failures degrade storage and retry only persistence without killing the worker.
 In-flight movement cannot be cancelled through the ordinary queue; emergency
 shutdown remains independently available. Proposals remain unapplied until the
 owner reviews configuration. Simulator and read-only manual calculator remain.
+
+## Live Z helper calibration
+
+`PERILUNE_LIVE_Z_CALIBRATION=true` separately opts into Klipper's actual
+`PROBE_CALIBRATE` or `Z_ENDSTOP_CALIBRATE` helper. Beginning requires cold heater
+targets, homed axes, a bounded nozzle/probe position and no other pending calibration.
+Fine adjustments use versioned, observed-height-bound `TESTZ` commands; `M400` and
+fresh manual-probe state reconcile completion. Paper-drag confirmation belongs to
+the current height and resets after an adjustment. Klipper `ACCEPT` stages a result;
+it does not claim the setting has been saved or applied. Explicit save/restart is
+handled separately. Pending results resolved elsewhere no longer block fresh tests.
+
+The basic live worker persists operator-owned sessions before physical dispatch,
+retains unknown reservations, fences all commands against emergency epochs, and
+interrupts sessions on restart/expiry/revocation/helper disappearance without
+replaying or silently aborting physical work. An explicit owned `ABORT` remains
+available if heater/busy preparation changes. Recovery-time abort has a separate
+SafetyService receipt and retains the original unknown action. Browser submission
+ambiguity retains the ID and blocks fresh sends until its receipt is observed.
+Paper judgement and physical acceptance need an attended printer; protocol and
+headless coverage do not substitute for that measurement.

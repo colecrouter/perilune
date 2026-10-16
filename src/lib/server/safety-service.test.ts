@@ -57,16 +57,30 @@ async function fixture() {
 					job: { ...s.job, state: 'cancelled' as const }
 				}))
 			);
-		if (path === '/printer/gcode/script')
-			await Effect.runPromise(
-				SubscriptionRef.update(state, (s) => ({
-					...s,
-					heaters: {
-						bed: { ...s.heaters.bed, target: 0 },
-						nozzle: { ...s.heaters.nozzle, target: behavior === 'partial' ? 200 : 0 }
-					}
-				}))
-			);
+
+		if (path === '/printer/gcode/script') {
+			const chunks: Uint8Array[] = [];
+			for await (const chunk of req) chunks.push(chunk);
+			const body = JSON.parse(Buffer.concat(chunks).toString());
+			if (body.script === 'ABORT')
+				await Effect.runPromise(
+					SubscriptionRef.update(state, (s) => ({
+						...s,
+						motion: { ...s.motion, calibration: false }
+					}))
+				);
+			else
+				await Effect.runPromise(
+					SubscriptionRef.update(state, (s) => ({
+						...s,
+						heaters: {
+							bed: { ...s.heaters.bed, target: 0 },
+							nozzle: { ...s.heaters.nozzle, target: behavior === 'partial' ? 200 : 0 }
+						}
+					}))
+				);
+		}
+
 		if (req.method === 'POST' && behavior === 'drop') {
 			req.socket.destroy();
 			return;
@@ -394,4 +408,20 @@ it('bounds ordinary safety admission across owners while emergency retains its o
 	expect((await f.finished(emergency.id)).status).toBe('completed');
 	release();
 	expect((await f.finished(record.id)).status).toBe('failed');
+});
+
+it('recovery abort ends the freshly observed manual helper without clearing the original action', async () => {
+	const f = await fixture();
+	await Effect.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			availableObjects: [...s.availableObjects, 'manual_probe'],
+			motion: { ...s.motion, calibration: true }
+		}))
+	);
+	const receipt = await f.submit({ type: 'abortProbe', recoveryOf: f.recoveryId });
+	expect((await f.finished(receipt.id)).status).toBe('completed');
+	expect((await f.snapshot()).liveRecovery?.id).toBe(f.recoveryId);
+	expect((await Effect.runPromise(SubscriptionRef.get(f.state))).heaters.nozzle.target).toBe(200);
+	expect(f.paths).toEqual(['/printer/gcode/script']);
 });

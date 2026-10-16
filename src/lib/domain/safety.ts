@@ -17,6 +17,10 @@ export const SafetyRequest = Schema.Struct({
 			type: Schema.Literal('cooldown'),
 			recoveryOf: Schema.String.check(Schema.isUUID())
 		}),
+		Schema.Struct({
+			type: Schema.Literal('abortProbe'),
+			recoveryOf: Schema.String.check(Schema.isUUID())
+		}),
 		Schema.Struct({ type: Schema.Literal('emergency') })
 	])
 });
@@ -56,7 +60,7 @@ export function parseSafetyForm(data: FormData): SafetyRequest {
 					recoveryOf: field('recoveryOf'),
 					expectedJob: { filename: field('filename'), runId: field('runId') }
 				}
-			: type === 'cooldown'
+			: type === 'cooldown' || type === 'abortProbe'
 				? { type, recoveryOf: field('recoveryOf') }
 				: { type };
 	if (field('confirmed') !== 'true') throw new Error('Confirm this safety action.');

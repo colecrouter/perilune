@@ -1,0 +1,123 @@
+import { expect, test, vi } from 'vite-plus/test';
+import { render } from 'vitest-browser-svelte';
+import LiveZCalibration from './LiveZCalibration.svelte';
+import { initialSnapshot, type PrinterSnapshot } from '#lib/domain/printer.js';
+const run = crypto.randomUUID();
+function state(): PrinterSnapshot {
+	return {
+		...initialSnapshot(),
+		mode: 'moonraker',
+		liveControls: true,
+		liveZEnabled: true,
+		job: { ...initialSnapshot().job, state: 'cancelled' },
+		heaters: { bed: { current: 25, target: 0 }, nozzle: { current: 25, target: 0 } },
+		zProbe: {
+			method: 'probe',
+			active: true,
+			z: 5,
+			offset: [-24, -13],
+			pending: false,
+			pendingKeys: [],
+			pendingOffset: null
+		},
+		liveZ: {
+			session: {
+				id: run,
+				ownerId: 'owner',
+				ownerName: 'Owner',
+				version: 0,
+				stage: 'active',
+				method: 'probe',
+				z: 5,
+				candidate: null,
+				startedAt: Date.now(),
+				expiresAt: Date.now() + 600000,
+				message: null
+			}
+		}
+	};
+}
+test('paper confirmation belongs to the observed height and resets after adjustment', async () => {
+	const snapshot = state(),
+		onSubmit = vi.fn().mockResolvedValue({ id: crypto.randomUUID() });
+	const screen = await render(LiveZCalibration, {
+		snapshot,
+		userId: 'owner',
+		role: 'owner',
+		connected: true,
+		onSubmit
+	});
+	await screen.getByRole('checkbox', { name: /I checked the paper drag/ }).click();
+	await expect
+		.element(screen.getByRole('button', { name: 'Accept height · stage result' }))
+		.toBeEnabled();
+	await screen.rerender({
+		snapshot: {
+			...snapshot,
+			zProbe: { ...snapshot.zProbe!, z: 5.01 },
+			liveZ: { session: { ...snapshot.liveZ!.session!, version: 1, z: 5.01 } }
+		}
+	});
+	await expect
+		.element(screen.getByRole('checkbox', { name: /I checked the paper drag/ }))
+		.not.toBeChecked();
+	await expect
+		.element(screen.getByRole('button', { name: 'Accept height · stage result' }))
+		.toBeDisabled();
+});
+test('ambiguous submission preserves its ID and blocks fresh motion until receipt reconciliation', async () => {
+	const snapshot = state(),
+		onSubmit = vi.fn().mockRejectedValue(new TypeError('connection lost'));
+	const screen = await render(LiveZCalibration, {
+		snapshot,
+		userId: 'owner',
+		role: 'owner',
+		connected: true,
+		onSubmit
+	});
+	await screen.getByRole('button', { name: 'Z +', exact: true }).click();
+	await expect.element(screen.getByRole('button', { name: 'Z +', exact: true })).toBeDisabled();
+	await expect
+		.element(screen.getByRole('link', { name: 'Check unconfirmed submission receipt' }))
+		.toBeVisible();
+	const id = onSubmit.mock.calls[0][1];
+	await screen.rerender({
+		snapshot: {
+			...snapshot,
+			actions: [
+				{ id, label: 'Adjustment', status: 'completed', createdAt: Date.now(), message: null }
+			],
+			zProbe: { ...snapshot.zProbe!, z: 5.01 },
+			liveZ: { session: { ...snapshot.liveZ!.session!, version: 1, z: 5.01 } }
+		}
+	});
+	await expect.element(screen.getByRole('button', { name: 'Z +', exact: true })).toBeEnabled();
+	expect(onSubmit).toHaveBeenCalledTimes(1);
+});
+test('abort is available with a changed heater target and resolved results expose fresh preparation', async () => {
+	const snapshot = state(),
+		onSubmit = vi.fn().mockResolvedValue({ id: crypto.randomUUID() });
+	snapshot.heaters.nozzle.target = 200;
+	const screen = await render(LiveZCalibration, {
+		snapshot,
+		userId: 'owner',
+		role: 'owner',
+		connected: true,
+		onSubmit
+	});
+	await screen.getByRole('button', { name: 'Abort paper test…', exact: true }).click();
+	await screen.getByRole('button', { name: 'Abort paper test', exact: true }).click();
+	expect(onSubmit).toHaveBeenCalledWith(
+		expect.objectContaining({ type: 'zProbeAbort', run, version: 0 }),
+		expect.any(String)
+	);
+	await screen.rerender({
+		snapshot: {
+			...snapshot,
+			heaters: { ...snapshot.heaters, nozzle: { current: 25, target: 0 } },
+			zProbe: { ...snapshot.zProbe!, active: false },
+			liveZ: { session: { ...snapshot.liveZ!.session!, stage: 'resolved' } }
+		}
+	});
+	await expect.element(screen.getByRole('button', { name: 'Begin paper test' })).toBeVisible();
+});

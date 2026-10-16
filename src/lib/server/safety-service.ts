@@ -40,11 +40,13 @@ interface Row {
 	record: string;
 }
 const label = (kind: SafetyAction['kind']) =>
-	kind === 'emergency'
-		? 'Emergency stop'
-		: kind === 'stop'
-			? 'Stop current job during recovery'
-			: 'Turn off heaters during recovery';
+	kind === 'abortProbe'
+		? 'Abort current manual probe during recovery'
+		: kind === 'emergency'
+			? 'Emergency stop'
+			: kind === 'stop'
+				? 'Stop current job during recovery'
+				: 'Turn off heaters during recovery';
 export function observedHeatersOff(state: MoonrakerSnapshot): boolean {
 	const targets: Array<number | null> = state.additionalTemperatures
 		.filter((t) => t.heater)
@@ -222,6 +224,11 @@ export const SafetyServiceLive = Layer.effect(
 							'Fresh ready printer state is unavailable. Emergency stop remains independent.'
 						)
 					);
+				if (
+					job.request.operation.type === 'abortProbe' &&
+					(!fresh.motion.calibration || !fresh.availableObjects.includes('manual_probe'))
+				)
+					return yield* Effect.fail(rejected('No current manual probe was observed.'));
 				if (job.request.operation.type === 'stop') {
 					const expected = job.request.operation.expectedJob;
 					if (
@@ -269,7 +276,10 @@ export const SafetyServiceLive = Layer.effect(
 						yield* request('/printer/emergency_stop', 'POST', job);
 					else if (job.request.operation.type === 'stop')
 						yield* request('/printer/print/cancel', 'POST', job);
-					else yield* request('/printer/gcode/script', 'POST', job, { script: 'TURN_OFF_HEATERS' });
+					else
+						yield* request('/printer/gcode/script', 'POST', job, {
+							script: job.request.operation.type === 'abortProbe' ? 'ABORT' : 'TURN_OFF_HEATERS'
+						});
 					job.record = {
 						...job.record,
 						acknowledged: true,
@@ -289,11 +299,13 @@ export const SafetyServiceLive = Layer.effect(
 						else {
 							const observed = yield* transport.refresh(job.generation);
 							matched =
-								job.request.operation.type === 'cooldown'
-									? observedHeatersOff(observed)
-									: ['cancelled', 'standby', 'complete'].includes(observed.job.state) &&
-										observed.job.filename === job.request.operation.expectedJob.filename &&
-										observed.job.runId === job.request.operation.expectedJob.runId;
+								job.request.operation.type === 'abortProbe'
+									? observed.motion.calibration === false
+									: job.request.operation.type === 'cooldown'
+										? observedHeatersOff(observed)
+										: ['cancelled', 'standby', 'complete'].includes(observed.job.state) &&
+											observed.job.filename === job.request.operation.expectedJob.filename &&
+											observed.job.runId === job.request.operation.expectedJob.runId;
 						}
 						if (matched) {
 							job.record = { ...job.record, observed: true };
