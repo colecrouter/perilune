@@ -1,3 +1,4 @@
+import { liveConsoleScript, consoleReason } from '#lib/domain/console.js';
 import { zProbePlan } from './live-z.js';
 import { liveZActive, interruptLiveZ, type LiveZState } from '#lib/domain/live-z.js';
 import { filamentPlan } from './live-filament.js';
@@ -27,6 +28,7 @@ export class LiveActionSettings extends Context.Service<
 		enabled: boolean;
 		filamentEnabled?: boolean;
 		zEnabled?: boolean;
+		consoleEnabled?: boolean;
 		target: string;
 		observationMs?: number;
 	}
@@ -56,6 +58,7 @@ const authorized = (actor: CalibrationActor) =>
 const recoveryMessage =
 	'A live action has an unknown outcome. Inspect the printer, then review recovery in Controls. No command was replayed.';
 const supported = new Set([
+	'console',
 	'zProbeBegin',
 	'zProbeAdjust',
 	'zProbeAccept',
@@ -144,6 +147,7 @@ export const LiveActionServiceLive = Layer.effect(
 		yield* update((s) => ({
 			...s,
 			liveControls: settings.enabled,
+			liveConsole: settings.enabled && settings.consoleEnabled === true,
 			liveFilament: settings.enabled && settings.filamentEnabled === true,
 			liveZEnabled: settings.enabled && settings.zEnabled === true,
 			actions: history,
@@ -198,6 +202,8 @@ export const LiveActionServiceLive = Layer.effect(
 			if (interlock.halted || safetyReason(s.safety))
 				throw reject(safetyReason(s.safety) ?? 'Emergency stop interlock is active.');
 			if (!settings.enabled) throw reject('Live controls are disabled on this server.');
+			if (request.command.type === 'console' && !settings.consoleEnabled)
+				throw reject('Live console is disabled on this server.');
 			if (request.command.type.startsWith('zProbe') && !settings.zEnabled)
 				throw reject('Live Z calibration is disabled on this server.');
 			if (request.command.type.startsWith('extrusion') && !settings.filamentEnabled)
@@ -230,6 +236,17 @@ export const LiveActionServiceLive = Layer.effect(
 		const plan = (request: ActionRequest, s: PrinterSnapshot, fresh: MoonrakerSnapshot) =>
 			Effect.gen(function* () {
 				const c = request.command;
+				if (c.type === 'console') {
+					const reason = consoleReason({
+						...s,
+						actions: s.actions.filter((a) => a.id !== request.id)
+					});
+					if (reason) return yield* Effect.fail(reject(reason));
+					const script = yield* check(() => liveConsoleScript(c.script));
+					return [
+						{ type: 'controlScript', script: `${script}\nM400` }
+					] satisfies ControlOperation[];
+				}
 				if (c.type === 'start') {
 					if (!s.availableObjects.includes('virtual_sdcard'))
 						return yield* Effect.fail(reject('Virtual SD printing is unavailable.'));
@@ -489,42 +506,49 @@ export const LiveActionServiceLive = Layer.effect(
 							return;
 						}
 						const matches =
-							c.type === 'move'
-								? Object.entries(c.target).every(
-										([axis, value]) =>
-											Math.abs(
-												(observed.motion.position[axis as 'x' | 'y' | 'z'] ?? Infinity) - value!
-											) < 0.05
-									)
-								: c.type === 'home'
-									? (c.axes === 'all'
-											? ['x', 'y', 'z']
-											: c.axes === 'xy'
-												? ['x', 'y']
-												: ['z']
-										).every((axis) => observed.motion.homed.includes(axis as 'x' | 'y' | 'z'))
-									: c.type === 'releaseMotors'
-										? observed.motion.homed.length === 0
-										: c.type === 'temperature'
-											? observed.heaters[c.heater].target === c.target
-											: c.type === 'cooldown'
-												? observed.heaters.bed.target === 0 && observed.heaters.nozzle.target === 0
-												: c.type === 'pause'
-													? observed.job.state === 'paused'
-													: c.type === 'resume'
-														? observed.job.state === 'printing'
-														: c.type === 'cancel'
-															? ['cancelled', 'standby', 'complete'].includes(observed.job.state) &&
-																observed.heaters.bed.target ===
-																	(c.coolBed ? 0 : s.heaters.bed.target) &&
-																observed.heaters.nozzle.target ===
-																	(c.coolNozzle ? 0 : s.heaters.nozzle.target)
-															: c.type === 'start'
-																? observed.job.state === 'printing' &&
-																	observed.job.filename ===
-																		(operations[0] as Extract<ControlOperation, { type: 'job' }>)
-																			.filename
-																: false;
+							c.type === 'console'
+								? observed.klippy === 'ready' &&
+									!observed.motion.calibration &&
+									observed.motion.busy === false
+								: c.type === 'move'
+									? Object.entries(c.target).every(
+											([axis, value]) =>
+												Math.abs(
+													(observed.motion.position[axis as 'x' | 'y' | 'z'] ?? Infinity) - value!
+												) < 0.05
+										)
+									: c.type === 'home'
+										? (c.axes === 'all'
+												? ['x', 'y', 'z']
+												: c.axes === 'xy'
+													? ['x', 'y']
+													: ['z']
+											).every((axis) => observed.motion.homed.includes(axis as 'x' | 'y' | 'z'))
+										: c.type === 'releaseMotors'
+											? observed.motion.homed.length === 0
+											: c.type === 'temperature'
+												? observed.heaters[c.heater].target === c.target
+												: c.type === 'cooldown'
+													? observed.heaters.bed.target === 0 &&
+														observed.heaters.nozzle.target === 0
+													: c.type === 'pause'
+														? observed.job.state === 'paused'
+														: c.type === 'resume'
+															? observed.job.state === 'printing'
+															: c.type === 'cancel'
+																? ['cancelled', 'standby', 'complete'].includes(
+																		observed.job.state
+																	) &&
+																	observed.heaters.bed.target ===
+																		(c.coolBed ? 0 : s.heaters.bed.target) &&
+																	observed.heaters.nozzle.target ===
+																		(c.coolNozzle ? 0 : s.heaters.nozzle.target)
+																: c.type === 'start'
+																	? observed.job.state === 'printing' &&
+																		observed.job.filename ===
+																			(operations[0] as Extract<ControlOperation, { type: 'job' }>)
+																				.filename
+																	: false;
 						if (matches) return;
 						if (Date.now() >= deadline)
 							return yield* Effect.fail(
@@ -541,7 +565,9 @@ export const LiveActionServiceLive = Layer.effect(
 							? result.failure instanceof ActionRejected
 								? result.failure.message
 								: 'Action was not dispatched. Review readiness and submit a new action if needed.'
-							: null;
+							: job.request.command.type === 'console'
+								? 'Klipper acknowledged the script and motion barrier; fresh ready state observed. Verify macro-specific effects in telemetry.'
+								: null;
 				const finalZ = zResult
 					? result._tag === 'Success'
 						? zResult

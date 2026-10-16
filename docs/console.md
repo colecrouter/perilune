@@ -37,12 +37,11 @@ to macro/configuration documentation. Existing G-code responses are collected ev
 when all browser tabs are closed; they may originate from another printer client.
 They are not attributed to an unverified Perilune request.
 
-**Live console and macro execution are disabled on the server**, including when
-live bed-mesh or configuration features are enabled. There is no console enable
-flag yet. Generic physical commands need coordinated testing, a shared printer
-reservation policy and acknowledgement reconciliation before this can change.
-Emergency-stop G-code cannot enter this queue; a future immediate emergency-stop
-operation must use the dedicated Moonraker endpoint.
+Set both `PERILUNE_LIVE_CONTROLS=true` and `PERILUNE_LIVE_CONSOLE=true` to enable reviewed console/macros. This is a separate opt-in because arbitrary scripts can move or heat the printer and macros may have additional side effects. Review their configuration; Perilune does not infer macro bodies or parameter meaning. Keep other controllers idle.
+
+Execution requires a fresh ready, idle printer without another action/calibration/configuration/recovery. It enters the same process-owned durable live action worker, shared admission, safety epoch and unknown-outcome recovery as basic controls. The console receipt follows that action, including navigation and backend restart; acknowledgement loss never resends it. A motion barrier is appended. Completed means Klipper acknowledged the script/barrier and fresh ready state was observed, not proof of every macro-specific effect. Inspect corresponding telemetry and responses.
+
+Direct lifecycle commands for job start/pause/resume/cancel, probing, SAVE_CONFIG and restarts are refused; use their dedicated flows. Emergency G-code remains forbidden and uses the independent emergency endpoint instead. This text check cannot inspect commands invoked inside user-defined macros. A macro that restarts, starts a helper or changes readiness can produce unknown recovery rather than verified completion.
 
 ## Retention
 

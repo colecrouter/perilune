@@ -1,0 +1,28 @@
+# Optional Linux host-network deployment behind a local HTTPS reverse proxy.
+# Copy alongside private.env, data/ and backups/ outside the source checkout.
+services:
+  perilune:
+    image: ${PERILUNE_IMAGE:?Set an immutable Perilune image tag}
+    container_name: perilune
+    network_mode: host
+    env_file: private.env
+    environment:
+      HOST: 127.0.0.1
+      PORT: 4182
+      PERILUNE_DATABASE: /app/data/perilune.sqlite
+    volumes:
+      - ./data:/app/data
+      - ./backups:/app/backups
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4182/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3

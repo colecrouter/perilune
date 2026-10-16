@@ -110,6 +110,8 @@ volume. Back up both. An optional `PERILUNE_AUTH_SECRET` of at least 32 characte
 can supply the secret instead; preserve it across restarts. No ORM is needed:
 Better Auth uses its SQLite adapter, and app state continues to use Effect SQL.
 
+For an always-on service, HTTPS proxy and verified backups, see the [deployment guide](docs/deployment.md).
+
 ## Connect a real printer
 
 Live controls are read-only by default. Set `PERILUNE_LIVE_MESH=true` to opt into the
@@ -119,7 +121,7 @@ configuration saving with a Klipper restart.
 `PERILUNE_LIVE_CONTROLS=true` enables acknowledged homing/motion, motor release,
 primary heaters, job controls and live file changes. Separate opt-ins enable
 `PERILUNE_LIVE_FILAMENT`, `PERILUNE_LIVE_Z_CALIBRATION` and
-`PERILUNE_LIVE_CONFIGURATION`. See [live controls](docs/live-controls.md) and the
+`PERILUNE_LIVE_CONFIGURATION`. Reviewed console/macros additionally require `PERILUNE_LIVE_CONSOLE=true`. See [live controls](docs/live-controls.md) and the
 [configuration guide](docs/configuration.md). Start with an attended, idle printer;
 unknown outcomes require explicit recovery and are never replayed.
 

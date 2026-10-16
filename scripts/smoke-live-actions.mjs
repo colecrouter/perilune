@@ -168,6 +168,7 @@ const app = spawn(process.execPath, ['scripts/server.mjs'], {
 		PERILUNE_DATABASE: filename,
 		PERILUNE_MOONRAKER_URL: `ws://127.0.0.1:${upstream.address().port}/websocket`,
 		PERILUNE_LIVE_CONTROLS: 'true',
+		PERILUNE_LIVE_CONSOLE: 'true',
 		PERILUNE_LIVE_FILAMENT: 'true',
 		PERILUNE_LIVE_Z_CALIBRATION: 'true',
 		PERILUNE_LIVE_MESH: 'false',
@@ -199,7 +200,10 @@ try {
 	await authenticate(context, base, filename);
 	const page = await context.newPage();
 	const errors = [];
-	page.on('pageerror', (e) => errors.push(e.message));
+	page.on('pageerror', (e) => {
+		errors.push(e.message);
+		console.error('Browser error at', page.url(), e.stack);
+	});
 	page.setDefaultTimeout(15000);
 	await page.goto(base);
 	await page.getByText(/Live controls enabled · shared across operators/).waitFor();
@@ -460,6 +464,18 @@ try {
 	await page
 		.getByText('Emergency interlock active.', { exact: false })
 		.waitFor({ state: 'hidden' });
+
+	await page.goto(base + '/console');
+	await page.getByLabel('Command', { exact: true }).fill('M105\nM114');
+	await page.getByRole('button', { name: 'Review command…', exact: true }).click();
+	const consoleReview = page.getByRole('dialog');
+	await consoleReview.getByText('This runs on the real printer', { exact: false }).waitFor();
+	await consoleReview.getByRole('button', { name: 'Run on printer', exact: true }).click();
+	await page
+		.getByText('Klipper acknowledged the script and motion barrier', { exact: false })
+		.waitFor();
+	assert.equal(operations.filter((op) => op.script === 'M105\nM114\nM400').length, 1);
+
 	database.close();
 	await native.close();
 	await page.setViewportSize({ width: 320, height: 800 });

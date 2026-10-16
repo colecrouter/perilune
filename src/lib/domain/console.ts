@@ -22,6 +22,7 @@ export interface ConsoleReceipt {
 }
 export interface ConsoleSnapshot {
 	revision: number;
+	executionEnabled?: boolean;
 	mode: 'simulator' | 'moonraker';
 	connection: PrinterSnapshot['connection'];
 	reason: string | null;
@@ -69,6 +70,19 @@ export function discoverMacros(objects: string[], help: unknown): PrinterMacro[]
 					: 'No description provided by this printer. Review the macro configuration before using it.'
 		}));
 }
+// Match Klipper's command-token splitting, including compact/malformed N prefixes.
+// https://github.com/Klipper3d/klipper/blob/master/klippy/gcode.py
+function commandName(line: string): string {
+	const parts = line
+		.trim()
+		.split(';', 1)[0]!
+		.toUpperCase()
+		.split(/([A-Z_]+|[A-Z*])/);
+	return parts
+		.slice(parts.slice(0, 2).join('') === 'N' ? 3 : 0, parts.slice(0, 2).join('') === 'N' ? 5 : 3)
+		.join('')
+		.trim();
+}
 export function consoleScript(input: string): string {
 	const text = input.replace(/\r\n/g, '\n').trim();
 	if (
@@ -80,17 +94,27 @@ export function consoleScript(input: string): string {
 		throw new Error(
 			'Enter up to eight command lines (2,048 characters), without control characters.'
 		);
-	if (text.split('\n').some((line) => /^\s*(?:N\d+\s+)?M112(?:\s|;|\*|$)/i.test(line)))
+	if (text.split('\n').some((line) => commandName(line) === 'M112'))
 		throw new Error(
 			'Emergency stop requires a dedicated immediate operation; it cannot be queued in the console.'
 		);
 	return text;
 }
 export function consoleReason(state: PrinterSnapshot): string | null {
-	if (state.mode !== 'simulator')
-		return 'Live command execution awaits coordinated printer testing. Macro discovery and responses remain available.';
+	if (state.mode !== 'simulator' && !state.liveConsole)
+		return 'Live console execution is disabled on this server. Macro discovery and responses remain available.';
 	if (state.connection !== 'connected' || state.klippy !== 'ready' || !state.telemetryReady)
 		return 'Wait for a ready printer connection.';
+	if (
+		state.mode === 'moonraker' &&
+		(state.liveRecovery ||
+			state.safety?.halted ||
+			state.job.state === 'printing' ||
+			state.job.state === 'paused' ||
+			state.motion.busy !== false ||
+			state.motion.calibration)
+	)
+		return 'Finish or recover the current printer operation before running a console command.';
 	if (state.storage !== 'healthy') return 'Action storage is unavailable.';
 	if (
 		state.configurationBusy ||
@@ -131,4 +155,34 @@ export function simulateConsole(script: string, state: PrinterSnapshot): string[
 					);
 			}
 		});
+}
+
+/** Lifecycle operations have dedicated recovery paths and cannot be mixed into a console batch. */
+export function liveConsoleScript(input: string): string {
+	const script = consoleScript(input);
+	const forbidden = new Set([
+		'RESTART',
+		'FIRMWARE_RESTART',
+		'SAVE_CONFIG',
+		'PROBE_CALIBRATE',
+		'Z_ENDSTOP_CALIBRATE',
+		'MANUAL_PROBE',
+		'TESTZ',
+		'ACCEPT',
+		'ABORT',
+		'BED_MESH_CALIBRATE',
+		'SDCARD_PRINT_FILE',
+		'M24',
+		'M25',
+		'M26',
+		'M112',
+		'PAUSE',
+		'RESUME',
+		'CANCEL_PRINT'
+	]);
+	if (script.split('\n').some((line) => forbidden.has(commandName(line))))
+		throw new Error(
+			'Use the dedicated job, calibration, configuration or emergency controls for this operation.'
+		);
+	return script;
 }

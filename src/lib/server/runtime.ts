@@ -132,6 +132,7 @@ const liveActionsLayer = moonrakerUrl
 					enabled: process.env.PERILUNE_LIVE_CONTROLS === 'true',
 					filamentEnabled: process.env.PERILUNE_LIVE_FILAMENT === 'true',
 					zEnabled: process.env.PERILUNE_LIVE_Z_CALIBRATION === 'true',
+					consoleEnabled: process.env.PERILUNE_LIVE_CONSOLE === 'true',
 					target: moonrakerUrl
 				})
 			),
