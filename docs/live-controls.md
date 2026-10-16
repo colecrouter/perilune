@@ -60,7 +60,11 @@ layout. The fixtures never connect to a physical printer.
 
 Owner-authorized physical acceptance verified homing, raising Z, a 2 mm X move and
 return, 40°C bed/50°C nozzle targets, actual nozzle warming and cooldown. Both
-heater targets were observed off afterward. Motor release still needs a physical
+heater targets were observed off afterward. A temporary dwell-only job also verified
+start, pause, resume, stop, and preserving the bed target before explicit cooldown.
+The configured resume macro required normal extrusion temperature, so that check
+used a 180°C nozzle target; both targets were returned to zero and the temporary
+file was removed. Cold resume refusal also exercised the unknown-outcome lock. Motor release still needs a physical
 check with gantry support available. Failure injection remains on the protocol
 fixture rather than the physical printer.
 
