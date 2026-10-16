@@ -237,6 +237,7 @@ try {
 	stagedResume = true;
 	await page.getByRole('button', { name: 'Resume print', exact: true }).click();
 	await page
+		.getByRole('region', { name: 'Current job', exact: true })
 		.getByText('Resume macro completed; the print remains paused.', { exact: false })
 		.waitFor();
 	assert.equal(status.print_stats.state, 'paused');
