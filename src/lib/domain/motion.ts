@@ -1,3 +1,4 @@
+import { safetyReason } from './safety.js';
 import { CommandRejected } from './errors.js';
 import type { PrinterSnapshot } from './printer.js';
 
@@ -40,6 +41,8 @@ export function motionReason(
 	homing = false,
 	includePending = true
 ): string | null {
+	const safety = safetyReason(state.safety);
+	if (safety) return safety;
 	if (state.configurationBusy) return 'Configuration recovery owns the printer.';
 	if (state.liveRecovery) return state.liveRecovery.message;
 	if (state.mode === 'moonraker' && !state.liveControls)

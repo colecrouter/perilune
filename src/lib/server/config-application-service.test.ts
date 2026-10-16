@@ -1,3 +1,4 @@
+import { printerInterlock } from './printer-admission.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -38,7 +39,8 @@ async function fixture() {
 		serverStartupOnly: false,
 		transient: false,
 		pending: false,
-		target: 0
+		target: 0,
+		uploadAck: undefined as (() => Promise<void>) | undefined
 	};
 	const server = createServer((request, response) => {
 		void (async () => {
@@ -93,6 +95,7 @@ async function fixture() {
 					request.socket.destroy();
 					return;
 				}
+				await f.uploadAck?.();
 				result = { item: { path: 'printer.cfg', root: 'config' } };
 			} else if (request.url === '/printer/restart') {
 				f.restarts++;
@@ -334,4 +337,18 @@ it('does not mistake an old ready response during Moonraker startup for a comple
 	await a.submit(f.text.replace('200', '180'));
 	expect((await a.terminal()).phase).toBe('unknown');
 	expect(f.restarts).toBe(1);
+});
+
+it('emergency epoch prevents restarting Klipper after a delayed upload acknowledgement', async () => {
+	const { f, url } = await fixture(),
+		a = await app(url);
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => (release = resolve));
+	f.uploadAck = () => held;
+	await a.submit(f.text.replace('200', '180'));
+	await expect.poll(() => f.uploads).toBe(1);
+	printerInterlock(a.state).interrupt();
+	release();
+	await a.terminal();
+	expect(f.restarts).toBe(0);
 });

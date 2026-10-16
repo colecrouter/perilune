@@ -68,7 +68,24 @@ file was removed. Cold resume refusal also exercised the unknown-outcome lock. M
 check with gantry support available. Failure injection remains on the protocol
 fixture rather than the physical printer.
 
-Recovery-time stop/cooldown is tracked in [#42](https://github.com/colecrouter/perilune/issues/42).
-Until that lands, an active or paused print must be stopped using the printer or
-another trusted Moonraker client before clearing an unknown-outcome lock here.
-Unlocking does not stop a job or turn heaters off.
+## Recovery safety controls
+
+During basic live-action recovery, an owner can explicitly stop the freshly
+identified current job or turn off all heaters. These are separate recorded
+operations; they preserve the original uncertain action and its recovery lock.
+Recovery stop runs the configured cancel macro and never restores heater targets.
+Turning heaters off alone does not stop a job. Partial or unverifiable outcomes
+remain unknown, with acknowledgement distinguished from observed completion.
+
+Emergency stop is available to operators and owners independently of ordinary
+queues, workflow locks and WebSocket readiness. It shuts down Klipper through the
+dedicated HTTP endpoint and latches normal writes, including later stages of
+already admitted workflows. Resolve the hazard and restart Klipper externally
+before safety review. Review requires an owner, ready/idle telemetry and all heater
+targets off; the original recovery lock then needs its own explicit review.
+
+Recovery cooldown and stop passed owner-authorized physical acceptance with a
+bounded temporary job. The original recovery reservation remained, both heater
+targets ended at zero, and the temporary file was removed. Physical emergency
+shutdown remains tracked in [#44](https://github.com/colecrouter/perilune/issues/44)
+until gantry support is coordinated. Emergency shutdown can release motors.
