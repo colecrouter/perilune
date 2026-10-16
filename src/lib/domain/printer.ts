@@ -44,7 +44,13 @@ export const PrinterCommand = Schema.Union([
 	ExtrusionCommand,
 	CalibrationCommand,
 	MeshProbeCommand,
-	Schema.Struct({ type: Schema.Literal('start'), fileId: Schema.String.check(Schema.isUUID()) }),
+	Schema.Struct({
+		type: Schema.Literal('start'),
+		fileId: Schema.Union([
+			Schema.String.check(Schema.isUUID()),
+			Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
+		])
+	}),
 	Schema.Struct({
 		type: Schema.Literal('move'),
 		target: Schema.Struct({
@@ -92,6 +98,8 @@ export interface ActionRecord {
 }
 export interface PrinterSnapshot {
 	configurationBusy?: boolean;
+	liveControls?: boolean;
+	liveRecovery?: { id: string; message: string } | null;
 	revision: number;
 	updatedAt: number;
 	mode: 'simulator' | 'moonraker';

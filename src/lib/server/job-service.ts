@@ -47,6 +47,7 @@ export class JobService extends Context.Service<
 			bytes: Uint8Array,
 			authorized?: Effect.Effect<boolean, JobError>
 		) => Effect.Effect<JobFile, JobError>;
+		refresh?: Effect.Effect<void, JobError>;
 		inspect: (id: string) => Effect.Effect<JobFile, JobError>;
 		remove: (
 			id: string,
@@ -434,6 +435,7 @@ export const JobServiceLive = Layer.effect(
 						})
 					)
 				),
+			refresh: mapErrors(refresh),
 			inspect: (id) =>
 				mapErrors(
 					lock.withPermits(1)(

@@ -1,8 +1,9 @@
+import { printerAdmission } from './printer-admission.js';
 import { extrusionActive } from '#lib/domain/extrusion.js';
 import { calibrationActive } from '#lib/domain/calibration.js';
 import { meshProbeActive } from '#lib/domain/mesh-probe.js';
 import { createHash } from 'node:crypto';
-import { Context, Effect, Layer, Schedule, Semaphore, SubscriptionRef } from 'effect';
+import { Context, Effect, Layer, Schedule, SubscriptionRef } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
 import {
 	ConfigurationError,
@@ -69,7 +70,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 			options = yield* ConfigurationApplicationSettings,
 			printer = yield* PrinterService;
 		yield* migrate;
-		const gate = yield* Semaphore.make(1);
+		const gate = printerAdmission(printer.state);
 		const enabled = options.enabled && Boolean(settings.moonrakerUrl);
 		const base = settings.moonrakerUrl ? new URL(settings.moonrakerUrl) : null;
 		if (base) {
@@ -390,6 +391,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 								SubscriptionRef.modify(printer.state, (state) => {
 									const blocked =
 										state.configurationBusy ||
+										state.liveRecovery != null ||
 										state.motion.calibration ||
 										extrusionActive(state.extrusion) ||
 										calibrationActive(state.calibration) ||

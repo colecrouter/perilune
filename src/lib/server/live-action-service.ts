@@ -1,0 +1,496 @@
+import { createHash } from 'node:crypto';
+import { Context, Effect, Layer, Schedule, SubscriptionRef } from 'effect';
+import { SqlClient } from 'effect/sql/SqlClient';
+import {
+	actionLabel,
+	applyCommand,
+	type ActionRecord,
+	type ActionRequest,
+	type PrinterSnapshot
+} from '#lib/domain/printer.js';
+import type { CalibrationActor } from '#lib/domain/calibration.js';
+import { meshProbeActive } from '#lib/domain/mesh-probe.js';
+import { ActionStore } from './action-store.js';
+import { ActionRejected, PrinterService } from './printer-service.js';
+import { MoonrakerService, type ControlOperation, type MoonrakerSnapshot } from './moonraker.js';
+import { JobService } from './job-service.js';
+import { printerAdmission } from './printer-admission.js';
+
+export class LiveActionSettings extends Context.Service<
+	LiveActionSettings,
+	{ enabled: boolean; target: string; observationMs?: number }
+>()('perilune/LiveActionSettings') {}
+export class LiveActionService extends Context.Service<
+	LiveActionService,
+	{
+		submit: (
+			request: ActionRequest,
+			actor: CalibrationActor
+		) => Effect.Effect<ActionRecord, ActionRejected>;
+		recover: (id: string, actor: CalibrationActor) => Effect.Effect<void, ActionRejected>;
+	}
+>()('perilune/LiveActionService') {}
+export const LiveActionDisabled = Layer.succeed(LiveActionService, {
+	submit: () => Effect.fail(new ActionRejected({ message: 'No live printer is configured.' })),
+	recover: () => Effect.fail(new ActionRejected({ message: 'No live printer is configured.' }))
+});
+const reject = (message: string) => new ActionRejected({ message });
+const check = <A>(f: () => A) =>
+	Effect.try({
+		try: f,
+		catch: (cause) => reject(cause instanceof Error ? cause.message : 'Action validation failed.')
+	});
+const authorized = (actor: CalibrationActor) =>
+	['owner', 'operator'].includes(actor.role ?? '') && actor.authorized?.() === true;
+const recoveryMessage =
+	'A live action has an unknown outcome. Inspect the printer, then review recovery in Controls. No command was replayed.';
+const supported = new Set([
+	'move',
+	'home',
+	'releaseMotors',
+	'temperature',
+	'cooldown',
+	'start',
+	'pause',
+	'resume',
+	'cancel'
+]);
+
+/** Relative distances preserve offsets; restore modal state without moving back. */
+export function movementScript(
+	command: Extract<ActionRequest['command'], { type: 'move' }>
+): string {
+	const words = (['x', 'y', 'z'] as const).flatMap((axis) =>
+		command.target[axis] === undefined
+			? []
+			: [
+					`${axis.toUpperCase()}${(command.target[axis]! - command.expectedPosition[axis]).toFixed(3)}`
+				]
+	);
+	return `SAVE_GCODE_STATE NAME=perilune_manual_move\nG91\nG1 ${words.join(' ')} F${command.target.z === undefined ? 3000 : 300}\nM400\nRESTORE_GCODE_STATE NAME=perilune_manual_move`;
+}
+function checked(snapshot: PrinterSnapshot, fresh: MoonrakerSnapshot): PrinterSnapshot {
+	return {
+		...snapshot,
+		connection: fresh.connection,
+		klippy: fresh.klippy,
+		telemetryReady: fresh.telemetryReady,
+		motion: fresh.motion,
+		heaters: fresh.heaters,
+		job: fresh.job,
+		bedMesh: fresh.bedMesh
+	};
+}
+export const LiveActionServiceLive = Layer.effect(
+	LiveActionService,
+	Effect.gen(function* () {
+		const printer = yield* PrinterService,
+			transport = yield* MoonrakerService,
+			store = yield* ActionStore,
+			jobs = yield* JobService,
+			sql = yield* SqlClient,
+			settings = yield* LiveActionSettings;
+		const gate = printerAdmission(printer.state);
+		const target = createHash('sha256').update(settings.target).digest('hex');
+		const update = (f: (s: PrinterSnapshot) => PrinterSnapshot) =>
+			SubscriptionRef.update(printer.state, (s) => ({
+				...f(s),
+				revision: s.revision + 1,
+				updatedAt: Date.now()
+			}));
+		const history = yield* store.list;
+		const saved = yield* sql<{
+			action_id: string;
+		}>`SELECT action_id FROM live_action_reservation WHERE target=${target}`;
+		yield* update((s) => ({
+			...s,
+			liveControls: settings.enabled,
+			actions: history,
+			liveRecovery: saved[0] ? { id: saved[0].action_id, message: recoveryMessage } : null
+		}));
+		let work:
+			| {
+					request: ActionRequest;
+					actor: CalibrationActor;
+					action: ActionRecord;
+					generation: number;
+			  }
+			| undefined;
+		let working = false;
+		const validate = (s: PrinterSnapshot, request: ActionRequest, actor: CalibrationActor) => {
+			if (!settings.enabled) throw reject('Live controls are disabled on this server.');
+			if (!authorized(actor)) throw reject('An authorized operator is required.');
+			if (!supported.has(request.command.type))
+				throw reject('This live workflow is not enabled yet.');
+			if (s.liveRecovery) throw reject(recoveryMessage);
+			if (s.configurationBusy || s.motion.calibration || meshProbeActive(s.meshProbe))
+				throw reject('Another workflow owns the printer. Finish or recover it first.');
+			if (
+				!['toolhead', 'idle_timeout', 'print_stats'].every((name) =>
+					s.availableObjects.includes(name)
+				) ||
+				s.job.state === 'unknown'
+			)
+				throw reject('Required printer status is unavailable.');
+			if (s.storage !== 'healthy') throw reject('Action storage is recovering.');
+			if (s.connection !== 'connected' || s.klippy !== 'ready' || !s.telemetryReady)
+				throw reject('Wait for fresh, ready printer telemetry.');
+		};
+		const plan = (request: ActionRequest, s: PrinterSnapshot, fresh: MoonrakerSnapshot) =>
+			Effect.gen(function* () {
+				const c = request.command;
+				if (c.type === 'start') {
+					if (!s.availableObjects.includes('virtual_sdcard'))
+						return yield* Effect.fail(reject('Virtual SD printing is unavailable.'));
+					if (!jobs.refresh)
+						return yield* Effect.fail(reject('Live catalog refresh is unavailable.'));
+					const file = (yield* SubscriptionRef.get(jobs.state)).files.find(
+						(f) => f.id === c.fileId
+					);
+					if (!file || file.source !== 'moonraker')
+						return yield* Effect.fail(
+							reject('The selected live file changed or is unavailable. Review it again.')
+						);
+					// Reuse domain readiness validation, with the already verified live catalog identity.
+					yield* check(() =>
+						applyCommand({ ...s, mode: 'simulator' }, c, { ...file, source: 'local' })
+					);
+					return [
+						{ type: 'job', method: 'start', filename: file.name }
+					] satisfies ControlOperation[];
+				}
+				yield* check(() => applyCommand(s, c));
+				if (c.type === 'move')
+					return [
+						{ type: 'controlScript', script: movementScript(c) }
+					] satisfies ControlOperation[];
+				if (c.type === 'home')
+					return [
+						{
+							type: 'controlScript',
+							script: `G28${c.axes === 'xy' ? ' X Y' : c.axes === 'z' ? ' Z' : ''}\nM400`
+						}
+					] satisfies ControlOperation[];
+				if (c.type === 'releaseMotors') {
+					if (c.axes !== 'all')
+						return yield* Effect.fail(reject('Klipper releases all motors together.'));
+					return [{ type: 'controlScript', script: 'M84' }] satisfies ControlOperation[];
+				}
+				if (c.type === 'temperature') {
+					const limits = fresh.heaterLimits?.[c.heater];
+					if (!fresh.availableObjects.includes(c.heater === 'bed' ? 'heater_bed' : 'extruder'))
+						return yield* Effect.fail(reject('The requested heater is unavailable.'));
+					if (!limits || (c.target !== 0 && (c.target <= limits.min || c.target >= limits.max)))
+						return yield* Effect.fail(
+							reject(
+								'The requested target is outside the configured heater limits, or those limits are unavailable.'
+							)
+						);
+					return [
+						{
+							type: 'controlScript',
+							script: `SET_HEATER_TEMPERATURE HEATER=${c.heater === 'bed' ? 'heater_bed' : 'extruder'} TARGET=${c.target}`
+						}
+					] satisfies ControlOperation[];
+				}
+				if (c.type === 'cooldown')
+					return [
+						{ type: 'controlScript', script: 'TURN_OFF_HEATERS' }
+					] satisfies ControlOperation[];
+				if (c.type === 'pause' || c.type === 'resume' || c.type === 'cancel') {
+					if (!c.expectedJob)
+						return yield* Effect.fail(
+							reject('Review the current job before submitting this action.')
+						);
+					if (
+						c.type === 'cancel' &&
+						(s.heaters.bed.target === null || s.heaters.nozzle.target === null)
+					)
+						return yield* Effect.fail(
+							reject('Heater targets must be known before stopping with cooldown choices.')
+						);
+					const ops: ControlOperation[] = [{ type: 'job', method: c.type }];
+					if (c.type === 'cancel')
+						ops.push({
+							type: 'controlScript',
+							script: `SET_HEATER_TEMPERATURE HEATER=heater_bed TARGET=${c.coolBed ? 0 : s.heaters.bed.target}\nSET_HEATER_TEMPERATURE HEATER=extruder TARGET=${c.coolNozzle ? 0 : s.heaters.nozzle.target}`
+						});
+					return ops;
+				}
+				return yield* Effect.fail(reject('Unsupported live command.'));
+			});
+		const run = (job: NonNullable<typeof work>) =>
+			Effect.gen(function* () {
+				let sent = false;
+				const result = yield* Effect.gen(function* () {
+					if (Date.now() - job.action.createdAt >= 30000)
+						return yield* Effect.fail(reject('Action expired before dispatch.'));
+					if (job.request.command.type === 'start') {
+						if (!jobs.refresh)
+							return yield* Effect.fail(reject('Live catalog refresh is unavailable.'));
+						yield* jobs.refresh;
+					}
+					const fresh = yield* transport.refresh(job.generation);
+					const s = checked(yield* SubscriptionRef.get(printer.state), fresh);
+					yield* check(() => validate(s, job.request, job.actor));
+					const operations = yield* plan(job.request, s, fresh);
+					if (!authorized(job.actor))
+						return yield* Effect.fail(reject('The operator account is no longer authorized.'));
+					if (Date.now() - job.action.createdAt >= 30000)
+						return yield* Effect.fail(reject('Action expired before dispatch.'));
+					yield* store.setStatus(job.action.id, 'sending', null);
+					yield* update((s) => ({
+						...s,
+						actions: s.actions.map((a) =>
+							a.id === job.action.id ? { ...a, status: 'sending' } : a
+						)
+					}));
+					for (const [index, op] of operations.entries()) {
+						if (index === 0 && Date.now() - job.action.createdAt >= 30000)
+							return yield* Effect.fail(reject('Action expired before dispatch.'));
+						if (index > 0) {
+							const stopped = yield* transport.refresh(job.generation);
+							if (
+								!['cancelled', 'standby', 'complete'].includes(stopped.job.state) ||
+								stopped.job.filename !== s.job.filename ||
+								stopped.job.runId !== s.job.runId
+							)
+								return yield* Effect.fail(
+									reject('The job changed or did not stop. Heater restoration was not sent.')
+								);
+						}
+						if (!authorized(job.actor))
+							return yield* Effect.fail(reject('The operator account is no longer authorized.'));
+						if (!transport.control)
+							return yield* Effect.fail(reject('Live transport controls are unavailable.'));
+						const dispatched = yield* transport.control(op, job.generation).pipe(Effect.result);
+						if (dispatched._tag === 'Failure') {
+							sent ||= dispatched.failure.sent;
+							return yield* Effect.fail(
+								reject('Printer command failed or its acknowledgement was lost.')
+							);
+						}
+						sent = true;
+					}
+					// Ack is insufficient: observe the intended state through a fresh query.
+					const deadline = Date.now() + (settings.observationMs ?? 10000);
+					while (true) {
+						const observed = yield* transport.refresh(job.generation);
+						const c = job.request.command;
+						const matches =
+							c.type === 'move'
+								? Object.entries(c.target).every(
+										([axis, value]) =>
+											Math.abs(
+												(observed.motion.position[axis as 'x' | 'y' | 'z'] ?? Infinity) - value!
+											) < 0.05
+									)
+								: c.type === 'home'
+									? (c.axes === 'all'
+											? ['x', 'y', 'z']
+											: c.axes === 'xy'
+												? ['x', 'y']
+												: ['z']
+										).every((axis) => observed.motion.homed.includes(axis as 'x' | 'y' | 'z'))
+									: c.type === 'releaseMotors'
+										? observed.motion.homed.length === 0
+										: c.type === 'temperature'
+											? observed.heaters[c.heater].target === c.target
+											: c.type === 'cooldown'
+												? observed.heaters.bed.target === 0 && observed.heaters.nozzle.target === 0
+												: c.type === 'pause'
+													? observed.job.state === 'paused'
+													: c.type === 'resume'
+														? observed.job.state === 'printing'
+														: c.type === 'cancel'
+															? ['cancelled', 'standby', 'complete'].includes(observed.job.state) &&
+																observed.heaters.bed.target ===
+																	(c.coolBed ? 0 : s.heaters.bed.target) &&
+																observed.heaters.nozzle.target ===
+																	(c.coolNozzle ? 0 : s.heaters.nozzle.target)
+															: c.type === 'start'
+																? observed.job.state === 'printing' &&
+																	observed.job.filename ===
+																		(operations[0] as Extract<ControlOperation, { type: 'job' }>)
+																			.filename
+																: false;
+						if (matches) return;
+						if (Date.now() >= deadline)
+							return yield* Effect.fail(
+								reject('The acknowledged action could not be verified from printer state.')
+							);
+						yield* Effect.sleep('250 millis');
+					}
+				}).pipe(Effect.result);
+				const status = result._tag === 'Success' ? 'completed' : sent ? 'unknown' : 'failed';
+				const message =
+					status === 'unknown'
+						? recoveryMessage
+						: result._tag === 'Failure'
+							? result.failure instanceof ActionRejected
+								? result.failure.message
+								: 'Action was not dispatched. Review readiness and submit a new action if needed.'
+							: null;
+				const persisted = yield* sql
+					.withTransaction(
+						Effect.gen(function* () {
+							yield* store.setStatus(job.action.id, status, message);
+							if (status !== 'unknown')
+								yield* sql`DELETE FROM live_action_reservation WHERE target=${target} AND action_id=${job.action.id}`;
+						})
+					)
+					.pipe(Effect.result);
+				yield* update((s) => ({
+					...s,
+					storage: persisted._tag === 'Failure' ? 'degraded' : s.storage,
+					liveRecovery:
+						status === 'unknown' || persisted._tag === 'Failure'
+							? { id: job.action.id, message: recoveryMessage }
+							: null,
+					actions: s.actions.map((a) =>
+						a.id === job.action.id
+							? {
+									...a,
+									status: persisted._tag === 'Failure' ? 'unknown' : status,
+									message: persisted._tag === 'Failure' ? recoveryMessage : message
+								}
+							: a
+					)
+				}));
+			});
+		yield* Effect.gen(function* () {
+			if (!work || working) return;
+			working = true;
+			const job = work;
+			yield* run(job).pipe(
+				Effect.catchCause(() =>
+					Effect.gen(function* () {
+						const persisted = yield* store
+							.setStatus(job.action.id, 'unknown', recoveryMessage)
+							.pipe(Effect.result);
+						yield* update((s) => ({
+							...s,
+							storage: persisted._tag === 'Failure' ? 'degraded' : s.storage,
+							liveRecovery: { id: job.action.id, message: recoveryMessage },
+							actions: s.actions.map((a) =>
+								a.id === job.action.id ? { ...a, status: 'unknown', message: recoveryMessage } : a
+							)
+						}));
+					})
+				),
+				Effect.ensuring(
+					Effect.sync(() => {
+						work = undefined;
+						working = false;
+					})
+				)
+			);
+		}).pipe(Effect.repeat(Schedule.spaced('100 millis')), Effect.forkScoped);
+		return {
+			submit: (request, actor) =>
+				gate.withPermits(1)(
+					Effect.gen(function* () {
+						const existing = yield* store.find(request.id);
+						if (!authorized(actor))
+							return yield* Effect.fail(reject('An authorized operator is required.'));
+						if (existing) {
+							if (
+								existing.actorId !== actor.id ||
+								existing.payload !== JSON.stringify(request.command)
+							)
+								return yield* Effect.fail(
+									reject('Action ID belongs to another command or account.')
+								);
+							return existing.action;
+						}
+						const s = yield* SubscriptionRef.get(printer.state);
+						yield* check(() => validate(s, request, actor));
+						if (work || s.actions.some((a) => ['queued', 'sending'].includes(a.status)))
+							return yield* Effect.fail(reject('Another action is pending.'));
+						const telemetry = yield* SubscriptionRef.get(transport.state);
+						const action: ActionRecord = {
+							id: request.id,
+							label: actionLabel(request.command),
+							status: 'queued',
+							createdAt: Date.now(),
+							message: null
+						};
+						yield* sql.withTransaction(
+							Effect.gen(function* () {
+								yield* store.insert(action, request.command, actor.id);
+								yield* sql`INSERT INTO live_action_reservation(target,action_id) VALUES(${target},${action.id})`;
+							})
+						);
+						yield* update((s) => ({ ...s, actions: [action, ...s.actions].slice(0, 20) }));
+						work = { request, actor, action, generation: telemetry.generation };
+						return action;
+					}).pipe(
+						Effect.uninterruptible,
+						Effect.mapError((cause) =>
+							cause instanceof ActionRejected
+								? cause
+								: reject('Action storage failed. Nothing was dispatched.')
+						)
+					)
+				),
+			recover: (id, actor) =>
+				gate.withPermits(1)(
+					Effect.gen(function* () {
+						if (actor.role !== 'owner' || !authorized(actor))
+							return yield* Effect.fail(reject('An authorized owner must review recovery.'));
+						const s = yield* SubscriptionRef.get(printer.state);
+						if (work || s.liveRecovery?.id !== id)
+							return yield* Effect.fail(reject('The recovery state changed. Review it again.'));
+						const telemetry = yield* SubscriptionRef.get(transport.state);
+						const fresh = yield* transport.refresh(telemetry.generation);
+						if (
+							fresh.connection !== 'connected' ||
+							fresh.klippy !== 'ready' ||
+							!fresh.telemetryReady ||
+							fresh.job.state === 'unknown' ||
+							fresh.motion.busy !== false ||
+							fresh.motion.calibration ||
+							['printing', 'paused'].includes(fresh.job.state)
+						)
+							return yield* Effect.fail(
+								reject('Verify that the printer is stopped and idle before clearing recovery.')
+							);
+						if (!authorized(actor))
+							return yield* Effect.fail(reject('Owner authorization expired.'));
+						yield* sql.withTransaction(
+							Effect.gen(function* () {
+								yield* store.setStatus(
+									id,
+									'unknown',
+									'Owner reviewed the printer and cleared the recovery lock. The previous action was not replayed.'
+								);
+								yield* sql`DELETE FROM live_action_reservation WHERE target=${target} AND action_id=${id}`;
+							})
+						);
+						yield* update((s) => ({
+							...s,
+							liveRecovery: null,
+							storage: 'healthy',
+							actions: s.actions.map((a) =>
+								a.id === id
+									? {
+											...a,
+											status: 'unknown',
+											message:
+												'Owner reviewed the printer and cleared recovery. No command was replayed.'
+										}
+									: a
+							)
+						}));
+					}).pipe(
+						Effect.uninterruptible,
+						Effect.mapError((cause) =>
+							cause instanceof ActionRejected
+								? cause
+								: reject('Recovery could not be verified. No command was replayed.')
+						)
+					)
+				)
+		};
+	})
+);

@@ -1,12 +1,18 @@
 <script lang="ts">
+	import type { PrinterSnapshot } from '#lib/domain/printer.js';
 	import { DropdownMenu } from 'bits-ui';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
+	import LiveActionRecovery from './LiveActionRecovery.svelte';
 	import ConfigurationRecovery from './ConfigurationRecovery.svelte';
 	import MoonMark from './MoonMark.svelte';
 	import type { Snippet } from 'svelte';
 	import Icon from './Icon.svelte';
-	let { children, active = 'Overview' }: { children: Snippet; active?: string } = $props();
+	let {
+		children,
+		active = 'Overview',
+		snapshot
+	}: { children: Snippet; active?: string; snapshot?: PrinterSnapshot } = $props();
 	const navigation = [
 		{ label: 'Overview', icon: 'overview', href: '/' },
 		{ label: 'Controls', icon: 'calibration', href: '/controls' },
@@ -90,6 +96,7 @@
 		>
 	</aside>
 	<main>
+		<LiveActionRecovery snapshot={snapshot ?? page.data.initial?.printer} />
 		{#if page.data.user?.role === 'owner' && active !== 'Configuration'}<ConfigurationRecovery
 				compact
 			/>{/if}

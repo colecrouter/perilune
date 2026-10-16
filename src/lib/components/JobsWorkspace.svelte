@@ -88,7 +88,10 @@
 	);
 	const currentReady = $derived(
 		canOperate &&
-			!live &&
+			(!live || snapshot.liveControls) &&
+			!snapshot.liveRecovery &&
+			!snapshot.configurationBusy &&
+			!snapshot.motion.calibration &&
 			updates.available &&
 			snapshot.connection === 'connected' &&
 			snapshot.klippy === 'ready' &&
@@ -283,7 +286,7 @@
 </script>
 
 <svelte:head><title>Jobs · Perilune</title></svelte:head>
-<AppShell active="Jobs"
+<AppShell {snapshot} active="Jobs"
 	><div class="jobs-page serif">
 		<header>
 			<div>
@@ -292,7 +295,11 @@
 				<p class="muted">Your files, their print settings, and a clear path to the next job.</p>
 			</div>
 			<span class="mode-label"
-				>{live ? 'Live library · read-only' : 'Simulator · no physical printer is controlled'}</span
+				>{live
+					? snapshot.liveControls
+						? 'Live printer library'
+						: 'Live library · read-only'
+					: 'Simulator · no physical printer is controlled'}</span
 			>
 		</header>
 		{#if failure}<p role="alert" class="notice error-text">{failure}</p>{/if}
@@ -507,7 +514,10 @@
 						<p>
 							{missing
 								? 'This file is no longer in the library.'
-								: (reason ?? 'The simulator is ready for this job.')}
+								: (reason ??
+									(live
+										? 'The printer is ready for this job.'
+										: 'The simulator is ready for this job.'))}
 						</p>
 						{#if !live}<p class="muted">
 								Simulator jobs advance at 1% per second. Their timing does not represent a real
@@ -636,10 +646,12 @@
 <Dialog.Root bind:open={startOpen}
 	><Dialog.Portal
 		><Dialog.Overlay class="dialog-overlay" /><Dialog.Content class="dialog-content"
-			><Dialog.Title class="dialog-title">Start this simulated print?</Dialog.Title
+			><Dialog.Title class="dialog-title"
+				>{live ? 'Start this print?' : 'Start this simulated print?'}</Dialog.Title
 			><Dialog.Description class="muted"
-				>{selected?.name}. This changes simulator state only. It will not move or heat your real
-				printer.</Dialog.Description
+				>{selected?.name}. {live
+					? 'This starts the job on your physical printer. Check that the bed and toolhead path are clear.'
+					: 'This changes simulator state only. It will not move or heat your real printer.'}</Dialog.Description
 			>{#if reason}<p class="error-text">{reason}</p>{/if}{#if failure}<p
 					role="alert"
 					class="error-text"
@@ -652,7 +664,7 @@
 					class="button"
 					disabled={Boolean(reason) || submitting || missing}
 					onclick={() => void start()}
-					>{submitting ? 'Submitting…' : 'Start simulated print'}</button
+					>{submitting ? 'Submitting…' : live ? 'Start print' : 'Start simulated print'}</button
 				>
 			</div></Dialog.Content
 		></Dialog.Portal

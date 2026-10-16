@@ -34,7 +34,7 @@
 </script>
 
 <svelte:head><title>Bed mesh · Perilune</title></svelte:head>
-<AppShell active="Calibration"
+<AppShell {snapshot} active="Calibration"
 	><div class="mesh-page serif">
 		<header>
 			<div>

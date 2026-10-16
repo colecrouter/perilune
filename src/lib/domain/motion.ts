@@ -41,7 +41,8 @@ export function motionReason(
 	includePending = true
 ): string | null {
 	if (state.configurationBusy) return 'Configuration recovery owns the printer.';
-	if (state.mode === 'moonraker')
+	if (state.liveRecovery) return state.liveRecovery.message;
+	if (state.mode === 'moonraker' && !state.liveControls)
 		return 'Live movement is read-only until coordinated printer testing.';
 	if (state.connection !== 'connected') return 'Reconnect the printer before moving.';
 	if (state.klippy !== 'ready') return `Printer is ${state.klippy}. Wait until it is ready.`;

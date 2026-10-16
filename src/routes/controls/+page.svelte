@@ -15,7 +15,7 @@
 </script>
 
 <svelte:head><title>Printer controls · Perilune</title></svelte:head>
-<AppShell active="Controls"
+<AppShell {snapshot} active="Controls"
 	><div class="controls-page serif">
 		<header>
 			<p class="eyebrow">At your command</p>

@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Schedule, Semaphore, SubscriptionRef } from 'effect';
+import { printerAdmission } from './printer-admission.js';
+import { Context, Effect, Layer, Schedule, SubscriptionRef } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
 import { ActionStore } from './action-store.js';
 import { ActionRejected, PrinterService } from './printer-service.js';
@@ -43,7 +44,7 @@ export const LiveMeshServiceLive = Layer.effect(
 			transport = yield* MoonrakerService,
 			store = yield* ActionStore,
 			sql = yield* SqlClient;
-		const lock = yield* Semaphore.make(1);
+		const lock = printerAdmission(printer.state);
 		const write = (mesh: MeshProbeState) =>
 			sql`INSERT INTO live_mesh_workflow(id,state) VALUES(1,${JSON.stringify(mesh)}) ON CONFLICT(id) DO UPDATE SET state=excluded.state`.pipe(
 				Effect.asVoid

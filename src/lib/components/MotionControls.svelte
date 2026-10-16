@@ -206,7 +206,11 @@
 				<h2 id="motion-heading">A destination, not a dozen clicks</h2>
 			</div>
 			<span class="motion-tag"
-				>{snapshot.mode === 'simulator' ? 'Simulator' : 'Live · Read-only'}</span
+				>{snapshot.mode === 'simulator'
+					? 'Simulator'
+					: snapshot.liveControls
+						? 'Live controls'
+						: 'Live · Read-only'}</span
 			>
 		</div>
 		<p class="intro">
