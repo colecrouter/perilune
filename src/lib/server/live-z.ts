@@ -56,6 +56,8 @@ export function zProbePlan(
 				method: capability.method,
 				z: null,
 				candidate: null,
+				previousOffset: capability.configuredOffset ?? null,
+				setting: capability.setting,
 				startedAt: Date.now(),
 				expiresAt: Date.now() + 10 * 60_000,
 				message: null
@@ -95,6 +97,7 @@ export function zProbePlan(
 				if (!c.confirmed) throw Error('Confirm the paper test before accepting.');
 				script = 'ACCEPT';
 				state.session!.stage = 'staged';
+				state.session!.paperZ = c.expectedZ;
 			}
 		}
 	}

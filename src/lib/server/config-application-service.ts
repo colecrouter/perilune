@@ -475,7 +475,8 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 							let path: string,
 								before: string,
 								after: string,
-								revertOf: string | null = null;
+								revertOf: string | null = null,
+								calibrationRun: string | undefined;
 							if ('revertOf' in request) {
 								const original = rows.find((row) => row.id === request.revertOf);
 								if (
@@ -501,6 +502,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 									after = original.after_text;
 								}
 								revertOf = original.id;
+								calibrationRun = recordOf(original).calibrationRun;
 							} else if ('pending' in request) {
 								const config = await idle(signal, false, true);
 								const manifest = pendingManifest(config?.save_config_pending_items);
@@ -516,6 +518,17 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 								const current = await Effect.runPromise(files.read(path, actor), { signal });
 								before = current.text;
 								after = pendingConfigurationText(before, sources, manifest);
+								const session = (await Effect.runPromise(SubscriptionRef.get(printer.state))).liveZ
+									?.session;
+								if (session?.stage === 'staged' && session.setting && session.candidate !== null) {
+									const separator = session.setting.lastIndexOf('.');
+									const value =
+										manifest[session.setting.slice(0, separator)]?.[
+											session.setting.slice(separator + 1)
+										];
+									if (value !== undefined && Number(value) === session.candidate)
+										calibrationRun = session.id;
+								}
 							} else {
 								path = request.path;
 								if (
@@ -587,7 +600,8 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 								createdAt: Date.now(),
 								updatedAt: Date.now(),
 								writeVerified: false,
-								revertOf
+								revertOf,
+								calibrationRun
 							};
 							const row: Row = {
 								id: request.id,

@@ -10,6 +10,7 @@ export interface ConfigApplication {
 	updatedAt: number;
 	writeVerified: boolean;
 	revertOf: string | null;
+	calibrationRun?: string;
 }
 export interface ConfigRecovery {
 	enabled: boolean;

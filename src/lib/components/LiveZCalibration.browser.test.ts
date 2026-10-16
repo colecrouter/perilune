@@ -157,3 +157,48 @@ test('unchanged telemetry preserves paper confirmation while new observations in
 	await screen.rerender({ snapshot });
 	await expect.element(checkbox).not.toBeChecked();
 });
+
+test('coarse approach is explicit, bounded, and returns to fine tuning without losing fine step selection', async () => {
+	const snapshot = state(),
+		onSubmit = vi.fn().mockResolvedValue({ id: crypto.randomUUID() });
+	const screen = await render(LiveZCalibration, {
+		snapshot,
+		userId: 'owner',
+		role: 'owner',
+		connected: true,
+		onSubmit
+	});
+	await screen.getByRole('button', { name: 'Z −', exact: true }).click();
+	expect(onSubmit).toHaveBeenLastCalledWith(
+		expect.objectContaining({ delta: -0.01 }),
+		expect.any(String)
+	);
+	await screen.getByRole('radio', { name: 'Coarse approach', exact: true }).click();
+	await screen.getByRole('radio', { name: '1', exact: true }).click();
+	await screen.getByRole('button', { name: 'Z −', exact: true }).click();
+	expect(onSubmit).toHaveBeenLastCalledWith(
+		expect.objectContaining({ delta: -1, expectedZ: 5, version: 0 }),
+		expect.any(String)
+	);
+	await screen.rerender({
+		snapshot: {
+			...snapshot,
+			zProbe: { ...snapshot.zProbe!, z: snapshot.motion.limits.z!.min + 0.25 }
+		}
+	});
+	await expect.element(screen.getByRole('button', { name: 'Z −', exact: true })).toBeDisabled();
+	await expect.element(screen.getByRole('button', { name: 'Z +', exact: true })).toBeEnabled();
+	await screen.getByRole('radio', { name: 'Fine tuning', exact: true }).click();
+	await expect.element(screen.getByRole('radio', { name: '0.01', exact: true })).toBeChecked();
+	await expect.element(screen.getByRole('button', { name: 'Z −', exact: true })).toBeEnabled();
+	await screen.getByRole('radio', { name: 'Coarse approach', exact: true }).click();
+	await screen.rerender({
+		snapshot: {
+			...snapshot,
+			liveZ: { session: { ...snapshot.liveZ!.session!, id: crypto.randomUUID() } }
+		}
+	});
+	await expect
+		.element(screen.getByRole('radio', { name: 'Fine tuning', exact: true }))
+		.toBeChecked();
+});

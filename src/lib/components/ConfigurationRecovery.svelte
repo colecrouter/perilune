@@ -89,7 +89,12 @@
 </script>
 
 {#if (application && (!compact || application.phase !== 'ready')) || failure || networkFailure}
-	<section class:compact class="recovery" aria-label="Configuration recovery">
+	<section
+		id={compact ? undefined : 'configuration-recovery'}
+		class:compact
+		class="recovery"
+		aria-label="Configuration recovery"
+	>
 		<h2>
 			{pending
 				? 'Applying configuration'

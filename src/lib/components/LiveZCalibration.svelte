@@ -1,4 +1,6 @@
 <script lang="ts">
+	import ZCalibrationResult from './ZCalibrationResult.svelte';
+	import type { LiveZCommand } from '#lib/domain/live-z.js';
 	import { Dialog } from 'bits-ui';
 	import { isHttpError } from '@sveltejs/kit';
 	import type { PrinterSnapshot, PrinterCommand } from '#lib/domain/printer.js';
@@ -23,6 +25,8 @@
 		paper = $state(false),
 		accepted = $state(false),
 		step = $state<number>(0.01),
+		adjustment = $state<'fine' | 'approach'>('fine'),
+		coarseStep = $state<number>(0.5),
 		submitting = $state(false),
 		failure = $state(''),
 		last = $state(''),
@@ -71,11 +75,30 @@
 			failure = '';
 		}
 	});
+	const runIdentity = $derived(session?.id);
+	$effect(() => {
+		void runIdentity;
+		adjustment = 'fine';
+		step = 0.01;
+		coarseStep = 0.5;
+	});
+	const selectedStep = $derived(adjustment === 'fine' ? step : coarseStep);
 	const paperObservation = $derived(JSON.stringify([session?.id, session?.version, cap?.z]));
 	$effect(() => {
 		void paperObservation;
 		accepted = false;
 	});
+	function withinTravel(delta: number) {
+		const z = cap?.z,
+			limits = snapshot.motion.limits.z;
+		return (
+			z !== null &&
+			z !== undefined &&
+			!!limits &&
+			z + delta >= limits.min &&
+			z + delta <= limits.max
+		);
+	}
 	async function send(command: PrinterCommand) {
 		if (pending) return;
 		submitting = true;
@@ -103,7 +126,9 @@
 		{cap?.method === 'endstop' ? 'Find the Z endstop position' : 'Find the nozzle-to-bed gap'}
 	</h2>
 	<p>
-		Klipper probes, then opens its manual paper-test helper. Adjust slowly until the paper has
+		{cap?.method === 'endstop'
+			? 'Klipper opens its manual paper-test helper at the current position.'
+			: 'Klipper probes, then opens its manual paper-test helper.'} Adjust slowly until the paper has
 		slight drag. Stay at the printer; a camera cannot judge the gap.
 	</p>
 	<p>
@@ -121,13 +146,12 @@
 			<a href={`/actions/${last}`}>Check unconfirmed submission receipt</a>
 		</p>{/if}
 	{#if reason}<p role="status" class="notice">{reason}</p>{/if}
+	{#if session && ['staged', 'resolved'].includes(session.stage)}
+		{#key session.id}<ZCalibrationResult {session} capability={cap} {role} />{/key}
+	{/if}
 	{#if !active && !cap?.active}
-		{#if session?.stage === 'staged'}<h3>Accepted · waiting to save</h3>
-			<p>
-				Proposed setting: {session.candidate?.toFixed(3) ?? '—'} mm. Klipper has staged the result. It
-				is not written to configuration or active after restart until you explicitly save it.
-			</p>
-			<a class="button secondary" href="/configuration">Review pending configuration</a>
+		{#if session?.stage === 'staged'}
+			<p>Save or resolve the pending result before beginning another paper test.</p>
 		{:else}
 			<div class="preparation">
 				<p>
@@ -165,45 +189,87 @@
 		{/if}
 	{/if}
 	{#if cap?.active}
-		<p>Observed nozzle height <strong>{cap.z?.toFixed(3) ?? '—'} mm</strong></p>
+		<p class="coordinate">Nozzle Z coordinate <strong>{cap.z?.toFixed(3) ?? '—'} mm</strong></p>
+		<p class="muted">
+			This is the printer’s coordinate, not the measured gap above the bed. Zero may differ from
+			contact; judge the final gap with paper.
+		</p>
 		{#if session}<p>{session.ownerName} owns this session. {session.message ?? ''}</p>{:else}<p>
 				A manual helper is active outside this session. Finish it using its original client before
 				beginning here.
 			</p>{/if}
 		{#if active && owns}
 			<fieldset>
-				<legend>Fine adjustment (mm)</legend>
+				<legend>Adjustment mode</legend>
 				<div class="segments">
-					{#each calibrationSteps as value}<label class:selected={step === value}
-							><input type="radio" name="live-z-step" bind:group={step} {value} />{value}</label
-						>{/each}
+					<label class:selected={adjustment === 'fine'}
+						><input type="radio" name="live-z-mode" bind:group={adjustment} value="fine" />Fine
+						tuning</label
+					>
+					<label class:selected={adjustment === 'approach'}
+						><input
+							type="radio"
+							name="live-z-mode"
+							bind:group={adjustment}
+							value="approach"
+						/>Coarse approach</label
+					>
+				</div>
+			</fieldset>
+			{#if adjustment === 'approach'}<p class="notice">
+					Use coarse steps only while the nozzle is visibly clear of the bed. Switch to fine tuning
+					before the paper starts to drag. Each click moves the full selected distance.
+				</p>{/if}
+			<fieldset>
+				<legend>{adjustment === 'fine' ? 'Fine adjustment (mm)' : 'Approach step (mm)'}</legend>
+				<div class="segments">
+					{#if adjustment === 'fine'}{#each calibrationSteps as value}<label
+								class:selected={step === value}
+								><input type="radio" name="live-z-step" bind:group={step} {value} />{value}</label
+							>{/each}{:else}{#each [0.5, 1] as value}<label class:selected={coarseStep === value}
+								><input
+									type="radio"
+									name="live-z-coarse-step"
+									bind:group={coarseStep}
+									{value}
+								/>{value}</label
+							>{/each}{/if}
 				</div>
 			</fieldset>
 			<div class="movement">
 				<button
 					class="button secondary"
-					disabled={!!reason || pending || cap.z === null}
+					disabled={!!reason || pending || !withinTravel(selectedStep)}
+					title={withinTravel(selectedStep)
+						? `Raise Z by ${selectedStep} mm`
+						: 'This step exceeds configured Z travel'}
 					onclick={() =>
 						send({
 							type: 'zProbeAdjust',
 							run: session!.id,
 							version: session!.version,
 							expectedZ: cap!.z!,
-							delta: step as 0.005 | 0.01 | 0.05 | 0.1
+							delta: selectedStep as Extract<LiveZCommand, { type: 'zProbeAdjust' }>['delta']
 						})}>Z +</button
 				><button
 					class="button secondary"
-					disabled={!!reason || pending || cap.z === null}
+					disabled={!!reason || pending || !withinTravel(-selectedStep)}
+					title={withinTravel(-selectedStep)
+						? `Lower Z by ${selectedStep} mm`
+						: 'This step exceeds configured Z travel'}
 					onclick={() =>
 						send({
 							type: 'zProbeAdjust',
 							run: session!.id,
 							version: session!.version,
 							expectedZ: cap!.z!,
-							delta: -step as -0.005 | -0.01 | -0.05 | -0.1
+							delta: -selectedStep as Extract<LiveZCommand, { type: 'zProbeAdjust' }>['delta']
 						})}>Z −</button
 				>
 			</div>
+			<p class="step-readout" role="status">
+				Each click: {selectedStep} mm · {adjustment === 'fine' ? 'Fine tuning' : 'Coarse approach'}
+			</p>
 			<p class="muted">
 				Z + raises the nozzle; Z − lowers it. Each command waits for acknowledgement and fresh
 				position before another step.
@@ -271,8 +337,7 @@
 		padding: clamp(1rem, 3vw, 2rem);
 		max-width: 52rem;
 	}
-	h2,
-	h3 {
+	h2 {
 		margin: 0.5rem 0;
 	}
 	p {

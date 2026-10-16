@@ -331,6 +331,23 @@ try {
 	await page.getByRole('button', { name: 'Z +', exact: true }).waitFor();
 	await page.getByRole('button', { name: 'Z +', exact: true }).click();
 	await page.getByText('5.010 mm', { exact: true }).waitFor();
+	await page.getByRole('radio', { name: 'Coarse approach', exact: true }).check();
+	await page.getByRole('radio', { name: '1', exact: true }).check();
+	await mkdir('test-results', { recursive: true });
+	await page.screenshot({ path: 'test-results/live-z-approach-desktop.png', fullPage: true });
+	await page.setViewportSize({ width: 320, height: 800 });
+	assert.equal(
+		await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+		false,
+		'Z approach fits 320px'
+	);
+	await page.screenshot({ path: 'test-results/live-z-approach-mobile.png', fullPage: true });
+	await page.getByRole('button', { name: 'Z −', exact: true }).click();
+	await page.getByText('4.010 mm', { exact: true }).waitFor();
+	await page.getByRole('radio', { name: 'Fine tuning', exact: true }).check();
+	assert.equal(await page.getByRole('radio', { name: '0.01', exact: true }).isChecked(), true);
+	await page.setViewportSize({ width: 1440, height: 1000 });
+
 	await page.getByRole('button', { name: 'Abort paper test…', exact: true }).click();
 	await page
 		.getByRole('dialog')
@@ -341,6 +358,29 @@ try {
 		.waitFor();
 	assert.equal(status.manual_probe.is_active, false);
 	assert.equal(status.configfile.save_config_pending, false);
+	await page.getByRole('button', { name: 'Begin paper test', exact: true }).click();
+	await page.getByRole('checkbox', { name: /I checked the paper drag/ }).check();
+	await page.getByRole('button', { name: 'Accept height · stage result', exact: true }).click();
+	await page.getByRole('heading', { name: 'Accepted · waiting to save', exact: true }).waitFor();
+	await page
+		.getByRole('region', { name: 'Z calibration result' })
+		.getByText('5.000 mm', { exact: true })
+		.waitFor();
+	status.configfile.save_config_pending = false;
+	status.configfile.save_config_pending_items = {};
+	publish();
+	await page.getByRole('heading', { name: 'Accepted result', exact: true }).waitFor();
+	await page.getByText(/that alone does not prove/).waitFor();
+	await page.reload();
+	await page.getByRole('heading', { name: 'Accepted result', exact: true }).waitFor();
+	await page.setViewportSize({ width: 320, height: 800 });
+	assert.equal(
+		await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+		false,
+		'Z result fits 320px'
+	);
+	await page.screenshot({ path: 'test-results/live-z-result-mobile.png', fullPage: true });
+	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.goto(base + '/controls');
 	drop = true;
 	await page.getByRole('button', { name: 'Disengage motors', exact: true }).click();
