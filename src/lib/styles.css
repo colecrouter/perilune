@@ -1000,3 +1000,15 @@ progress::-moz-progress-bar {
 .temperature-panel .section-header .button {
 	font-size: 12px;
 }
+
+/* Forms remain the same visual action size as adjacent standalone buttons. */
+.job-actions > form {
+	flex: 1;
+}
+.job-actions > form > .button {
+	width: 100%;
+}
+.button[aria-disabled='true'] {
+	opacity: 0.5;
+	cursor: not-allowed;
+}

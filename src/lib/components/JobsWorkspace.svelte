@@ -2,6 +2,9 @@
 	import { onMount, untrack } from 'svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page, navigating } from '$app/state';
+	import ActionForm from './ActionForm.svelte';
+	import { liveConnection } from '#lib/client/live-connection.svelte.js';
+	import type { PrinterSnapshot } from '#lib/domain/printer.js';
 	import JobTable from './JobTable.svelte';
 	import { jobQueryString, type JobPage } from '#lib/domain/job-query.js';
 	import { Dialog } from 'bits-ui';
@@ -11,11 +14,12 @@
 	import CancelDialog from '#lib/components/CancelDialog.svelte';
 	import { durationLabel, startReason, MAX_GCODE_BYTES, type JobFile } from '#lib/domain/jobs.js';
 	import type { PrinterCommand } from '#lib/domain/printer.js';
-	import { getDashboard, submitAction } from '../../routes/printer.remote.js';
+	import { getPrinter, submitAction } from '../../routes/printer.remote.js';
 	let {
 		data
 	}: {
 		data: {
+			initial?: { printer: PrinterSnapshot };
 			catalog: JobPage;
 			selected: JobFile | null;
 			missingFile: boolean;
@@ -23,10 +27,14 @@
 			user: { role: string } | null;
 		};
 	} = $props();
-	const dashboard = getDashboard();
-	const initial = await dashboard;
+	const dashboard = getPrinter();
+	const updates = liveConnection(() => dashboard.connected);
+	const initial = $derived(data.initial!.printer);
+	onMount(() => {
+		void Promise.resolve(dashboard).catch(() => {});
+	});
 	const library = { refresh: () => invalidate('perilune:jobs') };
-	const snapshot = $derived(dashboard.current?.printer ?? initial.printer);
+	const snapshot = $derived(dashboard.current ?? initial);
 	const catalog = $derived(data.catalog);
 	const canOperate = $derived(data.user?.role === 'owner' || data.user?.role === 'operator');
 	const live = $derived(snapshot.mode === 'moonraker');
@@ -36,7 +44,7 @@
 	const reason = $derived(
 		!canOperate
 			? 'An operator account is required.'
-			: !dashboard.connected
+			: !updates.available
 				? 'Reconnecting to Perilune. Your selection is retained.'
 				: startReason(snapshot)
 	);
@@ -81,7 +89,7 @@
 	const currentReady = $derived(
 		canOperate &&
 			!live &&
-			dashboard.connected &&
+			updates.available &&
 			snapshot.connection === 'connected' &&
 			snapshot.klippy === 'ready' &&
 			!pending &&
@@ -289,9 +297,9 @@
 		</header>
 		{#if failure}<p role="alert" class="notice error-text">{failure}</p>{/if}
 		{#if message}<p role="status" class="notice">{message}</p>{/if}
-		{#if !dashboard.connected || snapshot.connection !== 'connected' || snapshot.klippy !== 'ready'}
+		{#if !updates.available || snapshot.connection !== 'connected' || snapshot.klippy !== 'ready'}
 			<p class="notice" role="status">
-				{!dashboard.connected ? 'Reconnecting to Perilune.' : 'The printer is unavailable.'} Showing the
+				{!updates.available ? 'Reconnecting to Perilune.' : 'The printer is unavailable.'} Showing the
 				last known job; your file selection is retained. Print controls will return when the connection
 				is ready.
 			</p>
@@ -327,20 +335,32 @@
 					></progress>{/if}
 			</div>
 			<div class="job-actions">
-				{#if currentActive}<button
-						class="button secondary"
-						disabled={!currentReady}
-						onclick={() =>
-							void command({ type: snapshot.job.state === 'paused' ? 'resume' : 'pause' }).catch(
-								() => {}
-							)}>{snapshot.job.state === 'paused' ? 'Resume print' : 'Pause print'}</button
-					><button
+				{#if currentActive}<ActionForm
+						fields={{
+							intent: snapshot.job.state === 'paused' ? 'resume' : 'pause',
+							filename: snapshot.job.filename,
+							runId: snapshot.job.runId ?? ''
+						}}
+						>{#snippet children({ pending, uncertain })}<button
+								class="button secondary"
+								disabled={!currentReady || pending || uncertain}
+								>{pending
+									? 'Submitting…'
+									: snapshot.job.state === 'paused'
+										? 'Resume print'
+										: 'Pause print'}</button
+							>{/snippet}</ActionForm
+					><a
+						role="button"
+						href={`/actions?intent=cancel&filename=${encodeURIComponent(snapshot.job.filename)}&runId=${encodeURIComponent(snapshot.job.runId ?? '')}`}
 						class="button danger"
-						disabled={!currentReady}
-						onclick={() => {
+						aria-disabled={!currentReady}
+						onclick={(event) => {
+							event.preventDefault();
+							if (!currentReady) return;
 							stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
 							cancelOpen = true;
-						}}>Stop print</button
+						}}>Stop print</a
 					>{:else}<a class="button secondary" href={resolve('/')}>View overview</a>{/if}
 			</div>
 		</section>
@@ -494,13 +514,17 @@
 								print.
 							</p>{/if}
 					</div>
-					<button
+					<a
+						role="button"
+						href={`/actions?intent=start&fileId=${selected.id}`}
 						class="button primary start-button"
-						disabled={Boolean(reason) || missing || submitting || stale || !catalog.available}
-						onclick={() => {
+						aria-disabled={Boolean(reason) || missing || submitting || stale || !catalog.available}
+						onclick={(event) => {
+							event.preventDefault();
+							if (reason || missing || submitting || stale || !catalog.available) return;
 							startOpen = true;
 							failure = '';
-						}}>Review & start {live ? 'print' : 'simulation'}</button
+						}}>Review & start {live ? 'print' : 'simulation'}</a
 					>
 					{#if canOperate && !live}<button
 							class="button secondary start-button"
@@ -652,7 +676,7 @@
 	></Dialog.Root
 >
 <CancelDialog
-	available={dashboard.connected &&
+	available={updates.available &&
 		snapshot.connection === 'connected' &&
 		snapshot.klippy === 'ready'}
 	bind:open={cancelOpen}

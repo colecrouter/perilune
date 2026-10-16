@@ -1,9 +1,20 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { liveConnection } from '#lib/client/live-connection.svelte.js';
+	import ActionForm from '#lib/components/ActionForm.svelte';
 	import { Switch } from 'bits-ui';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import Icon from '#lib/components/Icon.svelte';
-	import TemperatureHistory from '#lib/components/TemperatureHistory.svelte';
+	let TemperatureHistory = $state<
+		typeof import('#lib/components/TemperatureHistory.svelte').default | null
+	>(null);
+	onMount(() => {
+		void import('#lib/components/TemperatureHistory.svelte')
+			.then((module) => (TemperatureHistory = module.default))
+			.catch(() => {
+				historyUnavailable = true;
+			});
+	});
 	import {
 		temperatureSensors,
 		heaterTargetsOff,
@@ -24,10 +35,17 @@
 	let { data } = $props();
 	const dashboard = getDashboard();
 	const temperatureHistory = getTemperatureHistory();
-	const [initial, initialHistory] = await Promise.all([dashboard, temperatureHistory]);
+	const initial = $derived(data.initial!);
+	const updates = liveConnection(() => dashboard.connected);
+	onMount(() => {
+		void Promise.resolve(dashboard).catch(() => {});
+		void Promise.resolve(temperatureHistory).catch(() => {
+			historyUnavailable = true;
+		});
+	});
 	const snapshot = $derived(dashboard.current?.printer ?? initial.printer);
 	const cameraSnapshot = $derived(dashboard.current?.camera ?? initial.camera);
-	const samples = $derived(temperatureHistory.current ?? initialHistory);
+	const samples = $derived(temperatureHistory.current ?? []);
 	let historyUnavailable = $state(false);
 	onMount(() => {
 		let refreshing = false;
@@ -60,7 +78,7 @@
 		snapshot.connection.charAt(0).toUpperCase() + snapshot.connection.slice(1)
 	);
 	const connected = $derived(snapshot.connection === 'connected');
-	const transportConnected = $derived(dashboard.connected);
+	const transportConnected = $derived(updates.available);
 	const sensors = $derived(temperatureSensors(snapshot));
 	const thermalReady = $derived(
 		snapshot.connection === 'connected' && snapshot.klippy === 'ready' && transportConnected
@@ -68,7 +86,7 @@
 	const alreadyOff = $derived(thermalReady && heaterTargetsOff(snapshot));
 	const thermalReason = $derived(
 		!transportConnected
-			? 'Reconnecting to Perilune. History and drafts are retained.'
+			? `${updates.label}. History and drafts are retained.`
 			: data.user?.role === 'viewer'
 				? 'An operator account is required to change temperatures.'
 				: temperatureReason(snapshot)
@@ -121,7 +139,7 @@
 				<span class="connection-status"
 					><span class="status-dot" class:offline={!connected || !transportConnected}
 					></span>{!transportConnected
-						? 'Reconnecting'
+						? updates.label
 						: connected
 							? 'Connected'
 							: connectionLabel}</span
@@ -170,7 +188,7 @@
 			>
 				<strong
 					>{!transportConnected
-						? 'Reconnecting to Perilune'
+						? updates.label
 						: snapshot.connection === 'connected'
 							? `Klipper ${snapshot.klippy}`
 							: live
@@ -230,31 +248,53 @@
 						</div>
 					</div>
 					<div class="job-actions">
-						<button
-							class="button primary"
-							disabled={readOnly ||
-								busy ||
-								!connected ||
-								!transportConnected ||
-								(snapshot.job.state !== 'printing' && snapshot.job.state !== 'paused')}
-							onclick={() =>
-								control(() => send({ type: snapshot.job.state === 'paused' ? 'resume' : 'pause' }))}
-							><Icon name={snapshot.job.state === 'paused' ? 'play' : 'pause'} size={18} />{busy
-								? 'Action pending…'
-								: snapshot.job.state === 'paused'
-									? 'Resume print'
-									: 'Pause print'}</button
-						><button
+						<ActionForm
+							fields={{
+								intent: snapshot.job.state === 'paused' ? 'resume' : 'pause',
+								filename: snapshot.job.filename,
+								runId: snapshot.job.runId ?? ''
+							}}
+							>{#snippet children({ pending, uncertain })}<button
+									class="button primary"
+									disabled={readOnly ||
+										busy ||
+										pending ||
+										uncertain ||
+										!connected ||
+										!transportConnected ||
+										!['printing', 'paused'].includes(snapshot.job.state)}
+									><Icon
+										name={snapshot.job.state === 'paused' ? 'play' : 'pause'}
+										size={18}
+									/>{pending
+										? 'Submitting…'
+										: snapshot.job.state === 'paused'
+											? 'Resume print'
+											: 'Pause print'}</button
+								>{/snippet}</ActionForm
+						>
+						<a
+							role="button"
+							href={`/actions?intent=cancel&filename=${encodeURIComponent(snapshot.job.filename)}&runId=${encodeURIComponent(snapshot.job.runId ?? '')}`}
 							class="button danger-outline"
-							disabled={readOnly ||
+							aria-disabled={readOnly ||
 								busy ||
 								!connected ||
 								!transportConnected ||
 								(snapshot.job.state !== 'printing' && snapshot.job.state !== 'paused')}
-							onclick={() => {
+							onclick={(event) => {
+								event.preventDefault();
+								if (
+									readOnly ||
+									busy ||
+									!connected ||
+									!transportConnected ||
+									!['printing', 'paused'].includes(snapshot.job.state)
+								)
+									return;
 								stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
 								cancelOpen = true;
-							}}><Icon name="stop" size={16} />Stop print</button
+							}}><Icon name="stop" size={16} />Stop print</a
 						>
 					</div>
 				</section>
@@ -263,12 +303,16 @@
 				<section class="panel temperature-panel">
 					<div class="section-header">
 						<h2>Temperature</h2>
-						<button
-							class="button secondary"
-							disabled={busy || readOnly || !!thermalReason || alreadyOff}
-							title={alreadyOff ? 'Both heater targets are already off.' : undefined}
-							onclick={() => control(() => send({ type: 'cooldown' }))}
-							>Cool down nozzle & bed</button
+						<ActionForm fields={{ intent: 'cooldown' }}
+							>{#snippet children({ pending, uncertain })}<button
+									class="button secondary"
+									disabled={busy ||
+										readOnly ||
+										!!thermalReason ||
+										alreadyOff ||
+										pending ||
+										uncertain}>Cool down nozzle &amp; bed</button
+								>{/snippet}</ActionForm
 						>
 					</div>
 					{#if thermalReason}<p class="muted">{thermalReason}</p>{/if}
@@ -277,6 +321,7 @@
 						</p>{/if}
 					{#if sensors.some((sensor) => sensor.id === 'extruder')}<HeaterControl
 							heater="nozzle"
+							progressive
 							current={snapshot.heaters.nozzle.current}
 							target={snapshot.heaters.nozzle.target}
 							{readOnly}
@@ -287,6 +332,7 @@
 							onSet={(target) => send({ type: 'temperature', heater: 'nozzle', target })}
 						/>{/if}{#if sensors.some((sensor) => sensor.id === 'heater_bed')}<HeaterControl
 							heater="bed"
+							progressive
 							current={snapshot.heaters.bed.current}
 							target={snapshot.heaters.bed.target}
 							{readOnly}
@@ -310,12 +356,12 @@
 							</dl>
 							<p class="muted">Additional heaters are monitored read-only.</p>
 						</details>{/if}
-					<TemperatureHistory
-						{samples}
-						{sensors}
-						connected={thermalReady}
-						unavailable={historyUnavailable}
-					/>
+					{#if TemperatureHistory}<TemperatureHistory
+							{samples}
+							{sensors}
+							connected={thermalReady}
+							unavailable={historyUnavailable}
+						/>{:else}<p class="muted">Temperature history loads separately from controls.</p>{/if}
 				</section>
 				<section class="panel">
 					<div class="section-header"><h2>Connection</h2></div>
@@ -336,8 +382,7 @@
 						<div>
 							<dt>Updates</dt>
 							<dd>
-								<span class="status-dot" class:offline={!transportConnected}
-								></span>{transportConnected ? 'Live' : 'Reconnecting'}
+								<span class="status-dot" class:offline={!transportConnected}></span>{updates.label}
 							</dd>
 						</div>
 					</dl>

@@ -1,15 +1,21 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { liveConnection } from '#lib/client/live-connection.svelte.js';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import BedMeshProbe from '#lib/components/BedMeshProbe.svelte';
 	import type { PrinterCommand } from '#lib/domain/printer.js';
 	import BedMeshInspector from '#lib/components/BedMeshInspector.svelte';
-	import { getDashboard, submitAction } from '../../printer.remote.js';
+	import { getPrinter, submitAction } from '../../printer.remote.js';
 	let { data } = $props();
-	const dashboard = getDashboard();
-	const initial = await dashboard;
-	const snapshot = $derived(dashboard.current?.printer ?? initial.printer);
+	const dashboard = getPrinter();
+	const initial = $derived(data.initial!.printer);
+	const updates = liveConnection(() => dashboard.connected);
+	onMount(() => {
+		void Promise.resolve(dashboard).catch(() => {});
+	});
+	const snapshot = $derived(dashboard.current ?? initial);
 	const fresh = $derived(
-		dashboard.connected &&
+		updates.available &&
 			snapshot.connection === 'connected' &&
 			snapshot.klippy === 'ready' &&
 			snapshot.telemetryReady
@@ -48,7 +54,7 @@
 		</header>
 		<BedMeshProbe
 			{snapshot}
-			connected={dashboard.connected}
+			connected={updates.available}
 			userId={data.user?.id ?? ''}
 			role={data.user?.role ?? 'viewer'}
 			onSubmit={submit}

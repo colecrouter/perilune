@@ -1,11 +1,17 @@
 <script lang="ts">
 	import AppShell from '#lib/components/AppShell.svelte';
 	import MotionControls from '#lib/components/MotionControls.svelte';
-	import { getDashboard, submitAction } from '../printer.remote.js';
+	import { liveConnection } from '#lib/client/live-connection.svelte.js';
+	import { onMount } from 'svelte';
+	import { getPrinter, submitAction } from '../printer.remote.js';
 	let { data } = $props();
-	const printer = getDashboard();
-	const initial = await printer;
-	const snapshot = $derived(printer.current?.printer ?? initial.printer);
+	const printer = getPrinter();
+	const initial = $derived(data.initial!.printer);
+	const updates = liveConnection(() => printer.connected);
+	onMount(() => {
+		void Promise.resolve(printer).catch(() => {});
+	});
+	const snapshot = $derived(printer.current ?? initial);
 </script>
 
 <svelte:head><title>Printer controls · Perilune</title></svelte:head>
@@ -17,8 +23,9 @@
 			<p>Review a destination, then move with clear limits and shared action state.</p>
 		</header>
 		<MotionControls
+			progressive
 			{snapshot}
-			transportConnected={printer.connected}
+			transportConnected={updates.available}
 			canOperate={data.user?.role !== 'viewer'}
 			onSubmit={(command) => submitAction({ id: crypto.randomUUID(), command })}
 		/>

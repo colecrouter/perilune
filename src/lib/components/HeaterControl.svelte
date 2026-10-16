@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import ActionForm from './ActionForm.svelte';
+	import { onMount, untrack } from 'svelte';
 	import { heaterState } from '#lib/domain/temperature.js';
 	import Icon from './Icon.svelte';
 	let {
@@ -8,6 +9,7 @@
 		target,
 		pending,
 		readOnly = false,
+		progressive = false,
 		available = true,
 		onSet
 	}: {
@@ -16,10 +18,15 @@
 		target: number | null;
 		pending: boolean;
 		readOnly?: boolean;
+		progressive?: boolean;
 		available?: boolean;
 		onSet: (target: number) => Promise<void>;
 	} = $props();
 	// A draft belongs to this input, not to the incoming printer snapshot.
+	let enhanced = $state(false);
+	onMount(() => {
+		enhanced = true;
+	});
 	let draft = $state(untrack(() => target));
 	let error = $state('');
 	let dirty = $state(false);
@@ -68,57 +75,152 @@
 			>
 		</div>
 	</div>
-	<form onsubmit={submit}>
-		<label for={`${heater}-target`}>Target (°C)</label>
-		<div class="heater-input">
-			<input
-				id={`${heater}-target`}
-				aria-label={`${title} target`}
-				type="number"
-				min="0"
-				max={heater === 'bed' ? 120 : 300}
-				step="1"
-				required
-				bind:value={draft}
-				oninput={() => (dirty = true)}
-			/><button
-				class="button primary"
-				disabled={pending || readOnly || !available || submitting || unchanged}
-				title={unchanged ? `Target already set to ${target}°C.` : undefined}
-				type="submit">{readOnly ? 'Read-only' : pending ? 'Pending…' : 'Set'}</button
+	{#if progressive}<div class="heater-controls">
+			<ActionForm
+				fields={{ intent: 'temperature', heater }}
+				onAccepted={(_, submitted) => {
+					submittedTarget = Number(submitted.get('target'));
+				}}
+				>{#snippet children({ pending: submitting, uncertain })}
+					<label for={`${heater}-target`}>Target (°C)</label>
+					<div class="heater-input">
+						<input
+							id={`${heater}-target`}
+							name="target"
+							aria-label={`${title} target`}
+							type="number"
+							min="0"
+							max={heater === 'bed' ? 120 : 300}
+							step="1"
+							required
+							bind:value={
+								() => draft,
+								(value) => {
+									draft = value;
+									dirty = true;
+								}
+							}
+						/><button
+							class="button primary"
+							disabled={pending ||
+								readOnly ||
+								!available ||
+								submitting ||
+								uncertain ||
+								(enhanced && unchanged)}
+						>
+							{submitting ? 'Submitting…' : 'Set'}</button
+						>
+					</div>
+				{/snippet}</ActionForm
 			>
-		</div>
-		<button
-			class="button secondary"
-			type="button"
-			disabled={pending || readOnly || !available || submitting || alreadyOff}
-			title={alreadyOff ? 'Heater target is already off; it may still be cooling.' : undefined}
-			onclick={async () => {
-				error = '';
-				submitting = true;
-				try {
-					await onSet(0);
-					draft = 0;
-					dirty = true;
+			<ActionForm
+				fields={{ intent: 'temperature', heater, target: '0' }}
+				onAccepted={(_, submitted) => {
+					if (String(draft ?? '') === submitted.get('previousDraft')) {
+						draft = 0;
+						dirty = true;
+					}
 					submittedTarget = 0;
-				} catch (cause) {
-					error = cause instanceof Error ? cause.message : 'Could not cool down';
-				} finally {
-					submitting = false;
-				}
-			}}>Cool down {title.toLowerCase()}</button
-		>
-		{#if unchanged && !alreadyOff}<small class="target-hint"
-				>Target already set to {target}°C.</small
-			>{/if}
-		{#if alreadyOff}<small class="target-hint"
-				>Target is already off; the {title.toLowerCase()} may still be cooling.</small
-			>{/if}
-	</form>
+				}}
+				>{#snippet children({ pending: submitting, uncertain })}<input
+						type="hidden"
+						name="previousDraft"
+						value={draft ?? ''}
+					/><button
+						class="button secondary"
+						disabled={pending || readOnly || !available || submitting || uncertain || alreadyOff}
+						>Cool down {title.toLowerCase()}</button
+					>{/snippet}</ActionForm
+			>
+			{#if unchanged && !alreadyOff}<small class="target-hint"
+					>Target already set to {target}°C.</small
+				>{/if}{#if alreadyOff}<small class="target-hint"
+					>Target is already off; the {title.toLowerCase()} may still be cooling.</small
+				>{/if}
+		</div>
+	{:else}
+		<form onsubmit={submit}>
+			<label for={`${heater}-target`}>Target (°C)</label>
+			<div class="heater-input">
+				<input
+					id={`${heater}-target`}
+					aria-label={`${title} target`}
+					type="number"
+					min="0"
+					max={heater === 'bed' ? 120 : 300}
+					step="1"
+					required
+					bind:value={draft}
+					oninput={() => (dirty = true)}
+				/><button
+					class="button primary"
+					disabled={pending || readOnly || !available || submitting || unchanged}
+					title={unchanged ? `Target already set to ${target}°C.` : undefined}
+					type="submit">{readOnly ? 'Read-only' : pending ? 'Pending…' : 'Set'}</button
+				>
+			</div>
+			<button
+				class="button secondary"
+				type="button"
+				disabled={pending || readOnly || !available || submitting || alreadyOff}
+				title={alreadyOff ? 'Heater target is already off; it may still be cooling.' : undefined}
+				onclick={async () => {
+					error = '';
+					submitting = true;
+					try {
+						await onSet(0);
+						draft = 0;
+						dirty = true;
+						submittedTarget = 0;
+					} catch (cause) {
+						error = cause instanceof Error ? cause.message : 'Could not cool down';
+					} finally {
+						submitting = false;
+					}
+				}}>Cool down {title.toLowerCase()}</button
+			>
+			{#if unchanged && !alreadyOff}<small class="target-hint"
+					>Target already set to {target}°C.</small
+				>{/if}
+			{#if alreadyOff}<small class="target-hint"
+					>Target is already off; the {title.toLowerCase()} may still be cooling.</small
+				>{/if}
+		</form>{/if}
 </div>
 {#if error}<p class="error-text" role="alert">{error}</p>{/if}
 
 <style>
+	.heater-controls {
+		min-width: 0;
+		max-width: 210px;
+	}
+	.heater-controls :global(form) {
+		width: 100%;
+	}
+	.heater-controls :global(form + form) {
+		margin-top: 0.5rem;
+	}
+	.heater-controls :global(form + form .button) {
+		width: 100%;
+		font-size: 0.75rem;
+		min-height: 44px;
+		padding: 0.35rem 0.6rem;
+	}
+	@media (max-width: 400px) {
+		.heater:has(.heater-controls) {
+			align-items: stretch;
+			flex-direction: column;
+		}
+		.heater-controls {
+			max-width: none;
+		}
+		.heater-controls .heater-input input {
+			flex: 1;
+			width: 100%;
+		}
+	}
+
 	.target-hint {
 		display: block;
 		color: var(--muted);

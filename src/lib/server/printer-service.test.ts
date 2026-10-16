@@ -346,3 +346,36 @@ it('records short disconnects even between scheduled temperature samples', async
 	await expect.poll(async () => (await history()).at(-1)?.readings.extruder.current).not.toBeNull();
 	expect((await history()).some((s) => s.readings.extruder.current === null)).toBe(true);
 });
+
+it('binds basic command deduplication to its operator and rechecks authorization at execution', async () => {
+	const { runtime, service, snapshot, store } = await create();
+	let authorized = true;
+	const actor = {
+		id: 'operator',
+		name: 'Operator',
+		role: 'operator' as const,
+		authorized: () => authorized
+	};
+	const request = { id: randomUUID(), command: { type: 'pause' as const } };
+	await runtime.runPromise(service.submit(request, actor));
+	expect((await runtime.runPromise(store.find(request.id)))?.actorId).toBe(actor.id);
+	await expect(
+		runtime.runPromise(service.submit(request, { ...actor, id: 'other' }))
+	).rejects.toThrow('different command');
+	authorized = false;
+	await expect.poll(async () => (await snapshot()).actions[0]?.status).toBe('failed');
+	expect((await snapshot()).job.state).toBe('printing');
+	await expect(
+		runtime.runPromise(
+			service.submit(
+				{ id: randomUUID(), command: { type: 'pause' } },
+				{
+					...actor,
+					authorized: () => {
+						throw new Error('closed auth');
+					}
+				}
+			)
+		)
+	).rejects.toThrow('no longer authorized');
+});

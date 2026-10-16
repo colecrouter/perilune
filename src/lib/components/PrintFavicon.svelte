@@ -2,14 +2,14 @@
 	import { onMount } from 'svelte';
 	import { asset } from '$app/paths';
 	import { moonPhasePath } from '#lib/domain/moon.js';
-	import { getDashboard } from '../../routes/printer.remote.js';
+	import { getPrinter } from '../../routes/printer.remote.js';
 	import fallback from '#lib/assets/favicon.svg';
 
-	const dashboard = getDashboard();
+	const dashboard = getPrinter();
 	onMount(() => {
 		void Promise.resolve(dashboard).catch(() => {});
 	});
-	const printer = $derived(dashboard.current?.printer);
+	const printer = $derived(dashboard.current);
 	const progress = $derived.by(() => {
 		if (!printer) return null;
 		if (printer.job.state === 'complete') return 1;

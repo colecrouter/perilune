@@ -196,11 +196,7 @@ export const makePrinterService = (
 										: undefined;
 								const result = yield* Effect.try({
 									try: () => {
-										if (
-											actorCommand(request.command) &&
-											request.actor?.authorized &&
-											!request.actor.authorized()
-										)
+										if (request.actor?.authorized && !request.actor.authorized())
 											throw new CommandRejected({
 												message: 'The operator account is no longer authorized.'
 											});
@@ -576,11 +572,22 @@ export const makePrinterService = (
 											message: 'The filament run ID must match its begin action ID.'
 										})
 									);
+								const authorized = (() => {
+									try {
+										return actor?.authorized?.() !== false;
+									} catch {
+										return false;
+									}
+								})();
+								if (!authorized)
+									return yield* Effect.fail(
+										new ActionRejected({ message: 'The operator account is no longer authorized.' })
+									);
 								const existing = yield* store.find(request.id);
 								if (existing) {
 									if (
 										existing.payload !== JSON.stringify(request.command) ||
-										(actorCommand(request.command) && existing.actorId !== actor?.id)
+										existing.actorId !== (actor?.id ?? null)
 									)
 										return yield* Effect.fail(
 											new ActionRejected({
@@ -735,11 +742,7 @@ export const makePrinterService = (
 									createdAt: Date.now(),
 									message: null
 								};
-								yield* store.insert(
-									action,
-									request.command,
-									actorCommand(request.command) ? actor?.id : undefined
-								);
+								yield* store.insert(action, request.command, actor?.id);
 								pending.set(action.id, { ...request, actor });
 								yield* update((snapshot) => ({
 									...snapshot,

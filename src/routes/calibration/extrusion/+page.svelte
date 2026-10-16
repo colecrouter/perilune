@@ -1,15 +1,21 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { liveConnection } from '#lib/client/live-connection.svelte.js';
 	import { goto } from '$app/navigation';
 	import { calibrationHandoff } from '#lib/client/calibration-draft.svelte.js';
 	import { calculateExtrusion, type ExtrusionProposal } from '#lib/domain/extrusion.js';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import ExtrusionWorkshop from '#lib/components/ExtrusionWorkshop.svelte';
 	import type { PrinterCommand } from '#lib/domain/printer.js';
-	import { getDashboard, submitAction } from '../../printer.remote.js';
+	import { getPrinter, submitAction } from '../../printer.remote.js';
 	let { data } = $props();
-	const dashboard = getDashboard();
-	const initial = await dashboard;
-	const snapshot = $derived(dashboard.current?.printer ?? initial.printer);
+	const dashboard = getPrinter();
+	const initial = $derived(data.initial!.printer);
+	const updates = liveConnection(() => dashboard.connected);
+	onMount(() => {
+		void Promise.resolve(dashboard).catch(() => {});
+	});
+	const snapshot = $derived(dashboard.current ?? initial);
 	function reviewProposal(measurement: ExtrusionProposal) {
 		if (data.user?.role !== 'owner') return;
 		calibrationHandoff.proposal = {
@@ -48,7 +54,7 @@
 		</header>
 		<ExtrusionWorkshop
 			{snapshot}
-			connected={dashboard.connected}
+			connected={updates.available}
 			userId={data.user?.id ?? ''}
 			role={data.user?.role ?? 'viewer'}
 			onSubmit={submit}

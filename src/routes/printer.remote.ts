@@ -1,6 +1,5 @@
-import { LiveMeshService } from '#lib/server/live-mesh-service.js';
+import { submitPrinterAction } from '#lib/server/printer-actions.js';
 import { command, getRequestEvent, query } from '$app/server';
-import { error } from '@sveltejs/kit';
 import { Effect, Schema, Stream, SubscriptionRef } from 'effect';
 import { authService, requireIdentity } from '#lib/server/auth/index.js';
 import { ActionRequest } from '#lib/domain/printer.js';
@@ -84,31 +83,9 @@ export const getTemperatureHistory = query(async () => {
 	return runtime.runPromise(SubscriptionRef.get(service.temperatureHistory));
 });
 
-export const submitAction = command(Schema.toStandardSchemaV1(ActionRequest), async (request) => {
-	const identity = requireIdentity(getRequestEvent(), 'operator');
-	const actor = {
-		id: identity.user.id,
-		name: identity.user.name,
-		role: identity.user.role,
-		authorized: () =>
-			Boolean(authService!.valid(identity)) && ['owner', 'operator'].includes(identity.user.role)
-	};
-	const result = await requestEffect(
-		Effect.promise(() =>
-			runtime.runPromise(
-				Effect.gen(function* () {
-					const service = yield* PrinterService;
-					const snapshot = yield* SubscriptionRef.get(service.state);
-					if (snapshot.mode === 'moonraker')
-						return yield* (yield* LiveMeshService).submit(request, actor);
-					return yield* service.submit(request, actor);
-				}).pipe(Effect.result)
-			)
-		)
-	);
-	if (result._tag === 'Failure') error(409, result.failure.message);
-	return result.success;
-});
+export const submitAction = command(Schema.toStandardSchemaV1(ActionRequest), (request) =>
+	submitPrinterAction(getRequestEvent(), request)
+);
 export const setSimulatorConnection = command(
 	Schema.toStandardSchemaV1(Schema.Boolean),
 	requestEffect.handler((connected) => {

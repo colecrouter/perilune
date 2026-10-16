@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { liveConnection } from '#lib/client/live-connection.svelte.js';
 	import { Dialog } from 'bits-ui';
 	import { isHttpError } from '@sveltejs/kit';
 	import { resolve } from '$app/paths';
@@ -13,11 +15,15 @@
 	import { allAxesHomed } from '#lib/domain/motion.js';
 	import { heaterTargetsOff } from '#lib/domain/temperature.js';
 	import type { PrinterCommand } from '#lib/domain/printer.js';
-	import { getDashboard, submitAction } from '../printer.remote.js';
+	import { getPrinter, submitAction } from '../printer.remote.js';
 	let { data } = $props();
-	const dashboard = getDashboard();
-	const initial = await dashboard;
-	const snapshot = $derived(dashboard.current?.printer ?? initial.printer);
+	const dashboard = getPrinter();
+	const initial = $derived(data.initial!.printer);
+	const updates = liveConnection(() => dashboard.connected);
+	onMount(() => {
+		void Promise.resolve(dashboard).catch(() => {});
+	});
+	const snapshot = $derived(dashboard.current ?? initial);
 	const calibration = $derived(snapshot.calibration);
 	const session = $derived(calibration.session);
 	const active = $derived(calibrationActive(calibration));
@@ -50,23 +56,23 @@
 		observation = null;
 	});
 	const ready = $derived(
-		dashboard.connected && snapshot.connection === 'connected' && snapshot.klippy === 'ready'
+		updates.available && snapshot.connection === 'connected' && snapshot.klippy === 'ready'
 	);
-	const homed = $derived(dashboard.connected && allAxesHomed(snapshot));
+	const homed = $derived(updates.available && allAxesHomed(snapshot));
 	const heatersOff = $derived(ready && heaterTargetsOff(snapshot));
 	const idle = $derived(ready && ['standby', 'complete', 'cancelled'].includes(snapshot.job.state));
 	const currentJob = $derived(['printing', 'paused'].includes(snapshot.job.state));
 	const startReason = $derived(
 		!canOperate
 			? 'An operator account is required.'
-			: !dashboard.connected
+			: !updates.available
 				? 'Reconnecting to Perilune. Your checklist is retained.'
 				: calibrationReason(snapshot)
 	);
 	const blocked = $derived(
 		!canOperate ||
 			!owns ||
-			!dashboard.connected ||
+			!updates.available ||
 			snapshot.connection !== 'connected' ||
 			snapshot.klippy !== 'ready' ||
 			snapshot.storage !== 'healthy' ||
@@ -183,10 +189,7 @@
 			This workshop changes simulator offsets only. The diagrams are illustrations; no probe, test
 			print, motor movement or printer configuration write is performed.
 		</p>
-		{#if !dashboard.connected || snapshot.connection !== 'connected'}<p
-				role="status"
-				class="notice"
-			>
+		{#if !updates.available || snapshot.connection !== 'connected'}<p role="status" class="notice">
 				Reconnecting. Your checklist and adjustment choices are retained.
 			</p>{/if}
 		{#if failure}<p role="alert" class="error-text">{failure}</p>{/if}
@@ -431,7 +434,7 @@
 						class="button secondary"
 						disabled={pending ||
 							submitting ||
-							!dashboard.connected ||
+							!updates.available ||
 							snapshot.connection !== 'connected'}
 						onclick={() => {
 							review(true);
@@ -488,7 +491,7 @@
 								pending ||
 								submitting ||
 								snapshot.mode !== 'simulator' ||
-								!dashboard.connected}
+								!updates.available}
 							onclick={() => {
 								stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
 								stopOpen = true;
@@ -501,7 +504,7 @@
 							pending ||
 							submitting ||
 							snapshot.mode !== 'simulator' ||
-							!dashboard.connected}
+							!updates.available}
 						title={homed ? 'All axes are already homed.' : undefined}
 						onclick={() => void send({ type: 'home', axes: 'all' }).catch(() => {})}
 						>Home all axes</button
@@ -511,7 +514,7 @@
 							pending ||
 							submitting ||
 							snapshot.mode !== 'simulator' ||
-							!dashboard.connected ||
+							!updates.available ||
 							heatersOff}
 						title={heatersOff ? 'Both heater targets are already off.' : undefined}
 						onclick={() => void send({ type: 'cooldown' }).catch(() => {})}

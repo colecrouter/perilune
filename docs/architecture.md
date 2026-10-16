@@ -826,3 +826,32 @@ revocation/throwing auth checks, source text safety and draft preservation. A he
 production smoke checks shared receipts, pin sync, reconnect inputs, viewer/CSRF
 rejection, private live responses, one socket, no write RPC and desktop/320px layout.
 See [the console guide](console.md). Physical execution remains coordinated/pending.
+
+### Progressive basic actions and initial status
+
+Authenticated SSR now reads a finite, process-local printer/camera snapshot after
+session-version validation. Overview, Controls, Jobs and calibration pages use
+that snapshot immediately; client live subscriptions enhance it. Printer-only
+pages and the progress favicon subscribe to printer state, not camera updates.
+The first browser connection is distinguished from a dropped connection. A
+10-second initial connection deadline marks live updates unavailable, without
+claiming that the backend lost its printer connection. Once a stream has been
+established, its loss disables affected controls while retaining inputs/state.
+Temperature history and its chart code no longer block Overview controls.
+
+Basic heater, cooldown, home, pause and resume submissions use enhanced HTML
+forms, with visible pending/results and no navigation on enhanced success.
+Start/stop review links have server-rendered review forms before JavaScript;
+existing hydrated dialogs and interactive motion/calibration commands remain.
+Native success redirects to an account-bound receipt with an explicit refresh
+link. Receipt refresh is read-only. Both form and command adapters call one
+server dispatcher and the existing process-owned queues; ordinary simulator
+commands now persist/check the actor for idempotency and execution authorization.
+Small form bodies are bounded at 8 KiB with abort/timeout cleanup, independently
+of file-transfer permits. Failed/unknown submissions never auto-retry.
+
+This is the progressive-interaction foundation for shared live-action
+coordination. It does not enable live motion/heaters/jobs or arbitrary scripts.
+A shared physical-operation reservation across all live workflows and coordinated
+printer acceptance remain pending under #10; existing live mesh/config flags and
+their approval/testing requirements remain unchanged.
