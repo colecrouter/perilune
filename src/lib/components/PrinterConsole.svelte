@@ -251,7 +251,9 @@
 				<p class="muted">
 					{snapshot.mode === 'simulator'
 						? 'Simulator diagnostics · no physical commands'
-						: 'Live responses · execution disabled'}
+						: snapshot.executionEnabled
+							? 'Live printer · reviewed commands'
+							: 'Live responses · execution disabled'}
 				</p>
 			</div>
 			<span class="connection"
@@ -300,7 +302,7 @@
 								</p>{/if}{#if ['queued', 'sending'].includes(line.receipt.status)}<p role="status">
 									{line.receipt.status === 'queued'
 										? 'Waiting for backend execution…'
-										: 'Executing in the simulator…'}
+										: 'Waiting for command completion…'}
 								</p>{/if}
 						</div>{/if}
 				</div>{:else}<p class="empty">
@@ -325,7 +327,7 @@
 				maxlength="2048"
 				placeholder={snapshot.mode === 'simulator'
 					? 'Try HELP, M105, or PERILUNE_STATUS'
-					: 'Prepare a command for review; live execution is not enabled.'}
+					: 'Enter G-code or a macro, then review before sending.'}
 				spellcheck="false"></textarea></label
 		>
 		<p id="console-history-hint" class="muted small">
@@ -354,15 +356,23 @@
 <Dialog.Root bind:open={reviewOpen}
 	><Dialog.Portal
 		><Dialog.Overlay class="dialog-overlay" /><Dialog.Content class="dialog-content console-review"
-			><Dialog.Title class="dialog-title">Review simulator command</Dialog.Title><Dialog.Description
-				class="review-description"
-				>The backend runs this diagnostic once. No physical movement or heating is performed.</Dialog.Description
+			><Dialog.Title class="dialog-title"
+				>Review {snapshot.mode === 'simulator' ? 'simulator' : 'printer'} command</Dialog.Title
+			><Dialog.Description class="review-description"
+				>{snapshot.mode === 'simulator'
+					? 'The backend runs this diagnostic once. No physical movement or heating is performed.'
+					: 'This runs on the real printer and can move or heat it. Review every line and the macro configuration. Keep other controllers idle. Acknowledgement does not prove every macro-specific effect.'}</Dialog.Description
 			>{#if request}<pre>{request.script}</pre>{/if}{#if reason}<p role="status">{reason}</p>{/if}
 			<div class="review-actions">
 				<Dialog.Close class="button secondary" disabled={pending}>Keep editing</Dialog.Close><button
 					class="button primary"
 					disabled={!!reason || pending || !!uncertain}
-					onclick={send}>{pending ? 'Submitting…' : 'Run in simulator'}</button
+					onclick={send}
+					>{pending
+						? 'Submitting…'
+						: snapshot.mode === 'simulator'
+							? 'Run in simulator'
+							: 'Run on printer'}</button
 				>
 			</div></Dialog.Content
 		></Dialog.Portal

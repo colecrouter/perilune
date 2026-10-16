@@ -1,0 +1,11 @@
+# Daily-use readiness review
+
+Independent reviews for the live-library and subsequent daily-use work:
+
+- **Live library:** approved after fixing final readiness revalidation and filenames that could become invisible in the mirrored catalog. Added lost-reply reconciliation, deletion no-replay across restart, authorization and preflight-state regressions. Moonraker's external-writer race remains documented. Merged in PR53 after all GitHub validation/container checks passed.
+- **Live console:** approved after matching Klipper's command-token splitting, including compact parameters and malformed numbered prefixes. Shared durable admission, authorization, safety fencing, recovery and receipt bridging reviewed. Production smoke executes through the actual Console UI into the live action worker.
+- **Failed-startup recovery:** approved. Fresh error/shutdown permits snapshot revert despite stale hardware telemetry; application/safety/unknown-action/session locks remain authoritative. All 19 configuration application tests passed, including the new stale-state regression. Physical failure, exact revert and external-edit preservation passed.
+- **Deployment/backups:** approved after correcting configured-secret precedence over a stale adjacent file. Online WAL snapshot, integrity, private permissions, destination refusal and secret precedence tested. Docker includes the backup helper; host-network Compose and proxy/restore documentation reviewed. A scheduled backup was restored into an isolated simulator and authenticated the restored owner session while preserving history.
+- **Kit reconnect patch:** approved for all three background reconnect call sites. Only fire-and-forget rejections are handled; explicit reconnect callers and resource error/connection state remain unchanged. Docker copies patches before frozen dependency installation. Fast navigation after enhanced safety review is part of the headless production regression.
+
+Physical testing ended with original printer configuration bytes restored, Klipper ready/standby, no loaded filament, axes unhomed and both heater targets zero. Camera captures and private installation details are not repository artifacts. Remaining owner checks are tracked in issue52.

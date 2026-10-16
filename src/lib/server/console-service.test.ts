@@ -67,7 +67,7 @@ it('rechecks revocation and connection generation at execution rather than retry
 });
 it('enforces live read-only mode and records unsupported command failure without printer mutation', async () => {
 	const live = await fixture(true);
-	await expect(live.submit()).rejects.toThrow(/Live command/);
+	await expect(live.submit()).rejects.toThrow(/Live console/);
 	const f = await fixture();
 	const before = await f.runtime.runPromise(SubscriptionRef.get(f.printer.state));
 	await f.submit(randomUUID(), 'G28');

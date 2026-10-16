@@ -43,6 +43,10 @@ const expectedJob = Schema.optional(
 	Schema.Struct({ filename: Schema.String, runId: Schema.NullOr(Schema.String) })
 );
 export const PrinterCommand = Schema.Union([
+	Schema.Struct({
+		type: Schema.Literal('console'),
+		script: Schema.String.check(Schema.isMaxLength(2048))
+	}),
 	LiveZCommand,
 	ExtrusionCommand,
 	CalibrationCommand,
@@ -103,6 +107,7 @@ export interface PrinterSnapshot {
 	safety?: SafetySnapshot;
 	configurationBusy?: boolean;
 	liveControls?: boolean;
+	liveConsole?: boolean;
 	liveFilament?: boolean;
 	liveZEnabled?: boolean;
 	liveZ?: LiveZState;
@@ -215,6 +220,8 @@ export function actionLabel(command: PrinterCommand): string {
 			return command.outcome === 'save' ? 'Save simulator offset' : 'Apply temporary offset';
 		case 'calibrationCancel':
 			return 'Cancel calibration';
+		case 'console':
+			return 'Reviewed console command';
 		case 'start':
 			return 'Start print';
 		case 'move':
@@ -244,6 +251,10 @@ export function applyCommand(
 	file?: JobFile,
 	actor?: CalibrationActor
 ): PrinterSnapshot {
+	if (command.type === 'console')
+		throw new CommandRejected({
+			message: 'Console commands require their dedicated reviewed workflow.'
+		});
 	const safety = safetyReason(state.safety);
 	if (safety) throw new CommandRejected({ message: safety });
 	if (state.configurationBusy)

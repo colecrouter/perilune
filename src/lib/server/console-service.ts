@@ -10,6 +10,8 @@ import {
 	SubscriptionRef
 } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
+import { LiveActionService } from './live-action-service.js';
+import { ActionStore } from './action-store.js';
 import { migrate } from './migrations.js';
 import { PrinterService } from './printer-service.js';
 import { MoonrakerService } from './moonraker.js';
@@ -65,6 +67,8 @@ export const ConsoleServiceLive = Layer.effect(
 		yield* migrate;
 		const printer = yield* PrinterService;
 		const upstream = yield* Effect.serviceOption(MoonrakerService);
+		const liveActions = yield* Effect.serviceOption(LiveActionService);
+		const actionStore = yield* Effect.serviceOption(ActionStore);
 		const lock = yield* Semaphore.make(1);
 		const actors = new Map<string, ConsoleActor>();
 		let unhealthy = false;
@@ -73,6 +77,7 @@ export const ConsoleServiceLive = Layer.effect(
 		const state = yield* SubscriptionRef.make<ConsoleSnapshot>({
 			revision: 0,
 			mode: initial.mode,
+			executionEnabled: initial.mode === 'simulator' || initial.liveConsole === true,
 			connection: initial.connection,
 			reason: consoleReason(initial),
 			macros: initial.mode === 'simulator' ? simulatorMacros : [],
@@ -113,6 +118,7 @@ export const ConsoleServiceLive = Layer.effect(
 			yield* SubscriptionRef.update(state, (old) => ({
 				revision: old.revision + 1,
 				mode: snapshot.mode,
+				executionEnabled: snapshot.mode === 'simulator' || snapshot.liveConsole === true,
 				connection: snapshot.connection,
 				reason: unhealthy
 					? 'Console storage failed. Check history before submitting more commands.'
@@ -176,6 +182,36 @@ export const ConsoleServiceLive = Layer.effect(
 				})
 			);
 			if (!row) return;
+			const snapshot = yield* SubscriptionRef.get(printer.state);
+			if (snapshot.mode === 'moonraker') {
+				if (Option.isNone(liveActions) || Option.isNone(actionStore)) {
+					yield* finish(row.row.id, 'failed', 'Live console service unavailable.');
+					return;
+				}
+				const actor = actors.get(row.row.id)!;
+				const submitted = yield* liveActions.value
+					.submit(
+						{ id: row.row.id, command: { type: 'console', script: row.row.script } },
+						{ id: actor.id, name: 'Operator', role: 'operator', authorized: () => valid(actor) }
+					)
+					.pipe(Effect.result);
+				if (submitted._tag === 'Failure') {
+					yield* finish(row.row.id, 'failed', submitted.failure.message);
+					return;
+				}
+				while (true) {
+					const stored = yield* actionStore.value.find(row.row.id);
+					if (stored && !['queued', 'sending'].includes(stored.action.status)) {
+						yield* finish(
+							row.row.id,
+							stored.action.status as 'completed' | 'failed' | 'unknown',
+							stored.action.message
+						);
+						return;
+					}
+					yield* Effect.sleep('100 millis');
+				}
+			}
 			yield* Effect.sleep('600 millis');
 			yield* lock.withPermits(1)(
 				Effect.gen(function* () {

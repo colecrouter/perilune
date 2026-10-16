@@ -615,3 +615,23 @@ it('does not associate a calibration save with a mismatched or non-staged Z resu
 		expect(f.saves).toBe(1);
 	}
 });
+
+it('permits snapshot recovery after a fresh startup error despite stale pre-restart motion telemetry', async () => {
+	const { f, url } = await fixture();
+	const a = await app(url);
+	const before = f.text;
+	const saved = await a.submit(before + 'bad: 1\n');
+	expect((await a.terminal()).phase).toBe('error');
+	await a.runtime.runPromise(
+		SubscriptionRef.update(a.state, (state) => ({
+			...state,
+			motion: { ...state.motion, busy: true, calibration: true },
+			job: { ...state.job, state: 'printing' as const }
+		}))
+	);
+	await a.runtime.runPromise(
+		a.service.submit({ id: randomUUID(), revertOf: saved.id, confirmedRestart: true }, owner)
+	);
+	expect((await a.terminal()).phase).toBe('ready');
+	expect(f.text).toBe(before);
+});

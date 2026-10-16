@@ -3,6 +3,7 @@ import {
 	pendingFingerprint,
 	pendingConfigurationText
 } from './pending-configuration.js';
+import { liveZActive } from '#lib/domain/live-z.js';
 import { safetyReason } from '#lib/domain/safety.js';
 import { printerAdmission, printerInterlock } from './printer-admission.js';
 import { extrusionActive } from '#lib/domain/extrusion.js';
@@ -155,7 +156,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 		const idle = async (signal: AbortSignal, reverting: boolean, allowPending = false) => {
 			const state = await info(signal);
 			if (state.state !== 'ready') {
-				if (reverting && ['error', 'shutdown'].includes(state.state)) return;
+				if (reverting && ['error', 'shutdown'].includes(state.state)) return null;
 				throw failure('Wait for a ready, idle printer before applying a configuration.');
 			}
 			const result = await call(
@@ -194,7 +195,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 				throw failure(
 					'Klipper has pending SAVE_CONFIG changes. Resolve or export them before restarting.'
 				);
-			return result.status.configfile;
+			return result.status.configfile ?? {};
 		};
 		const target = hash(settings.moonrakerUrl);
 		const recordOf = (row: Row) =>
@@ -547,7 +548,8 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 								after = request.text;
 								if (before === after) throw failure('There are no changes to apply.');
 							}
-							await idle(signal, Boolean(revertOf), 'pending' in request);
+							const failedStartup =
+								(await idle(signal, Boolean(revertOf), 'pending' in request)) === null;
 							const reserved = await Effect.runPromise(
 								SubscriptionRef.modify(printer.state, (state) => {
 									const blocked =
@@ -555,12 +557,13 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 										Boolean(safetyReason(state.safety)) ||
 										state.configurationBusy ||
 										state.liveRecovery != null ||
-										state.motion.calibration ||
+										liveZActive(state.liveZ) ||
+										(!failedStartup && state.motion.calibration) ||
 										extrusionActive(state.extrusion) ||
 										calibrationActive(state.calibration) ||
 										meshProbeActive(state.meshProbe) ||
-										state.motion.busy === true ||
-										['printing', 'paused'].includes(state.job.state) ||
+										(!failedStartup && state.motion.busy === true) ||
+										(!failedStartup && ['printing', 'paused'].includes(state.job.state)) ||
 										state.actions.some((action) => ['queued', 'sending'].includes(action.status)) ||
 										(state.meshProbe.session &&
 											['preparing', 'probing', 'review', 'saving', 'uncertain'].includes(

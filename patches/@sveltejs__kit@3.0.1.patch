@@ -1,0 +1,39 @@
+diff --git a/src/runtime/client/client.js b/src/runtime/client/client.js
+index 344b1021f3189fac14ea51918a8d179ab41a7857..1c5b08c89407ec8dac4d8aa1fdd6fcf2d7834d32 100644
+--- a/src/runtime/client/client.js
++++ b/src/runtime/client/client.js
+@@ -761,7 +761,7 @@ export async function _goto(url, options = {}, redirect_count = 0, nav_token = {
+ 				}
+ 				for (const [key, { resource }] of cache_entries(live_query_map)) {
+ 					if (live_query_keys?.has(key)) {
+-						void resource.reconnect();
++						void resource.reconnect().catch(noop);
+ 					}
+ 				}
+ 			});
+diff --git a/src/runtime/client/remote-functions/query-live/index.js b/src/runtime/client/remote-functions/query-live/index.js
+index 6e8e9525dd4e11528462aabe628e1863cc633d8b..85fd3efb26af37d3af6b38be1bff54f59beeea5f 100644
+--- a/src/runtime/client/remote-functions/query-live/index.js
++++ b/src/runtime/client/remote-functions/query-live/index.js
+@@ -17,7 +17,7 @@ export function query_live(id) {
+ 
+ 		if (entries) {
+ 			for (const { resource } of entries.values()) {
+-				void resource.reconnect();
++				void resource.reconnect().catch(() => {});
+ 			}
+ 		}
+ 	}
+diff --git a/src/runtime/client/remote-functions/shared.svelte.js b/src/runtime/client/remote-functions/shared.svelte.js
+index 354da4230d10cd430079f38fb226b2432edbac08..a8e64e2d6cfe8349ccf6f09f537b5cff7c75c18e 100644
+--- a/src/runtime/client/remote-functions/shared.svelte.js
++++ b/src/runtime/client/remote-functions/shared.svelte.js
+@@ -181,7 +181,7 @@ export async function remote_request(url, init, refreshes) {
+ 			// reconnecting after a hard failure would wipe the error state and
+ 			// restart the stream (see commit 63a3e83 regression).
+ 			if (!data.l[key].e) {
+-				void entry?.resource.reconnect();
++				void entry?.resource.reconnect().catch(() => {});
+ 			}
+ 		}
+ 	}

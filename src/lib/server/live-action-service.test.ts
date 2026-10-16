@@ -30,7 +30,7 @@ afterEach(async () => {
 	for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 const owner = { id: 'owner', name: 'Owner', role: 'owner', authorized: () => true };
-async function fixture(filename = ':memory:', filamentEnabled = true) {
+async function fixture(filename = ':memory:', filamentEnabled = true, consoleEnabled = false) {
 	const state = await Effect.runPromise(
 		SubscriptionRef.make<MoonrakerSnapshot>({
 			...emptyMoonrakerSnapshot(),
@@ -226,6 +226,7 @@ async function fixture(filename = ':memory:', filamentEnabled = true) {
 					enabled: true,
 					zEnabled: true,
 					filamentEnabled,
+					consoleEnabled,
 					target: 'fixture',
 					observationMs: 10
 				})
@@ -942,4 +943,36 @@ it('live Z coarse steps retain fresh version, observed position and configured t
 	await f.finished();
 	expect(f.operations).toHaveLength(count);
 	expect((await f.snapshot()).actions[0].message).toContain('travel');
+});
+
+it('runs reviewed console scripts through shared admission and keeps uncertain execution locked without replay', async () => {
+	const f = await fixture(':memory:', true, true);
+	const id = crypto.randomUUID();
+	await f.submit({ type: 'console', script: 'M105\nM114' }, owner, id);
+	await f.finished();
+	expect(f.operations).toEqual([{ type: 'controlScript', script: 'M105\nM114\nM400' }]);
+	expect((await f.snapshot()).actions[0]).toMatchObject({
+		status: 'completed',
+		message: expect.stringContaining('acknowledged')
+	});
+	await f.submit({ type: 'console', script: 'M105\nM114' }, owner, id);
+	expect(f.operations).toHaveLength(1);
+	f.setBehavior('drop');
+	await f.submit({ type: 'console', script: 'M105' });
+	await f.finished();
+	expect((await f.snapshot()).liveRecovery).not.toBeNull();
+	expect((await f.snapshot()).actions[0]?.status).toBe('unknown');
+	await expect(f.submit({ type: 'home', axes: 'all' })).rejects.toThrow('unknown');
+	expect(f.operations).toHaveLength(2);
+});
+it('requires console opt-in and refuses lifecycle scripts before physical dispatch', async () => {
+	const disabled = await fixture();
+	await expect(disabled.submit({ type: 'console', script: 'M105' })).rejects.toThrow('disabled');
+	const f = await fixture(':memory:', true, true);
+	for (const script of ['SAVE_CONFIG', 'RESTART', 'PROBE_CALIBRATE', 'N10 M112*12', 'M24']) {
+		await f.submit({ type: 'console', script });
+		await f.finished();
+		expect((await f.snapshot()).actions[0]?.status).toBe('failed');
+	}
+	expect(f.operations).toHaveLength(0);
 });
