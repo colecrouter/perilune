@@ -1,3 +1,5 @@
+import { filamentPlan } from './live-filament.js';
+import { extrusionActive, interruptExtrusion, type ExtrusionState } from '#lib/domain/extrusion.js';
 import { safetyReason } from '#lib/domain/safety.js';
 import { createHash } from 'node:crypto';
 import { Context, Effect, Layer, Schedule, SubscriptionRef } from 'effect';
@@ -19,7 +21,7 @@ import { printerAdmission, printerInterlock } from './printer-admission.js';
 
 export class LiveActionSettings extends Context.Service<
 	LiveActionSettings,
-	{ enabled: boolean; target: string; observationMs?: number }
+	{ enabled: boolean; filamentEnabled?: boolean; target: string; observationMs?: number }
 >()('perilune/LiveActionSettings') {}
 export class LiveActionService extends Context.Service<
 	LiveActionService,
@@ -46,6 +48,11 @@ const authorized = (actor: CalibrationActor) =>
 const recoveryMessage =
 	'A live action has an unknown outcome. Inspect the printer, then review recovery in Controls. No command was replayed.';
 const supported = new Set([
+	'extrusionBegin',
+	'extrusionFeed',
+	'extrusionMeasure',
+	'extrusionFinish',
+	'extrusionCancel',
 	'move',
 	'home',
 	'releaseMotors',
@@ -79,7 +86,8 @@ function checked(snapshot: PrinterSnapshot, fresh: MoonrakerSnapshot): PrinterSn
 		motion: fresh.motion,
 		heaters: fresh.heaters,
 		job: fresh.job,
-		bedMesh: fresh.bedMesh
+		bedMesh: fresh.bedMesh,
+		filament: fresh.filament
 	};
 }
 export const LiveActionServiceLive = Layer.effect(
@@ -94,12 +102,27 @@ export const LiveActionServiceLive = Layer.effect(
 		const gate = printerAdmission(printer.state);
 		const interlock = printerInterlock(printer.state);
 		const target = createHash('sha256').update(settings.target).digest('hex');
+
 		const update = (f: (s: PrinterSnapshot) => PrinterSnapshot) =>
-			SubscriptionRef.update(printer.state, (s) => ({
-				...f(s),
-				revision: s.revision + 1,
-				updatedAt: Date.now()
-			}));
+			Effect.gen(function* () {
+				const hardware = yield* SubscriptionRef.get(transport.state);
+				yield* SubscriptionRef.update(printer.state, (s) => {
+					const next = f(s);
+					return {
+						...next,
+						motion: {
+							...next.motion,
+							calibration:
+								hardware.motion.calibration ||
+								meshProbeActive(next.meshProbe) ||
+								extrusionActive(next.extrusion)
+						},
+						revision: s.revision + 1,
+						updatedAt: Date.now()
+					};
+				});
+			});
+
 		const history = yield* store.list;
 		const saved = yield* sql<{
 			action_id: string;
@@ -107,9 +130,28 @@ export const LiveActionServiceLive = Layer.effect(
 		yield* update((s) => ({
 			...s,
 			liveControls: settings.enabled,
+			liveFilament: settings.enabled && settings.filamentEnabled === true,
 			actions: history,
 			liveRecovery: saved[0] ? { id: saved[0].action_id, message: recoveryMessage } : null
 		}));
+		const persistedFilament = yield* sql<{
+			state: string;
+		}>`SELECT state FROM live_filament_state WHERE target=${target}`;
+		const restoredFilament = persistedFilament[0]
+			? interruptExtrusion(
+					JSON.parse(persistedFilament[0].state) as ExtrusionState,
+					'Backend restarted. No filament movement was replayed; inspect the printer before a new test.'
+				)
+			: { session: null };
+		const writeFilament = (state: ExtrusionState) =>
+			sql`INSERT INTO live_filament_state(target,state) VALUES(${target},${JSON.stringify(state)}) ON CONFLICT(target) DO UPDATE SET state=excluded.state`.pipe(
+				Effect.asVoid
+			);
+		yield* writeFilament(restoredFilament);
+		yield* update((s) => ({ ...s, extrusion: restoredFilament }));
+		let filamentActor: CalibrationActor | undefined;
+		let filamentCheckpoint: ExtrusionState | undefined;
+
 		let work:
 			| {
 					request: ActionRequest;
@@ -124,11 +166,18 @@ export const LiveActionServiceLive = Layer.effect(
 			if (interlock.halted || safetyReason(s.safety))
 				throw reject(safetyReason(s.safety) ?? 'Emergency stop interlock is active.');
 			if (!settings.enabled) throw reject('Live controls are disabled on this server.');
+			if (request.command.type.startsWith('extrusion') && !settings.filamentEnabled)
+				throw reject('Live filament controls are disabled on this server.');
 			if (!authorized(actor)) throw reject('An authorized operator is required.');
 			if (!supported.has(request.command.type))
 				throw reject('This live workflow is not enabled yet.');
 			if (s.liveRecovery) throw reject(recoveryMessage);
-			if (s.configurationBusy || s.motion.calibration || meshProbeActive(s.meshProbe))
+			if (
+				s.configurationBusy ||
+				(s.motion.calibration &&
+					!(request.command.type.startsWith('extrusion') && extrusionActive(s.extrusion))) ||
+				meshProbeActive(s.meshProbe)
+			)
 				throw reject('Another workflow owns the printer. Finish or recover it first.');
 			if (
 				!['toolhead', 'idle_timeout', 'print_stats'].every((name) =>
@@ -227,6 +276,7 @@ export const LiveActionServiceLive = Layer.effect(
 		const run = (job: NonNullable<typeof work>) =>
 			Effect.gen(function* () {
 				let sent = false;
+				let filamentResult: ExtrusionState | undefined, filamentBefore: ExtrusionState | undefined;
 				const result = yield* Effect.gen(function* () {
 					if (Date.now() - job.action.createdAt >= 30000)
 						return yield* Effect.fail(reject('Action expired before dispatch.'));
@@ -238,7 +288,15 @@ export const LiveActionServiceLive = Layer.effect(
 					const fresh = yield* transport.refresh(job.generation);
 					const s = checked(yield* SubscriptionRef.get(printer.state), fresh);
 					yield* check(() => validate(s, job.request, job.actor));
-					const operations = yield* plan(job.request, s, fresh);
+					const filament = job.request.command.type.startsWith('extrusion')
+						? yield* check(() => filamentPlan(job.request, s, fresh, job.actor))
+						: null;
+					const operations = filament?.operations ?? (yield* plan(job.request, s, fresh));
+					if (filament) {
+						filamentResult = filament.state;
+						filamentBefore = s.extrusion;
+					}
+
 					if (!authorized(job.actor))
 						return yield* Effect.fail(reject('The operator account is no longer authorized.'));
 					if (Date.now() - job.action.createdAt >= 30000)
@@ -250,6 +308,13 @@ export const LiveActionServiceLive = Layer.effect(
 							a.id === job.action.id ? { ...a, status: 'sending' } : a
 						)
 					}));
+					if (
+						filamentResult &&
+						['extrusionBegin', 'extrusionFeed'].includes(job.request.command.type)
+					) {
+						yield* writeFilament(filamentResult);
+						yield* update((s) => ({ ...s, extrusion: filamentResult! }));
+					}
 					for (const [index, op] of operations.entries()) {
 						if (index === 0 && Date.now() - job.action.createdAt >= 30000)
 							return yield* Effect.fail(reject('Action expired before dispatch.'));
@@ -286,8 +351,44 @@ export const LiveActionServiceLive = Layer.effect(
 					// Ack is insufficient: observe the intended state through a fresh query.
 					const deadline = Date.now() + (settings.observationMs ?? 10000);
 					while (true) {
+						if (!interlock.allows(job.epoch))
+							return yield* Effect.fail(reject('Emergency stop interrupted action verification.'));
 						const observed = yield* transport.refresh(job.generation);
 						const c = job.request.command;
+						if (filamentResult) {
+							const c = job.request.command;
+							if (c.type === 'extrusionBegin' || c.type === 'extrusionFeed') {
+								const distance = c.type === 'extrusionBegin' ? 50 : c.distance;
+								if (
+									observed.filament?.position === null ||
+									observed.filament?.position === undefined ||
+									fresh.filament?.position === null ||
+									fresh.filament?.position === undefined ||
+									Math.abs(observed.filament.position - fresh.filament.position - distance) > 0.05
+								)
+									return yield* Effect.fail(
+										reject(
+											'Extruder commanded position did not match. Inspect filament travel; no command was replayed.'
+										)
+									);
+								filamentResult = {
+									session: {
+										...filamentResult.session!,
+										stage: c.type === 'extrusionBegin' ? 'measure' : 'finished',
+										completed: Math.abs(distance),
+										message:
+											'Movement acknowledged and commanded position observed. Measure real filament travel; this is not an encoder reading.'
+									}
+								};
+							}
+							if (
+								(c.type === 'extrusionFinish' || c.type === 'extrusionCancel') &&
+								c.coolNozzle &&
+								observed.heaters.nozzle.target !== 0
+							)
+								return yield* Effect.fail(reject('Nozzle cooldown was not observed.'));
+							return;
+						}
 						const matches =
 							c.type === 'move'
 								? Object.entries(c.target).every(
@@ -342,10 +443,18 @@ export const LiveActionServiceLive = Layer.effect(
 								? result.failure.message
 								: 'Action was not dispatched. Review readiness and submit a new action if needed.'
 							: null;
+				const finalFilament = filamentResult
+					? result._tag === 'Success'
+						? filamentResult
+						: sent
+							? interruptExtrusion(filamentResult, recoveryMessage)
+							: filamentBefore!
+					: undefined;
 				const persisted = yield* sql
 					.withTransaction(
 						Effect.gen(function* () {
 							yield* store.setStatus(job.action.id, status, message);
+							if (finalFilament) yield* writeFilament(finalFilament);
 							if (status !== 'unknown')
 								yield* sql`DELETE FROM live_action_reservation WHERE target=${target} AND action_id=${job.action.id}`;
 						})
@@ -353,6 +462,11 @@ export const LiveActionServiceLive = Layer.effect(
 					.pipe(Effect.result);
 				yield* update((s) => ({
 					...s,
+					extrusion: finalFilament
+						? persisted._tag === 'Failure'
+							? interruptExtrusion(finalFilament, recoveryMessage)
+							: finalFilament
+						: s.extrusion,
 					storage: persisted._tag === 'Failure' ? 'degraded' : s.storage,
 					liveRecovery:
 						status === 'unknown' || persisted._tag === 'Failure'
@@ -368,8 +482,44 @@ export const LiveActionServiceLive = Layer.effect(
 							: a
 					)
 				}));
+				if (result._tag === 'Success' && filamentResult) filamentActor = job.actor;
 			});
 		yield* Effect.gen(function* () {
+			if (!work && !working) {
+				if (filamentCheckpoint) {
+					const checkpoint = yield* writeFilament(filamentCheckpoint).pipe(Effect.result);
+					if (checkpoint._tag === 'Success') {
+						filamentCheckpoint = undefined;
+						yield* update((s) => ({ ...s, storage: s.liveRecovery ? s.storage : 'healthy' }));
+					}
+					return;
+				}
+				const s = yield* SubscriptionRef.get(printer.state);
+				if (
+					extrusionActive(s.extrusion) &&
+					(s.extrusion.session!.expiresAt <= Date.now() ||
+						s.liveRecovery ||
+						!filamentActor ||
+						!authorized(filamentActor) ||
+						s.connection !== 'connected' ||
+						s.klippy !== 'ready' ||
+						interlock.halted ||
+						['printing', 'paused'].includes(s.job.state))
+				) {
+					const state = interruptExtrusion(
+						s.extrusion,
+						'Filament workflow interrupted. No movement was replayed. Inspect the printer before starting again.'
+					);
+					const checkpoint = yield* writeFilament(state).pipe(Effect.result);
+					if (checkpoint._tag === 'Failure') filamentCheckpoint = state;
+					yield* update((s) => ({
+						...s,
+						extrusion: state,
+						storage: checkpoint._tag === 'Failure' ? 'degraded' : s.storage
+					}));
+				}
+				return;
+			}
 			if (!work || working) return;
 			working = true;
 			const job = work;

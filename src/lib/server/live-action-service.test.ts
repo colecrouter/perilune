@@ -30,7 +30,7 @@ afterEach(async () => {
 	for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 const owner = { id: 'owner', name: 'Owner', role: 'owner', authorized: () => true };
-async function fixture(filename = ':memory:') {
+async function fixture(filename = ':memory:', filamentEnabled = true) {
 	const state = await Effect.runPromise(
 		SubscriptionRef.make<MoonrakerSnapshot>({
 			...emptyMoonrakerSnapshot(),
@@ -46,6 +46,13 @@ async function fixture(filename = ':memory:') {
 				'extruder',
 				'virtual_sdcard'
 			],
+			filament: {
+				canExtrude: true,
+				position: 100,
+				active: 'extruder',
+				maxDistance: 50,
+				minTemp: 170
+			},
 			updatedAt: Date.now(),
 			liveMesh: {
 				enabled: true,
@@ -103,7 +110,21 @@ async function fixture(filename = ':memory:') {
 						const heaters = structuredClone(s.heaters);
 						for (const match of op.script.matchAll(/HEATER=(heater_bed|extruder) TARGET=(\d+)/g))
 							heaters[match[1] === 'heater_bed' ? 'bed' : 'nozzle'].target = Number(match[2]);
+						const feed = op.script.match(/G1 E(-?[\d.]+) F60/);
+						if (feed)
+							return {
+								...s,
+								filament: { ...s.filament!, position: s.filament!.position! + Number(feed[1]) }
+							};
 						if (op.script.startsWith('SET_HEATER_TEMPERATURE')) return { ...s, heaters };
+						if (op.script === 'TURN_OFF_HEATERS')
+							return {
+								...s,
+								heaters: {
+									bed: { ...s.heaters.bed, target: 0 },
+									nozzle: { ...s.heaters.nozzle, target: 0 }
+								}
+							};
 						if (op.script === 'M84') return { ...s, motion: { ...s.motion, homed: [] } };
 						if (op.script.startsWith('G28'))
 							return { ...s, motion: { ...s.motion, homed: ['x', 'y', 'z'] } };
@@ -166,7 +187,12 @@ async function fixture(filename = ':memory:') {
 	const runtime = ManagedRuntime.make(
 		LiveActionServiceLive.pipe(
 			Layer.provide(
-				Layer.succeed(LiveActionSettings, { enabled: true, target: 'fixture', observationMs: 10 })
+				Layer.succeed(LiveActionSettings, {
+					enabled: true,
+					filamentEnabled,
+					target: 'fixture',
+					observationMs: 10
+				})
 			),
 			Layer.provideMerge(jobs),
 			Layer.provideMerge(store),
@@ -500,4 +526,183 @@ it('emergency epoch prevents heater restoration after a delayed cancel acknowled
 	await f.finished();
 	expect(f.operations).toHaveLength(1);
 	expect((await f.snapshot()).actions[0].status).toBe('unknown');
+});
+
+async function hotFilament(f: Awaited<ReturnType<typeof fixture>>) {
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			heaters: { ...s.heaters, nozzle: { current: 210, target: 210 } }
+		}))
+	);
+	await expect.poll(async () => (await f.snapshot()).heaters.nozzle.current).toBe(210);
+}
+it('live measured extrusion acknowledges travel before accepting a measurement and retains an unapplied proposal', async () => {
+	const f = await fixture();
+	await hotFilament(f);
+	const id = crypto.randomUUID();
+	const command = {
+		type: 'extrusionBegin' as const,
+		runId: id,
+		rotationDistance: 7.5,
+		before: 70,
+		confirmed: true
+	};
+	await f.submit(command, owner, id);
+	await f.finished();
+	expect((await f.snapshot()).extrusion.session?.stage).toBe('measure');
+	expect(f.operations).toHaveLength(1);
+	expect(f.operations[0]).toMatchObject({ script: expect.stringContaining('G1 E50 F60') });
+	await f.submit(command, owner, id);
+	expect(f.operations).toHaveLength(1);
+	await expect(
+		f.submit({ type: 'move', target: { x: 102 }, expectedPosition: { x: 100, y: 100, z: 20 } })
+	).rejects.toThrow(/owns/);
+	await f.submit({ type: 'extrusionMeasure', runId: id, after: 22 });
+	await f.finished();
+	expect((await f.snapshot()).extrusion.session?.proposal?.proposed).toBe(7.2);
+	await f.submit({ type: 'extrusionFinish', runId: id, coolNozzle: true });
+	await f.finished();
+	expect((await f.snapshot()).extrusion.session?.stage).toBe('finished');
+	expect((await f.snapshot()).heaters.nozzle.target).toBe(0);
+});
+it('rejects cold, unsupported tool and over-limit live extrusion without dispatch', async () => {
+	const f = await fixture();
+	const submit = () =>
+		f.submit({
+			type: 'extrusionBegin',
+			runId: crypto.randomUUID(),
+			rotationDistance: 7.5,
+			before: 70,
+			confirmed: true
+		});
+	await submit();
+	await f.finished();
+	expect(f.operations).toHaveLength(0);
+	await hotFilament(f);
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			filament: { ...s.filament!, maxDistance: 25 }
+		}))
+	);
+	await submit();
+	await f.finished();
+	expect(f.operations).toHaveLength(0);
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			filament: { ...s.filament!, maxDistance: 50, active: 'extruder1' }
+		}))
+	);
+	await submit();
+	await f.finished();
+	expect(f.operations).toHaveLength(0);
+});
+it('lost extrusion acknowledgement keeps recovery locked and is never replayed', async () => {
+	const f = await fixture();
+	await hotFilament(f);
+	f.setBehavior('drop');
+	const id = crypto.randomUUID(),
+		command = { type: 'extrusionFeed' as const, runId: id, distance: 5 as const, confirmed: true };
+	await f.submit(command, owner, id);
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('unknown');
+	expect((await f.snapshot()).liveRecovery?.id).toBe(id);
+	await f.submit(command, owner, id);
+	expect(f.operations).toHaveLength(1);
+});
+it('an emergency during an extrusion acknowledgement keeps the result unknown', async () => {
+	const f = await fixture();
+	await hotFilament(f);
+	let release!: () => void;
+	const held = new Promise<void>((r) => (release = r));
+	f.setAfterControl(() => held);
+	await f.submit({
+		type: 'extrusionFeed',
+		runId: crypto.randomUUID(),
+		distance: 5,
+		confirmed: true
+	});
+	await expect.poll(() => f.operations.length).toBe(1);
+	printerInterlock(f.printer.state).interrupt();
+	release();
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('unknown');
+});
+it('restarting a durable measured session interrupts it without replaying movement', async () => {
+	const dir = await mkdtemp(join(tmpdir(), 'perilune-live-filament-'));
+	cleanup.push(() => rm(dir, { recursive: true, force: true }));
+	const file = join(dir, 'state.sqlite');
+	const a = await fixture(file);
+	await hotFilament(a);
+	const id = crypto.randomUUID();
+	await a.submit({
+		type: 'extrusionBegin',
+		runId: id,
+		rotationDistance: 7.5,
+		before: 70,
+		confirmed: true
+	});
+	await a.finished();
+	await a.runtime.dispose();
+	const b = await fixture(file);
+	expect((await b.snapshot()).extrusion.session).toMatchObject({ id, stage: 'interrupted' });
+	expect(b.operations).toHaveLength(0);
+	await b.submit({ type: 'extrusionMeasure', runId: id, after: 22 });
+	await b.finished();
+	expect((await b.snapshot()).actions[0].status).toBe('failed');
+	expect(b.operations).toHaveLength(0);
+});
+it('preserves measurement ownership and interrupts a revoked owner after movement', async () => {
+	const f = await fixture();
+	await hotFilament(f);
+	let allowed = true;
+	const actor = { ...owner, authorized: () => allowed },
+		id = crypto.randomUUID();
+	await f.submit(
+		{ type: 'extrusionBegin', runId: id, rotationDistance: 7.5, before: 70, confirmed: true },
+		actor
+	);
+	await f.finished();
+	await f.submit({ type: 'extrusionMeasure', runId: id, after: 22 }, { ...owner, id: 'other' });
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('failed');
+	expect((await f.snapshot()).extrusion.session?.stage).toBe('measure');
+	allowed = false;
+	await expect.poll(async () => (await f.snapshot()).extrusion.session?.stage).toBe('interrupted');
+	expect(f.operations).toHaveLength(1);
+});
+it('idle session checkpoint failure retains worker liveness and only retries storage', async () => {
+	const f = await fixture();
+	await hotFilament(f);
+	let allowed = true;
+	const id = crypto.randomUUID();
+	await f.submit(
+		{ type: 'extrusionBegin', runId: id, rotationDistance: 7.5, before: 70, confirmed: true },
+		{ ...owner, authorized: () => allowed }
+	);
+	await f.finished();
+	const sql = await f.runtime.runPromise(SqlClient);
+	await f.runtime.runPromise(sql`DROP TABLE live_filament_state`);
+	allowed = false;
+	await expect.poll(async () => (await f.snapshot()).storage).toBe('degraded');
+	expect((await f.snapshot()).extrusion.session?.stage).toBe('interrupted');
+	await f.runtime.runPromise(
+		sql`CREATE TABLE live_filament_state(target TEXT PRIMARY KEY,state TEXT NOT NULL)`
+	);
+	await expect.poll(async () => (await f.snapshot()).storage).toBe('healthy');
+	await f.submit({ type: 'cooldown' });
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('completed');
+	expect(f.operations).toHaveLength(2);
+});
+
+it('live filament requires its own explicit enablement', async () => {
+	const f = await fixture(':memory:', false);
+	await hotFilament(f);
+	await expect(
+		f.submit({ type: 'extrusionFeed', runId: crypto.randomUUID(), distance: 5, confirmed: true })
+	).rejects.toThrow(/disabled/);
+	expect(f.operations).toHaveLength(0);
 });

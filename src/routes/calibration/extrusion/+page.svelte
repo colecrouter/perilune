@@ -31,13 +31,14 @@
 		};
 		void goto('/configuration');
 	}
-	async function submit(command: PrinterCommand) {
+	async function submit(command: PrinterCommand, id?: string) {
 		return (
 			await submitAction({
 				id:
-					command.type === 'extrusionBegin' || command.type === 'extrusionFeed'
+					id ??
+					('runId' in command && ['extrusionBegin', 'extrusionFeed'].includes(command.type)
 						? command.runId
-						: crypto.randomUUID(),
+						: crypto.randomUUID()),
 				command
 			})
 		).id;

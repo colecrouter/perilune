@@ -101,6 +101,14 @@ export interface PrinterSnapshot {
 	safety?: SafetySnapshot;
 	configurationBusy?: boolean;
 	liveControls?: boolean;
+	liveFilament?: boolean;
+	filament?: {
+		canExtrude: boolean;
+		position: number | null;
+		active: string | null;
+		maxDistance: number | null;
+		minTemp: number | null;
+	};
 	liveRecovery?: { id: string; message: string } | null;
 	revision: number;
 	updatedAt: number;

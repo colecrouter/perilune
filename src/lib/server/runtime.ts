@@ -129,6 +129,7 @@ const liveActionsLayer = moonrakerUrl
 			Layer.provide(
 				Layer.succeed(LiveActionSettings, {
 					enabled: process.env.PERILUNE_LIVE_CONTROLS === 'true',
+					filamentEnabled: process.env.PERILUNE_LIVE_FILAMENT === 'true',
 					target: moonrakerUrl
 				})
 			),

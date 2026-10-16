@@ -1,3 +1,4 @@
+import { safetyReason } from './safety.js';
 import { Schema } from 'effect';
 import type { CalibrationActor } from './calibration.js';
 import { calibrationActive } from './calibration.js';
@@ -93,7 +94,11 @@ export function calculateExtrusion(
 	};
 }
 export function extrusionReason(state: PrinterSnapshot, pending = true): string | null {
-	if (state.mode !== 'simulator')
+	const safety = safetyReason(state.safety);
+	if (safety) return safety;
+	if (state.liveRecovery) return state.liveRecovery.message;
+	if (state.configurationBusy) return 'Configuration recovery owns the printer.';
+	if (state.mode !== 'simulator' && !state.liveFilament)
 		return 'Live filament movement requires coordinated testing. The measurement calculator is available below.';
 	if (state.connection !== 'connected' || state.klippy !== 'ready' || !state.telemetryReady)
 		return 'Wait for a ready printer connection.';
@@ -109,6 +114,13 @@ export function extrusionReason(state: PrinterSnapshot, pending = true): string 
 	if (state.motion.busy !== false) return 'The printer is busy or its readiness is unknown.';
 	if (pending && state.actions.some((a) => ['queued', 'sending'].includes(a.status)))
 		return 'Wait for the pending action.';
+	if (
+		state.mode === 'moonraker' &&
+		(!state.filament?.canExtrude ||
+			state.filament.active !== 'extruder' ||
+			state.filament.position === null)
+	)
+		return 'Wait for a hot, ready primary extruder with known position.';
 	const { current, target } = state.heaters.nozzle;
 	if (
 		current === null ||
@@ -121,7 +133,7 @@ export function extrusionReason(state: PrinterSnapshot, pending = true): string 
 		current > 285 ||
 		Math.abs(current - target) > 5
 	)
-		return 'Heat the nozzle to the filament’s printing temperature (170–280°C in the simulator) and wait until it settles.';
+		return 'Heat the nozzle to the filament’s printing temperature (170–280°C application range; the printer must also permit extrusion) and wait until it settles.';
 	return null;
 }
 export function interruptExtrusion(state: ExtrusionState, message: string): ExtrusionState {

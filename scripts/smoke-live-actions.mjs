@@ -13,7 +13,8 @@ const directory = await mkdtemp(join(tmpdir(), 'perilune-live-actions-'));
 const filename = join(directory, 'state.sqlite');
 const status = {
 	toolhead: {
-		position: [100, 100, 20],
+		position: [100, 100, 20, 100],
+		extruder: 'extruder',
 		axis_minimum: [-5, -5, 0],
 		axis_maximum: [220, 220, 250],
 		homed_axes: 'xyz'
@@ -21,7 +22,7 @@ const status = {
 	idle_timeout: { state: 'Idle' },
 	print_stats: { state: 'complete', filename: 'fixture.gcode', print_duration: 0 },
 	virtual_sdcard: { progress: 0 },
-	extruder: { temperature: 25, target: 0 },
+	extruder: { temperature: 25, target: 0, can_extrude: true },
 	heater_bed: { temperature: 25, target: 0 },
 	configfile: {
 		config: {
@@ -101,6 +102,8 @@ protocol.on('connection', (socket) => {
 					return;
 				}
 				const script = req.params.script;
+				const extrusion = script.match(/G1 E(-?[\d.]+) F60/);
+				if (extrusion) status.toolhead.position[3] += Number(extrusion[1]);
 				for (const m of script.matchAll(/HEATER=(heater_bed|extruder) TARGET=([\d.]+)/g))
 					status[m[1]].target = Number(m[2]);
 				if (script === 'M84') status.toolhead.homed_axes = '';
@@ -149,6 +152,7 @@ const app = spawn(process.execPath, ['scripts/server.mjs'], {
 		PERILUNE_DATABASE: filename,
 		PERILUNE_MOONRAKER_URL: `ws://127.0.0.1:${upstream.address().port}/websocket`,
 		PERILUNE_LIVE_CONTROLS: 'true',
+		PERILUNE_LIVE_FILAMENT: 'true',
 		PERILUNE_LIVE_MESH: 'false',
 		PERILUNE_LIVE_CONFIGURATION: 'false',
 		PERILUNE_MOONRAKER_API_KEY: '',
@@ -278,6 +282,26 @@ try {
 			document.querySelector('.home-all')?.disabled &&
 			document.querySelector('.home-all')?.title === 'All axes are already homed.'
 	);
+
+	status.extruder.temperature = 210;
+	status.extruder.target = 210;
+	publish();
+	await page.goto(base + '/calibration/extrusion');
+	await page.getByRole('spinbutton', { name: 'Current rotation distance (mm)' }).fill('7.5');
+	await page.getByRole('checkbox', { name: /Filament is loaded/ }).check();
+	await page.getByRole('checkbox', { name: /nozzle has clearance/ }).check();
+	await page.getByRole('button', { name: 'Extrude 50 mm · live printer' }).click();
+	await page.getByRole('spinbutton', { name: 'Remaining distance (mm)' }).waitFor();
+	await page.getByRole('spinbutton', { name: 'Remaining distance (mm)' }).fill('22');
+	await page.getByRole('button', { name: 'Calculate proposal', exact: true }).click();
+	await page.getByRole('heading', { name: '7.200 mm rotation distance' }).waitFor();
+	await page.getByRole('button', { name: 'Finish measurement', exact: true }).click();
+	await page
+		.getByText('Measurement finished. The proposal remains unapplied.', { exact: true })
+		.waitFor();
+	assert.equal(status.toolhead.position[3], 150);
+	assert.equal(status.extruder.target, 0);
+	await page.goto(base + '/controls');
 	drop = true;
 	await page.getByRole('button', { name: 'Disengage motors', exact: true }).click();
 	await page
