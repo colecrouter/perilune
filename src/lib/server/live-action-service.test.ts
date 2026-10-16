@@ -117,6 +117,41 @@ async function fixture(filename = ':memory:', filamentEnabled = true) {
 								filament: { ...s.filament!, position: s.filament!.position! + Number(feed[1]) }
 							};
 						if (op.script.startsWith('SET_HEATER_TEMPERATURE')) return { ...s, heaters };
+						if (
+							op.script.startsWith('PROBE_CALIBRATE') ||
+							op.script.startsWith('Z_ENDSTOP_CALIBRATE')
+						)
+							return {
+								...s,
+								motion: { ...s.motion, calibration: true },
+								zProbe: { ...s.zProbe!, active: true, z: 5 }
+							};
+						if (op.script.startsWith('TESTZ'))
+							return {
+								...s,
+								zProbe: {
+									...s.zProbe!,
+									z: s.zProbe!.z! + Number(op.script.match(/Z=(-?[\d.]+)/)![1])
+								}
+							};
+						if (op.script.startsWith('ACCEPT'))
+							return {
+								...s,
+								motion: { ...s.motion, calibration: false },
+								zProbe: {
+									...s.zProbe!,
+									active: false,
+									pending: true,
+									pendingOffset: 1.234,
+									pendingKeys: ['bltouch.z_offset']
+								}
+							};
+						if (op.script.startsWith('ABORT'))
+							return {
+								...s,
+								motion: { ...s.motion, calibration: false },
+								zProbe: { ...s.zProbe!, active: false }
+							};
 						if (op.script === 'TURN_OFF_HEATERS')
 							return {
 								...s,
@@ -189,6 +224,7 @@ async function fixture(filename = ':memory:', filamentEnabled = true) {
 			Layer.provide(
 				Layer.succeed(LiveActionSettings, {
 					enabled: true,
+					zEnabled: true,
 					filamentEnabled,
 					target: 'fixture',
 					observationMs: 10
@@ -705,4 +741,169 @@ it('live filament requires its own explicit enablement', async () => {
 		f.submit({ type: 'extrusionFeed', runId: crypto.randomUUID(), distance: 5, confirmed: true })
 	).rejects.toThrow(/disabled/);
 	expect(f.operations).toHaveLength(0);
+});
+async function zReady(f: Awaited<ReturnType<typeof fixture>>) {
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			availableObjects: [...s.availableObjects, 'manual_probe'],
+			zProbe: {
+				method: 'probe' as const,
+				active: false,
+				z: 20,
+				offset: [-24, -13] as [number, number],
+				pending: false,
+				pendingOffset: null,
+				pendingKeys: []
+			}
+		}))
+	);
+	await expect.poll(async () => (await f.snapshot()).zProbe?.method).toBe('probe');
+}
+it('live Z helper reconciles begin/adjust/accept and stages a result without saving configuration', async () => {
+	const f = await fixture();
+	await zReady(f);
+	const id = crypto.randomUUID();
+	await f.submit({ type: 'zProbeBegin', run: id, confirmed: true });
+	await f.finished();
+	expect((await f.snapshot()).liveZ?.session).toMatchObject({
+		id,
+		stage: 'active',
+		version: 0,
+		z: 5
+	});
+	await f.submit({ type: 'zProbeAdjust', run: id, version: 0, expectedZ: 5, delta: -0.1 });
+	await f.finished();
+	expect((await f.snapshot()).liveZ?.session).toMatchObject({ version: 1, z: 4.9 });
+	await f.submit({ type: 'zProbeAccept', run: id, version: 1, expectedZ: 4.9, confirmed: true });
+	await f.finished();
+	expect((await f.snapshot()).liveZ?.session).toMatchObject({ stage: 'staged', candidate: 1.234 });
+	expect(f.operations).toHaveLength(3);
+	expect(f.operations.some((o) => 'script' in o && o.script.includes('SAVE_CONFIG'))).toBe(false);
+});
+it('live Z rejects stale height/version and other operators then allows explicit abort', async () => {
+	const f = await fixture();
+	await zReady(f);
+	const run = crypto.randomUUID();
+	await f.submit({ type: 'zProbeBegin', run, confirmed: true });
+	await f.finished();
+	await f.submit({ type: 'zProbeAdjust', run, version: 0, expectedZ: 4, delta: -0.1 });
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('failed');
+	await f.submit(
+		{ type: 'zProbeAdjust', run, version: 0, expectedZ: 5, delta: -0.1 },
+		{ ...owner, id: 'other' }
+	);
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('failed');
+	expect(f.operations).toHaveLength(1);
+	await f.submit({ type: 'zProbeAbort', run, version: 0, confirmed: true });
+	await f.finished();
+	expect((await f.snapshot()).liveZ?.session?.stage).toBe('aborted');
+	expect((await f.snapshot()).motion.calibration).toBe(false);
+});
+it('live Z does not begin with pending settings or a probe path outside bounds', async () => {
+	const f = await fixture();
+	await zReady(f);
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({ ...s, zProbe: { ...s.zProbe!, pending: true } }))
+	);
+	await f.submit({ type: 'zProbeBegin', run: crypto.randomUUID(), confirmed: true });
+	await f.finished();
+	expect(f.operations).toHaveLength(0);
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			zProbe: { ...s.zProbe!, pending: false },
+			motion: { ...s.motion, position: { ...s.motion.position, x: 0 } }
+		}))
+	);
+	await f.submit({ type: 'zProbeBegin', run: crypto.randomUUID(), confirmed: true });
+	await f.finished();
+	expect(f.operations).toHaveLength(0);
+});
+it('lost probe acknowledgement never claims accepted height or replays the helper', async () => {
+	const f = await fixture();
+	await zReady(f);
+	const run = crypto.randomUUID();
+	await f.submit({ type: 'zProbeBegin', run, confirmed: true });
+	await f.finished();
+	f.setBehavior('drop');
+	const id = crypto.randomUUID(),
+		command = {
+			type: 'zProbeAccept' as const,
+			run,
+			version: 0,
+			expectedZ: 5,
+			confirmed: true as const
+		};
+	await f.submit(command, owner, id);
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('unknown');
+	expect((await f.snapshot()).liveZ?.session?.stage).toBe('interrupted');
+	await f.submit(command, owner, id);
+	expect(f.operations).toHaveLength(2);
+});
+it('live Z restart and externally ended helper never resume a paper test', async () => {
+	const dir = await mkdtemp(join(tmpdir(), 'perilune-z-'));
+	cleanup.push(() => rm(dir, { recursive: true, force: true }));
+	const file = join(dir, 'state.sqlite');
+	const a = await fixture(file);
+	await zReady(a);
+	const run = crypto.randomUUID();
+	await a.submit({ type: 'zProbeBegin', run, confirmed: true });
+	await a.finished();
+	await a.runtime.dispose();
+	const b = await fixture(file);
+	expect((await b.snapshot()).liveZ?.session).toMatchObject({ id: run, stage: 'interrupted' });
+	expect(b.operations).toHaveLength(0);
+	await zReady(b);
+	await b.submit({ type: 'zProbeBegin', run: crypto.randomUUID(), confirmed: true });
+	await b.finished();
+	await b.runtime.runPromise(
+		SubscriptionRef.update(b.state, (s) => ({
+			...s,
+			motion: { ...s.motion, calibration: false },
+			zProbe: { ...s.zProbe!, active: false }
+		}))
+	);
+	await expect.poll(async () => (await b.snapshot()).liveZ?.session?.stage).toBe('interrupted');
+	expect((await b.snapshot()).motion.calibration).toBe(false);
+});
+it('owned Z abort stays available if a heater target or busy state changes externally', async () => {
+	const f = await fixture();
+	await zReady(f);
+	const run = crypto.randomUUID();
+	await f.submit({ type: 'zProbeBegin', run, confirmed: true });
+	await f.finished();
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			heaters: { ...s.heaters, nozzle: { current: 30, target: 200 } },
+			motion: { ...s.motion, busy: true }
+		}))
+	);
+	await f.submit({ type: 'zProbeAbort', run, version: 0, confirmed: true });
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('completed');
+	expect((await f.snapshot()).liveZ?.session?.stage).toBe('aborted');
+});
+it('resolved pending Z results allow a fresh calibration without claiming they remain pending', async () => {
+	const f = await fixture();
+	await zReady(f);
+	const run = crypto.randomUUID();
+	await f.submit({ type: 'zProbeBegin', run, confirmed: true });
+	await f.finished();
+	await f.submit({ type: 'zProbeAccept', run, version: 0, expectedZ: 5, confirmed: true });
+	await f.finished();
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			zProbe: { ...s.zProbe!, pending: false, pendingOffset: null, pendingKeys: [] }
+		}))
+	);
+	await expect.poll(async () => (await f.snapshot()).liveZ?.session?.stage).toBe('resolved');
+	await f.submit({ type: 'zProbeBegin', run: crypto.randomUUID(), confirmed: true });
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('completed');
 });

@@ -3,13 +3,15 @@
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
 	let { intent, snapshot }: { intent: string; snapshot: PrinterSnapshot } = $props();
 	const title = $derived(
-		intent === 'emergency'
-			? 'Emergency stop printer?'
-			: intent === 'stop'
-				? 'Stop the current job?'
-				: intent === 'review'
-					? 'Review safety interlock'
-					: 'Turn off all heaters?'
+		intent === 'abortProbe'
+			? 'Abort the current manual probe?'
+			: intent === 'emergency'
+				? 'Emergency stop printer?'
+				: intent === 'stop'
+					? 'Stop the current job?'
+					: intent === 'review'
+						? 'Review safety interlock'
+						: 'Turn off all heaters?'
 	);
 	const fields = $derived<Record<string, string>>(
 		intent === 'stop'
@@ -19,7 +21,7 @@
 					filename: snapshot.job.filename ?? '',
 					runId: snapshot.job.runId ?? ''
 				}
-			: intent === 'cooldown'
+			: intent === 'cooldown' || intent === 'abortProbe'
 				? { intent, recoveryOf: snapshot.liveRecovery?.id ?? '' }
 				: { intent }
 	);
@@ -45,11 +47,13 @@
 	</ActionForm>
 {:else}
 	<p>
-		{intent === 'emergency'
-			? 'Immediately shuts down Klipper. Movement and heating stop; motors may release. Support the gantry if needed. Resolve the hazard before restarting Klipper. This bypasses the normal command queue.'
-			: intent === 'stop'
-				? `Stops ${snapshot.job.filename ?? 'the displayed job'}. Your printer’s cancel macro runs; it may move the toolhead or turn heaters off. No heater targets will be restored.`
-				: 'Sets every heater target to zero. This does not stop a running job or release motors.'}
+		{intent === 'abortProbe'
+			? 'Ends the currently observed manual probe helper without accepting or saving its result. The original uncertain action stays locked.'
+			: intent === 'emergency'
+				? 'Immediately shuts down Klipper. Movement and heating stop; motors may release. Support the gantry if needed. Resolve the hazard before restarting Klipper. This bypasses the normal command queue.'
+				: intent === 'stop'
+					? `Stops ${snapshot.job.filename ?? 'the displayed job'}. Your printer’s cancel macro runs; it may move the toolhead or turn heaters off. No heater targets will be restored.`
+					: 'Sets every heater target to zero. This does not stop a running job or release motors.'}
 	</p>
 	{#if intent !== 'emergency'}<p>
 			The original uncertain action stays locked and will never be replayed.
@@ -58,22 +62,26 @@
 		{#snippet children({ pending, uncertain })}
 			<label
 				><input type="checkbox" name="confirmed" value="true" required /> Confirm {intent ===
-				'emergency'
-					? 'emergency shutdown'
-					: intent === 'stop'
-						? 'stopping this job'
-						: 'turning off all heaters'}</label
+				'abortProbe'
+					? 'aborting the current manual probe'
+					: intent === 'emergency'
+						? 'emergency shutdown'
+						: intent === 'stop'
+							? 'stopping this job'
+							: 'turning off all heaters'}</label
 			>
 			<button
 				class={intent === 'emergency' ? 'button danger' : 'button primary'}
 				disabled={pending || uncertain}
 				>{pending
 					? 'Submitting…'
-					: intent === 'emergency'
-						? 'Emergency stop'
-						: intent === 'stop'
-							? 'Stop job'
-							: 'Turn off heaters'}</button
+					: intent === 'abortProbe'
+						? 'Abort manual probe'
+						: intent === 'emergency'
+							? 'Emergency stop'
+							: intent === 'stop'
+								? 'Stop job'
+								: 'Turn off heaters'}</button
 			>
 		{/snippet}</ActionForm
 	>

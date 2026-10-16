@@ -1,3 +1,4 @@
+import { LiveZCommand, type LiveZState, type ZProbeCapability } from './live-z.js';
 import { safetyReason, type SafetySnapshot } from './safety.js';
 import {
 	ExtrusionCommand,
@@ -42,6 +43,7 @@ const expectedJob = Schema.optional(
 	Schema.Struct({ filename: Schema.String, runId: Schema.NullOr(Schema.String) })
 );
 export const PrinterCommand = Schema.Union([
+	LiveZCommand,
 	ExtrusionCommand,
 	CalibrationCommand,
 	MeshProbeCommand,
@@ -102,6 +104,9 @@ export interface PrinterSnapshot {
 	configurationBusy?: boolean;
 	liveControls?: boolean;
 	liveFilament?: boolean;
+	liveZEnabled?: boolean;
+	liveZ?: LiveZState;
+	zProbe?: ZProbeCapability;
 	filament?: {
 		canExtrude: boolean;
 		position: number | null;
@@ -174,6 +179,14 @@ export const initialSnapshot = (): PrinterSnapshot => ({
 });
 export function actionLabel(command: PrinterCommand): string {
 	switch (command.type) {
+		case 'zProbeBegin':
+			return 'Begin live Z calibration';
+		case 'zProbeAdjust':
+			return `Adjust probe Z ${command.delta} mm`;
+		case 'zProbeAccept':
+			return 'Accept Z calibration (pending save)';
+		case 'zProbeAbort':
+			return 'Abort Z calibration';
 		case 'extrusionBegin':
 			return 'Begin measured simulator extrusion';
 		case 'extrusionFeed':
@@ -237,6 +250,8 @@ export function applyCommand(
 		throw new CommandRejected({
 			message: 'Configuration recovery owns the printer. Finish it before sending commands.'
 		});
+	if ('run' in command)
+		throw new CommandRejected({ message: 'Live Z probing is unavailable in simulator mode.' });
 	if ('runId' in command) return applyExtrusion(state, command, actor);
 	if (extrusionActive(state.extrusion) && command.type !== 'cooldown')
 		throw new CommandRejected({

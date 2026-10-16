@@ -1,3 +1,5 @@
+import { zProbePlan } from './live-z.js';
+import { liveZActive, interruptLiveZ, type LiveZState } from '#lib/domain/live-z.js';
 import { filamentPlan } from './live-filament.js';
 import { extrusionActive, interruptExtrusion, type ExtrusionState } from '#lib/domain/extrusion.js';
 import { safetyReason } from '#lib/domain/safety.js';
@@ -21,7 +23,13 @@ import { printerAdmission, printerInterlock } from './printer-admission.js';
 
 export class LiveActionSettings extends Context.Service<
 	LiveActionSettings,
-	{ enabled: boolean; filamentEnabled?: boolean; target: string; observationMs?: number }
+	{
+		enabled: boolean;
+		filamentEnabled?: boolean;
+		zEnabled?: boolean;
+		target: string;
+		observationMs?: number;
+	}
 >()('perilune/LiveActionSettings') {}
 export class LiveActionService extends Context.Service<
 	LiveActionService,
@@ -48,6 +56,10 @@ const authorized = (actor: CalibrationActor) =>
 const recoveryMessage =
 	'A live action has an unknown outcome. Inspect the printer, then review recovery in Controls. No command was replayed.';
 const supported = new Set([
+	'zProbeBegin',
+	'zProbeAdjust',
+	'zProbeAccept',
+	'zProbeAbort',
 	'extrusionBegin',
 	'extrusionFeed',
 	'extrusionMeasure',
@@ -87,7 +99,8 @@ function checked(snapshot: PrinterSnapshot, fresh: MoonrakerSnapshot): PrinterSn
 		heaters: fresh.heaters,
 		job: fresh.job,
 		bedMesh: fresh.bedMesh,
-		filament: fresh.filament
+		filament: fresh.filament,
+		zProbe: fresh.zProbe
 	};
 }
 export const LiveActionServiceLive = Layer.effect(
@@ -114,6 +127,7 @@ export const LiveActionServiceLive = Layer.effect(
 							...next.motion,
 							calibration:
 								hardware.motion.calibration ||
+								liveZActive(next.liveZ) ||
 								meshProbeActive(next.meshProbe) ||
 								extrusionActive(next.extrusion)
 						},
@@ -131,6 +145,7 @@ export const LiveActionServiceLive = Layer.effect(
 			...s,
 			liveControls: settings.enabled,
 			liveFilament: settings.enabled && settings.filamentEnabled === true,
+			liveZEnabled: settings.enabled && settings.zEnabled === true,
 			actions: history,
 			liveRecovery: saved[0] ? { id: saved[0].action_id, message: recoveryMessage } : null
 		}));
@@ -149,6 +164,23 @@ export const LiveActionServiceLive = Layer.effect(
 			);
 		yield* writeFilament(restoredFilament);
 		yield* update((s) => ({ ...s, extrusion: restoredFilament }));
+		const persistedZ = yield* sql<{
+			state: string;
+		}>`SELECT state FROM live_z_state WHERE target=${target}`;
+		const restoredZ = persistedZ[0]
+			? interruptLiveZ(
+					JSON.parse(persistedZ[0].state) as LiveZState,
+					'Backend restarted. The helper was not resumed. Inspect the printer and abort any remaining manual probe.'
+				)
+			: { session: null };
+		const writeZ = (state: LiveZState) =>
+			sql`INSERT INTO live_z_state(target,state) VALUES(${target},${JSON.stringify(state)}) ON CONFLICT(target) DO UPDATE SET state=excluded.state`.pipe(
+				Effect.asVoid
+			);
+		yield* writeZ(restoredZ);
+		yield* update((s) => ({ ...s, liveZ: restoredZ }));
+		let zActor: CalibrationActor | undefined, zCheckpoint: LiveZState | undefined;
+
 		let filamentActor: CalibrationActor | undefined;
 		let filamentCheckpoint: ExtrusionState | undefined;
 
@@ -166,15 +198,20 @@ export const LiveActionServiceLive = Layer.effect(
 			if (interlock.halted || safetyReason(s.safety))
 				throw reject(safetyReason(s.safety) ?? 'Emergency stop interlock is active.');
 			if (!settings.enabled) throw reject('Live controls are disabled on this server.');
+			if (request.command.type.startsWith('zProbe') && !settings.zEnabled)
+				throw reject('Live Z calibration is disabled on this server.');
 			if (request.command.type.startsWith('extrusion') && !settings.filamentEnabled)
 				throw reject('Live filament controls are disabled on this server.');
 			if (!authorized(actor)) throw reject('An authorized operator is required.');
 			if (!supported.has(request.command.type))
 				throw reject('This live workflow is not enabled yet.');
 			if (s.liveRecovery) throw reject(recoveryMessage);
+			if (liveZActive(s.liveZ) && !request.command.type.startsWith('zProbe'))
+				throw reject('Z calibration owns the printer.');
 			if (
 				s.configurationBusy ||
 				(s.motion.calibration &&
+					!request.command.type.startsWith('zProbe') &&
 					!(request.command.type.startsWith('extrusion') && extrusionActive(s.extrusion))) ||
 				meshProbeActive(s.meshProbe)
 			)
@@ -276,6 +313,9 @@ export const LiveActionServiceLive = Layer.effect(
 		const run = (job: NonNullable<typeof work>) =>
 			Effect.gen(function* () {
 				let sent = false;
+				let zResult: LiveZState | undefined,
+					zBefore: LiveZState | undefined,
+					zExpected: number | undefined;
 				let filamentResult: ExtrusionState | undefined, filamentBefore: ExtrusionState | undefined;
 				const result = yield* Effect.gen(function* () {
 					if (Date.now() - job.action.createdAt >= 30000)
@@ -291,7 +331,17 @@ export const LiveActionServiceLive = Layer.effect(
 					const filament = job.request.command.type.startsWith('extrusion')
 						? yield* check(() => filamentPlan(job.request, s, fresh, job.actor))
 						: null;
-					const operations = filament?.operations ?? (yield* plan(job.request, s, fresh));
+					const z = job.request.command.type.startsWith('zProbe')
+						? yield* check(() => zProbePlan(job.request, s, fresh, job.actor))
+						: null;
+					const operations =
+						z?.operations ?? filament?.operations ?? (yield* plan(job.request, s, fresh));
+					if (z) {
+						zResult = z.state;
+						zBefore = s.liveZ ?? { session: null };
+						zExpected = z.expectedZ;
+					}
+
 					if (filament) {
 						filamentResult = filament.state;
 						filamentBefore = s.extrusion;
@@ -315,10 +365,21 @@ export const LiveActionServiceLive = Layer.effect(
 						yield* writeFilament(filamentResult);
 						yield* update((s) => ({ ...s, extrusion: filamentResult! }));
 					}
+					if (zResult) {
+						const pendingZ = {
+							session: {
+								...zResult.session!,
+								stage: 'active' as const,
+								message: 'Waiting for printer acknowledgement and fresh helper state.'
+							}
+						};
+						yield* writeZ(pendingZ);
+						yield* update((s) => ({ ...s, liveZ: pendingZ }));
+					}
 					for (const [index, op] of operations.entries()) {
 						if (index === 0 && Date.now() - job.action.createdAt >= 30000)
 							return yield* Effect.fail(reject('Action expired before dispatch.'));
-						if (index > 0) {
+						if (index > 0 && job.request.command.type === 'cancel') {
 							const stopped = yield* transport.refresh(job.generation);
 							if (
 								!['cancelled', 'standby', 'complete'].includes(stopped.job.state) ||
@@ -354,7 +415,45 @@ export const LiveActionServiceLive = Layer.effect(
 						if (!interlock.allows(job.epoch))
 							return yield* Effect.fail(reject('Emergency stop interrupted action verification.'));
 						const observed = yield* transport.refresh(job.generation);
+						if (!interlock.allows(job.epoch))
+							return yield* Effect.fail(reject('Emergency stop interrupted action verification.'));
 						const c = job.request.command;
+
+						if (zResult) {
+							const c = job.request.command,
+								cap = observed.zProbe;
+							const matched =
+								c.type === 'zProbeAbort'
+									? !cap?.active
+									: c.type === 'zProbeAccept'
+										? !cap?.active && cap?.pending && cap.pendingOffset !== null
+										: cap?.active &&
+											cap.z !== null &&
+											(zExpected === undefined || Math.abs(cap.z - zExpected) < 0.005);
+							if (matched && cap) {
+								zResult = {
+									session: {
+										...zResult.session!,
+										z: cap.z,
+										candidate:
+											c.type === 'zProbeAccept' ? cap.pendingOffset : zResult.session!.candidate,
+										message:
+											c.type === 'zProbeAccept'
+												? 'Accepted by Klipper as a pending configuration change. It is not saved or active until reviewed save/restart.'
+												: zResult.session!.message
+									}
+								};
+								return;
+							}
+							if (Date.now() >= deadline)
+								return yield* Effect.fail(
+									reject(
+										'The probe helper acknowledgement could not be reconciled with fresh state.'
+									)
+								);
+							yield* Effect.sleep('250 millis');
+							continue;
+						}
 						if (filamentResult) {
 							const c = job.request.command;
 							if (c.type === 'extrusionBegin' || c.type === 'extrusionFeed') {
@@ -443,6 +542,16 @@ export const LiveActionServiceLive = Layer.effect(
 								? result.failure.message
 								: 'Action was not dispatched. Review readiness and submit a new action if needed.'
 							: null;
+				const finalZ = zResult
+					? result._tag === 'Success'
+						? zResult
+						: sent
+							? interruptLiveZ(
+									{ session: { ...zResult.session!, stage: 'active' } },
+									recoveryMessage
+								)
+							: zBefore!
+					: undefined;
 				const finalFilament = filamentResult
 					? result._tag === 'Success'
 						? filamentResult
@@ -455,6 +564,7 @@ export const LiveActionServiceLive = Layer.effect(
 						Effect.gen(function* () {
 							yield* store.setStatus(job.action.id, status, message);
 							if (finalFilament) yield* writeFilament(finalFilament);
+							if (finalZ) yield* writeZ(finalZ);
 							if (status !== 'unknown')
 								yield* sql`DELETE FROM live_action_reservation WHERE target=${target} AND action_id=${job.action.id}`;
 						})
@@ -462,6 +572,11 @@ export const LiveActionServiceLive = Layer.effect(
 					.pipe(Effect.result);
 				yield* update((s) => ({
 					...s,
+					liveZ: finalZ
+						? persisted._tag === 'Failure'
+							? interruptLiveZ(finalZ, recoveryMessage)
+							: finalZ
+						: s.liveZ,
 					extrusion: finalFilament
 						? persisted._tag === 'Failure'
 							? interruptExtrusion(finalFilament, recoveryMessage)
@@ -483,9 +598,69 @@ export const LiveActionServiceLive = Layer.effect(
 					)
 				}));
 				if (result._tag === 'Success' && filamentResult) filamentActor = job.actor;
+				if (result._tag === 'Success' && zResult) zActor = job.actor;
 			});
 		yield* Effect.gen(function* () {
 			if (!work && !working) {
+				if (zCheckpoint) {
+					const saved = yield* writeZ(zCheckpoint).pipe(Effect.result);
+					if (saved._tag === 'Success') {
+						zCheckpoint = undefined;
+						yield* update((s) => ({ ...s, storage: s.liveRecovery ? s.storage : 'healthy' }));
+					}
+					return;
+				}
+				const zs = yield* SubscriptionRef.get(printer.state);
+				if (
+					zs.liveZ?.session?.stage === 'staged' &&
+					zs.zProbe &&
+					!zs.zProbe.pending &&
+					zs.telemetryReady &&
+					zs.connection === 'connected' &&
+					zs.klippy === 'ready'
+				) {
+					const state: LiveZState = {
+						session: {
+							...zs.liveZ.session,
+							stage: 'resolved',
+							message:
+								'No pending calibration remains. The result may have been saved or discarded externally; review active configuration before another test.'
+						}
+					};
+					const saved = yield* writeZ(state).pipe(Effect.result);
+					if (saved._tag === 'Failure') zCheckpoint = state;
+					yield* update((s) => ({
+						...s,
+						liveZ: state,
+						storage: saved._tag === 'Failure' ? 'degraded' : s.storage
+					}));
+				}
+
+				if (
+					liveZActive(zs.liveZ) &&
+					(zs.liveZ!.session!.expiresAt <= Date.now() ||
+						zs.liveRecovery ||
+						!zActor ||
+						!authorized(zActor) ||
+						zs.zProbe?.active !== true ||
+						['printing', 'paused'].includes(zs.job.state) ||
+						zs.connection !== 'connected' ||
+						zs.klippy !== 'ready' ||
+						interlock.halted)
+				) {
+					const state = interruptLiveZ(
+						zs.liveZ!,
+						'Session interrupted. No command was replayed. Abort the current manual probe before starting again.'
+					);
+					const saved = yield* writeZ(state).pipe(Effect.result);
+					if (saved._tag === 'Failure') zCheckpoint = state;
+					yield* update((s) => ({
+						...s,
+						liveZ: state,
+						storage: saved._tag === 'Failure' ? 'degraded' : s.storage
+					}));
+				}
+
 				if (filamentCheckpoint) {
 					const checkpoint = yield* writeFilament(filamentCheckpoint).pipe(Effect.result);
 					if (checkpoint._tag === 'Success') {

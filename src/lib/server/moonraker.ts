@@ -26,6 +26,7 @@ export class MoonrakerConfig extends Context.Service<MoonrakerConfig, MoonrakerS
 ) {}
 export type KlippyState = 'unknown' | 'ready' | 'startup' | 'shutdown' | 'error' | 'disconnected';
 export interface MoonrakerSnapshot {
+	zProbe?: import('#lib/domain/live-z.js').ZProbeCapability;
 	filament?: import('#lib/domain/printer.js').PrinterSnapshot['filament'];
 	/** Operator-only data; never forwarded into PrinterSnapshot/dashboard. */
 	heaterLimits?: Partial<Record<'bed' | 'nozzle', { min: number; max: number }>>;
@@ -108,12 +109,12 @@ export class MoonrakerService extends Context.Service<
 
 type ObjectStatus = Record<string, Record<string, unknown>>;
 const wanted: Record<string, string[]> = {
-	configfile: ['config', 'save_config_pending'],
+	configfile: ['config', 'save_config_pending', 'save_config_pending_items'],
 	bed_mesh: ['profile_name', 'mesh_min', 'mesh_max', 'probed_matrix', 'profiles'],
 	webhooks: ['state'],
 	toolhead: ['position', 'axis_minimum', 'axis_maximum', 'homed_axes', 'extruder'],
 	idle_timeout: ['state'],
-	manual_probe: ['is_active'],
+	manual_probe: ['is_active', 'z_position', 'z_position_lower', 'z_position_upper'],
 	print_stats: ['filename', 'state', 'print_duration', 'info'],
 	virtual_sdcard: ['progress'],
 	extruder: ['temperature', 'target', 'can_extrude'],
@@ -179,6 +180,8 @@ export function normalizeMoonrakerStatus(
 					: [];
 			})
 		),
+		zProbe: normalizeZProbe(status),
+
 		filament: {
 			canExtrude: status.extruder?.can_extrude === true,
 			position: Array.isArray(status.toolhead?.position)
@@ -744,4 +747,33 @@ function normalizeMotion(status: ObjectStatus): MotionSnapshot {
 	result.busy =
 		idle === 'Printing' ? true : ['Ready', 'Idle'].includes(String(idle)) ? false : null;
 	return result;
+}
+
+function normalizeZProbe(status: ObjectStatus): import('#lib/domain/live-z.js').ZProbeCapability {
+	const config = record(status.configfile?.config),
+		pending = record(status.configfile?.save_config_pending_items);
+	const probe = record(config.probe ?? config.bltouch),
+		endstop = record(config.stepper_z);
+	const method =
+		config.probe || config.bltouch
+			? 'probe'
+			: typeof endstop.endstop_pin === 'string' && !endstop.endstop_pin.includes('virtual_endstop')
+				? 'endstop'
+				: null;
+	const section = config.bltouch ? 'bltouch' : 'probe',
+		option = method === 'probe' ? 'z_offset' : 'position_endstop';
+	const offset: [number, number] = [Number(probe.x_offset ?? 0), Number(probe.y_offset ?? 0)];
+	return {
+		method,
+		active: status.manual_probe?.is_active === true,
+		z: number(status.manual_probe?.z_position),
+		offset: offset.every(Number.isFinite) ? offset : null,
+		pending: status.configfile?.save_config_pending === true,
+		pendingKeys: Object.entries(pending)
+			.flatMap(([section, values]) => Object.keys(record(values)).map((key) => `${section}.${key}`))
+			.slice(0, 100),
+		pendingOffset: number(
+			Number(record(pending[method === 'probe' ? section : 'stepper_z'])[option] ?? NaN)
+		)
+	};
 }

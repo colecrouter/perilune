@@ -18,7 +18,7 @@ export const load: PageServerLoad = async (event) => {
 	const intent = event.url.searchParams.get('intent');
 	return {
 		snapshot,
-		intent: ['stop', 'cooldown', 'emergency', 'review'].includes(intent ?? '')
+		intent: ['stop', 'cooldown', 'emergency', 'review', 'abortProbe'].includes(intent ?? '')
 			? intent!
 			: 'emergency'
 	};
