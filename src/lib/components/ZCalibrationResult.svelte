@@ -97,7 +97,8 @@
 		</div>
 		<div>
 			<dt>
-				{session.setting ?? (session.method === 'probe' ? 'Probe Z offset' : 'Z endstop position')}
+				{session.method === 'probe' ? 'Probe Z offset' : 'Z endstop position'}
+				{#if session.setting}<code>{session.setting}</code>{/if}
 			</dt>
 			<dd>
 				{session.previousOffset?.toFixed(3) ?? '—'} →
@@ -187,8 +188,20 @@
 		color: var(--muted);
 		margin-top: 0.25rem;
 	}
+	dt code {
+		display: block;
+		margin-top: 0.25rem;
+		font-size: 0.8rem;
+		color: var(--muted);
+	}
 	p {
+		margin: 0.8rem 0;
 		line-height: 1.6;
+	}
+	.button {
+		max-width: 100%;
+		white-space: normal;
+		text-align: center;
 	}
 	.muted {
 		color: var(--muted);

@@ -171,7 +171,7 @@
 
 <svelte:head><title>Calibration · Perilune</title></svelte:head>
 <AppShell {snapshot} active="Calibration"
-	>{#if snapshot.mode === 'moonraker'}<div class="page serif">
+	>{#if snapshot.mode === 'moonraker'}<div class="calibration-page serif">
 			<h1>Z calibration</h1>
 			<LiveZCalibration
 				{snapshot}
