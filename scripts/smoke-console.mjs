@@ -203,7 +203,10 @@ try {
 			.at(-1)
 			.send(JSON.stringify({ jsonrpc: '2.0', method: 'notify_gcode_response', params: [text] }));
 	await livePage.getByText('Temperature updates · 2 messages').click();
-	await livePage.getByText('B:25 /0 T0:26 /0', { exact: true }).waitFor();
+	await livePage
+		.locator('.response-group li')
+		.getByText('B:25 /0 T0:26 /0', { exact: true })
+		.waitFor();
 	await livePage.getByRole('checkbox', { name: 'Group repeated responses' }).uncheck();
 	assert.equal(await livePage.locator('.response-group').count(), 0);
 	assert.equal(
