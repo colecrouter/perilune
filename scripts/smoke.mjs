@@ -68,12 +68,13 @@ try {
 	await publicContext.close();
 	await authenticate(context, base, join(directory, 'state.sqlite'));
 	const first = await context.newPage();
-	const heldDashboardRequests = new Set();
+	const heldStatusRequests = new Set();
 	first.on('request', (request) => {
-		if (request.url().includes('/getDashboard')) heldDashboardRequests.add(request);
+		if (request.url().includes('/getDashboard') || request.url().includes('/getPrinter'))
+			heldStatusRequests.add(request);
 	});
-	first.on('requestfinished', (request) => heldDashboardRequests.delete(request));
-	first.on('requestfailed', (request) => heldDashboardRequests.delete(request));
+	first.on('requestfinished', (request) => heldStatusRequests.delete(request));
+	first.on('requestfailed', (request) => heldStatusRequests.delete(request));
 	failurePage = first;
 	first.setDefaultTimeout(5000);
 	const errors = [];
@@ -205,10 +206,14 @@ try {
 	await first.getByRole('heading', { name: 'Printer controls', exact: true }).waitFor();
 	assert.equal(await first.locator('link[rel="icon"]').count(), 1);
 	const streamDeadline = Date.now() + 5000;
-	while (heldDashboardRequests.size !== 1 && Date.now() < streamDeadline) {
+	while (heldStatusRequests.size !== 1 && Date.now() < streamDeadline) {
 		await new Promise((resolve) => setTimeout(resolve, 50));
 	}
-	assert.equal(heldDashboardRequests.size, 1, 'One dashboard stream after navigating to Controls');
+	assert.equal(heldStatusRequests.size, 1, 'One printer-only stream after navigating to Controls');
+	assert.ok(
+		[...heldStatusRequests][0].url().includes('/getPrinter'),
+		'Controls does not subscribe to camera updates'
+	);
 	await second.goto(`${base}/controls`);
 	assert.equal(await first.title(), 'Printer controls · Perilune');
 	await first.locator('.bed-map').click();
