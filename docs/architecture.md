@@ -971,3 +971,13 @@ SafetyService receipt and retains the original unknown action. Browser submissio
 ambiguity retains the ID and blocks fresh sends until its receipt is observed.
 Paper judgement and physical acceptance need an attended printer; protocol and
 headless coverage do not substitute for that measurement.
+
+### Live calibration configuration acceptance
+
+Live filament and Z calibration are separately opt-in. Z ACCEPT stages a Klipper pending setting; it does not persist or restart. The owner configuration screen reviews the complete pending manifest, snapshots the actual main file, checks source dependencies and pending values again, then sends SAVE_CONFIG once. Exact predicted bytes and a fresh startup are required for success; acknowledgement loss stays unknown without replay. Verified calibration writes share the same export/revert path as reviewed source edits. Section removals and unsupported source constructs require manual review.
+
+Extrusion proposals resolve the effective source through ordered, sorted includes with bounded traversal, show its file/line and retain a dependency fingerprint for dispatch. Protected generated settings and ambiguous/multiline origins cannot be applied automatically. The resolver is conservative, not a replacement for Klipper semantic validation. External Moonraker clients cannot participate in Perilune's reservation; exact version checks catch observed changes but are not a cross-client atomic lock.
+
+Main discovery validates Klipper's reported path against Moonraker's config root. If Klipper reports a relative path, the administrator must explicitly set PERILUNE_KLIPPER_WORKING_DIRECTORY to **Klipper's process working directory**, not Perilune's. It remains server-only, must be updated after deployment changes and defaults to refusing relative paths.
+
+Physical acceptance: a harmless comment above the generated block was applied to the real printer and reverted through the recovery UI. Both fresh startups were verified and the restored file matched the original bytes exactly. Filament heated PLA to 200°C and commanded one 50 mm feed; a development reload exercised unknown-outcome/no-replay recovery. Owner observed approximately 47.7 mm travel from an approximate mark; no rotation-distance change was applied. A precise repeated extrusion measurement and attended Z paper judgement remain pending.

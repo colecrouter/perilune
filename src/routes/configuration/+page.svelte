@@ -3,6 +3,7 @@
 	import { untrack } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import AppShell from '#lib/components/AppShell.svelte';
+	import PendingConfiguration from '#lib/components/PendingConfiguration.svelte';
 	import ConfigurationRecovery from '#lib/components/ConfigurationRecovery.svelte';
 	import ConfigurationEditor from '#lib/components/ConfigurationEditor.svelte';
 	import type { ConfigDocument, ConfigSave, ConfigSaved } from '#lib/domain/configuration.js';
@@ -53,7 +54,9 @@
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(request)
 		});
-	const apply = async (request: ConfigSave) => {
+	const apply = async (
+		request: ConfigSave & { sources?: { root: string; fingerprint: string } }
+	) => {
 		await api('/api/configuration/application', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -84,6 +87,7 @@
 				</p>
 			</section>{:else}
 			<ConfigurationRecovery onEnabled={(value) => (applicationEnabled = value)} />
+			{#if applicationEnabled}<PendingConfiguration />{/if}
 			{#if data.issue}<section class="panel">
 					<h2>Could not open that file</h2>
 					<p role="alert">
@@ -99,6 +103,7 @@
 					onSave={save}
 					{applicationEnabled}
 					onApply={apply}
+					onResolveSources={() => api('/api/configuration?sources=@main')}
 					onBackup={backup}
 					calibrationProposal={calibrationHandoff.proposal?.ownerId === data.user?.id
 						? calibrationHandoff.proposal

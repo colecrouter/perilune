@@ -1,3 +1,8 @@
+import {
+	pendingManifest,
+	pendingFingerprint,
+	pendingConfigurationText
+} from './pending-configuration.js';
 import { safetyReason } from '#lib/domain/safety.js';
 import { printerAdmission, printerInterlock } from './printer-admission.js';
 import { extrusionActive } from '#lib/domain/extrusion.js';
@@ -17,6 +22,8 @@ import { migrate } from './migrations.js';
 import { checkConfigChange, validConfigPath } from '#lib/domain/configuration.js';
 import type {
 	ApplyConfiguration,
+	SavePendingConfiguration,
+	PendingConfigurationReview,
 	ConfigApplication,
 	ConfigRecovery
 } from '#lib/domain/config-application.js';
@@ -27,9 +34,15 @@ export class ConfigurationApplicationSettings extends Context.Service<
 export class ConfigurationApplicationService extends Context.Service<
 	ConfigurationApplicationService,
 	{
+		reviewPending: (
+			actor: ConfigActor
+		) => Effect.Effect<PendingConfigurationReview, ConfigurationError>;
 		status: (actor: ConfigActor) => Effect.Effect<ConfigRecovery, ConfigurationError>;
 		submit: (
-			request: ApplyConfiguration | { id: string; revertOf: string; confirmedRestart: true },
+			request:
+				| ApplyConfiguration
+				| SavePendingConfiguration
+				| { id: string; revertOf: string; confirmedRestart: true },
 			actor: ConfigActor
 		) => Effect.Effect<ConfigApplication, ConfigurationError>;
 		snapshot: (
@@ -139,33 +152,57 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 		};
 		const info = (signal: AbortSignal) =>
 			call('/printer/info', signal) as Promise<{ state: string; state_message: string }>;
-		const idle = async (signal: AbortSignal, reverting: boolean) => {
+		const idle = async (signal: AbortSignal, reverting: boolean, allowPending = false) => {
 			const state = await info(signal);
 			if (state.state !== 'ready') {
 				if (reverting && ['error', 'shutdown'].includes(state.state)) return;
 				throw failure('Wait for a ready, idle printer before applying a configuration.');
 			}
 			const result = await call(
-				'/printer/objects/query?print_stats&idle_timeout&configfile&extruder&heater_bed',
+				'/printer/objects/query?print_stats&idle_timeout&configfile&heaters&manual_probe',
 				signal
 			);
+			const inventory = result?.status?.heaters?.available_heaters;
+			if (
+				!Array.isArray(inventory) ||
+				inventory.length > 64 ||
+				inventory.some(
+					(name: unknown) => typeof name !== 'string' || !/^[a-zA-Z0-9_ ]+$/.test(name)
+				) ||
+				result?.status?.manual_probe?.is_active !== false
+			)
+				throw failure(
+					'Cannot verify all heaters and manual-probe activity. No configuration operation was sent.'
+				);
+			const heaters = inventory.length
+				? await call(
+						'/printer/objects/query?' +
+							inventory.map((name: string) => encodeURIComponent(name)).join('&'),
+						signal
+					)
+				: { status: {} };
+			if (inventory.some((name: string) => heaters?.status?.[name]?.target !== 0))
+				throw failure('Turn off all configured heaters before changing configuration.');
 			if (
 				!['standby', 'complete', 'cancelled', 'error'].includes(
 					result?.status?.print_stats?.state
 				) ||
-				!['Ready', 'Idle'].includes(result?.status?.idle_timeout?.state) ||
-				result?.status?.extruder?.target !== 0 ||
-				result?.status?.heater_bed?.target !== 0
+				!['Ready', 'Idle'].includes(result?.status?.idle_timeout?.state)
 			)
 				throw failure('Stop printing, motion, and heating activity before changing configuration.');
-			if (result?.status?.configfile?.save_config_pending)
+			if (result?.status?.configfile?.save_config_pending && !allowPending)
 				throw failure(
 					'Klipper has pending SAVE_CONFIG changes. Resolve or export them before restarting.'
 				);
+			return result.status.configfile;
 		};
 		const target = hash(settings.moonrakerUrl);
 		const recordOf = (row: Row) =>
-			JSON.parse(row.record) as ConfigApplication & { target?: string };
+			JSON.parse(row.record) as ConfigApplication & {
+				target?: string;
+				sources?: ApplyConfiguration['sources'];
+				pending?: string;
+			};
 		const matchesTarget = (row: Row) => recordOf(row).target === target;
 		const starting = yield* Effect.tryPromise({ try: readRows, catch: convert });
 		for (const row of starting) {
@@ -199,7 +236,35 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 					authorize(job.actor);
 					if (Date.now() >= job.row.expires_at)
 						throw failure('This operation expired before dispatch. Review a fresh request.');
-					await idle(signal, record.mode === 'revert');
+					const freshPending = await idle(
+						signal,
+						record.mode === 'revert',
+						record.mode === 'calibration'
+					);
+					if (
+						record.mode === 'calibration' &&
+						pendingFingerprint(pendingManifest(freshPending?.save_config_pending_items)) !==
+							record.pending
+					)
+						throw failure('Pending calibration settings changed after review. No save was sent.');
+					if (record.sources) {
+						const sources = await Effect.runPromise(
+							files.sources(
+								record.mode === 'calibration' ? '@main' : record.sources.root,
+								job.actor
+							),
+							{
+								signal
+							}
+						);
+						if (
+							sources.root !== record.sources.root ||
+							sources.fingerprint !== record.sources.fingerprint
+						)
+							throw failure(
+								'Included configuration sources changed after review. No upload was sent.'
+							);
+					}
 					const current = await Effect.runPromise(files.read(record.path, job.actor));
 					if (current.text !== job.row.before_text)
 						throw failure(
@@ -210,38 +275,65 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 						'Snapshot stored. Uploading the reviewed file; an acknowledgement loss will not trigger a retry.'
 					);
 					authorize(job.actor);
-					const form = new FormData();
-					form.set('root', 'config');
-					const parts = record.path.split('/');
-					const name = parts.pop()!;
-					if (parts.length) form.set('path', parts.join('/'));
-					form.set('file', new Blob([job.row.after_text], { type: 'text/plain' }), name);
-					if (job.row.before_text !== job.row.after_text) {
+					if (record.mode === 'calibration') {
+						await update(
+							'restarting',
+							'Reviewed pending settings snapshotted. Requesting SAVE_CONFIG once and verifying saved bytes and fresh startup.'
+						);
+						const latest = await idle(signal, false, true);
+						if (
+							Date.now() >= job.row.expires_at ||
+							pendingFingerprint(pendingManifest(latest?.save_config_pending_items)) !==
+								record.pending
+						)
+							throw failure(
+								'Pending settings changed or the review expired before dispatch. No save was sent.'
+							);
 						attempted = true;
 						await call(
-							'/server/files/upload',
+							'/printer/gcode/script',
 							signal,
-							{ method: 'POST', body: form },
+							{
+								method: 'POST',
+								headers: { 'Content-Type': 'application/json' },
+								body: JSON.stringify({ script: 'SAVE_CONFIG' })
+							},
+							() => interlock.allows(job.epoch) && job.actor.authorized()
+						);
+					} else {
+						const form = new FormData();
+						form.set('root', 'config');
+						const parts = record.path.split('/');
+						const name = parts.pop()!;
+						if (parts.length) form.set('path', parts.join('/'));
+						form.set('file', new Blob([job.row.after_text], { type: 'text/plain' }), name);
+						if (job.row.before_text !== job.row.after_text) {
+							attempted = true;
+							await call(
+								'/server/files/upload',
+								signal,
+								{ method: 'POST', body: form },
+								() => interlock.allows(job.epoch) && job.actor.authorized()
+							);
+						}
+						const saved = await Effect.runPromise(files.read(record.path, job.actor));
+						if (saved.text !== job.row.after_text)
+							throw failure('Uploaded bytes could not be verified. No restart was sent.');
+						record.writeVerified = true;
+						await update(
+							'restarting',
+							'File bytes verified. Requesting Klipper restart and waiting for a fresh startup.'
+						);
+						authorize(job.actor);
+						await idle(signal, record.mode === 'revert');
+						attempted = true;
+						await call(
+							'/printer/restart',
+							signal,
+							{ method: 'POST' },
 							() => interlock.allows(job.epoch) && job.actor.authorized()
 						);
 					}
-					const saved = await Effect.runPromise(files.read(record.path, job.actor));
-					if (saved.text !== job.row.after_text)
-						throw failure('Uploaded bytes could not be verified. No restart was sent.');
-					record.writeVerified = true;
-					await update(
-						'restarting',
-						'File bytes verified. Requesting Klipper restart and waiting for a fresh startup.'
-					);
-					authorize(job.actor);
-					await idle(signal, record.mode === 'revert');
-					attempted = true;
-					await call(
-						'/printer/restart',
-						signal,
-						{ method: 'POST' },
-						() => interlock.allows(job.epoch) && job.actor.authorized()
-					);
 					let transitioned = false;
 					const deadline = Date.now() + (options.verifyMs ?? 45000);
 					while (Date.now() < deadline && !signal.aborted) {
@@ -252,7 +344,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 							if (
 								['error', 'shutdown'].includes(state.state) &&
 								['error', 'shutdown'].includes(server?.klippy_state) &&
-								(transitioned || record.mode === 'apply')
+								(transitioned || record.mode !== 'revert')
 							) {
 								record.diagnostic = String(
 									state.state_message ?? 'Klipper reported a startup error.'
@@ -271,6 +363,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 									throw failure(
 										'The file changed during restart. Startup cannot verify this operation.'
 									);
+								record.writeVerified = true;
 								await update(
 									'ready',
 									record.mode === 'revert'
@@ -321,6 +414,27 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 			Effect.forkScoped
 		);
 		return {
+			reviewPending: (actor) =>
+				Effect.tryPromise({
+					try: async (signal) => {
+						authorize(actor);
+						if (!enabled)
+							throw failure('Live configuration application is disabled on this server.');
+						const config = await idle(signal, false, true);
+						const manifest = pendingManifest(config?.save_config_pending_items);
+						const sources = await Effect.runPromise(files.sources('@main', actor), { signal });
+						const current = await Effect.runPromise(files.read(sources.root, actor), { signal });
+						pendingConfigurationText(current.text, sources, manifest);
+						authorize(actor);
+						return {
+							path: sources.root,
+							manifest,
+							fingerprint: pendingFingerprint(manifest),
+							sources: { root: sources.root, fingerprint: sources.fingerprint }
+						};
+					},
+					catch: convert
+				}),
 			status: (actor) =>
 				Effect.tryPromise({
 					try: async () => {
@@ -387,6 +501,21 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 									after = original.after_text;
 								}
 								revertOf = original.id;
+							} else if ('pending' in request) {
+								const config = await idle(signal, false, true);
+								const manifest = pendingManifest(config?.save_config_pending_items);
+								if (pendingFingerprint(manifest) !== request.pending)
+									throw failure('Pending settings changed. Review them again.');
+								const sources = await Effect.runPromise(files.sources('@main', actor), { signal });
+								if (
+									sources.root !== request.sources?.root ||
+									sources.fingerprint !== request.sources.fingerprint
+								)
+									throw failure('Configuration sources changed. Review pending settings again.');
+								path = sources.root;
+								const current = await Effect.runPromise(files.read(path, actor), { signal });
+								before = current.text;
+								after = pendingConfigurationText(before, sources, manifest);
 							} else {
 								path = request.path;
 								if (
@@ -405,7 +534,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 								after = request.text;
 								if (before === after) throw failure('There are no changes to apply.');
 							}
-							await idle(signal, Boolean(revertOf));
+							await idle(signal, Boolean(revertOf), 'pending' in request);
 							const reserved = await Effect.runPromise(
 								SubscriptionRef.modify(printer.state, (state) => {
 									const blocked =
@@ -441,11 +570,17 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 								throw failure(
 									'Printer activity or configuration recovery is pending. Wait before applying.'
 								);
-							const record: ConfigApplication & { target: string } = {
+							const record: ConfigApplication & {
+								target: string;
+								sources?: ApplyConfiguration['sources'];
+								pending?: string;
+							} = {
 								target,
+								sources: 'sources' in request ? request.sources : undefined,
 								id: request.id,
 								path,
-								mode: revertOf ? 'revert' : 'apply',
+								mode: revertOf ? 'revert' : 'pending' in request ? 'calibration' : 'apply',
+								pending: 'pending' in request ? request.pending : undefined,
 								phase: 'queued',
 								message: 'Reviewed operation admitted. Snapshot stored before any printer write.',
 								diagnostic: null,

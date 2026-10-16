@@ -6,6 +6,7 @@ const output = execFileSync('docker', ['compose', 'config', '--format', 'json'],
 		...process.env,
 		PERILUNE_ORIGIN: origin,
 		PERILUNE_LIVE_MESH: 'true',
+		PERILUNE_KLIPPER_WORKING_DIRECTORY: '/example/klipper',
 		PERILUNE_LIVE_FILAMENT: 'true',
 		PERILUNE_LIVE_Z_CALIBRATION: 'true',
 		PERILUNE_MOONRAKER_URL: 'ws://printer.example.invalid:7125/websocket',
@@ -32,3 +33,8 @@ assert.equal(
 	'http://go2rtc.example.invalid:1984/'
 );
 assert.equal(config.services.perilune.environment.PERILUNE_CAMERA_SOURCE, 'printer_camera');
+
+assert.equal(
+	config.services.perilune.environment.PERILUNE_KLIPPER_WORKING_DIRECTORY,
+	'/example/klipper'
+);

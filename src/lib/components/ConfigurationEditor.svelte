@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ConfigSources } from '#lib/domain/config-sources.js';
 	import { untrack, onMount } from 'svelte';
 	import CalibrationDraft from './CalibrationDraft.svelte';
 	import type { CalibrationDraftProposal } from '#lib/domain/calibration-draft.js';
@@ -32,6 +33,7 @@
 		onDirty,
 		applicationEnabled = false,
 		onApply,
+		onResolveSources,
 		calibrationProposal = null,
 		onDismissProposal
 	}: {
@@ -42,7 +44,10 @@
 		onBackup: (path: string, id: string) => Promise<string>;
 		onDirty?: (dirty: boolean) => void;
 		applicationEnabled?: boolean;
-		onApply?: (request: ConfigSave) => Promise<void>;
+		onApply?: (
+			request: ConfigSave & { sources?: { root: string; fingerprint: string } }
+		) => Promise<void>;
+		onResolveSources?: () => Promise<ConfigSources>;
 		calibrationProposal?: CalibrationDraftProposal | null;
 		onDismissProposal?: () => void;
 	} = $props();
@@ -50,6 +55,7 @@
 		base: ConfigDocument;
 		text: string;
 		latest: ConfigDocument;
+		sources?: { root: string; fingerprint: string };
 	}
 	const initial = untrack(() => source);
 	let drafts = $state<Record<string, Draft>>({
@@ -67,7 +73,10 @@
 		invalidField = $state(false);
 	let restartConfirmed = $state(false);
 	let reviewOpen = $state(false),
-		reviewed = $state<{ request: ConfigSave; base: ConfigDocument }>(),
+		reviewed = $state<{
+			request: ConfigSave & { sources?: { root: string; fingerprint: string } };
+			base: ConfigDocument;
+		}>(),
 		confirmed = $state(false);
 	let selectedBackup = $state('');
 	const current = $derived(drafts[source.path]);
@@ -99,11 +108,17 @@
 	$effect(() => {
 		onDirty?.(anyDirty);
 	});
-	function addFromReference(change: { path: string; expectedText: string; text: string }) {
+	function addFromReference(change: {
+		path: string;
+		expectedText: string;
+		text: string;
+		sources?: { root: string; fingerprint: string };
+	}) {
 		if (busy || source.path !== change.path || !current || current.text !== change.expectedText)
 			throw new Error('The draft changed. Review the current file before adding the option.');
 		checkConfigChange(current.text, change.text);
 		current.text = change.text;
+		if (change.sources) current.sources = change.sources;
 		failure = '';
 		invalidField = false;
 		notice = 'Change added to your draft. Review changes before saving.';
@@ -186,7 +201,8 @@
 					id: crypto.randomUUID(),
 					path: source.path,
 					expectedVersion: current.base.version,
-					text: current.text
+					text: current.text,
+					sources: current.sources
 				}
 			};
 			confirmed = false;
@@ -314,6 +330,7 @@
 	{#if current}<div class="editor-column">
 			{#if calibrationProposal}{#key calibrationProposal.id}<CalibrationDraft
 						proposal={calibrationProposal}
+						{onResolveSources}
 						text={current.text}
 						path={source.path}
 						source={source.source}

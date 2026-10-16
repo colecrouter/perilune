@@ -1,3 +1,6 @@
+import { posix } from 'node:path';
+import { resolveConfigSources } from './config-sources.js';
+import type { ConfigSources } from '#lib/domain/config-sources.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { Context, Data, Effect, Layer, Semaphore } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
@@ -22,11 +25,17 @@ export interface ConfigActor {
 }
 export class ConfigurationSettings extends Context.Service<
 	ConfigurationSettings,
-	{ moonrakerUrl: string; apiKey?: string; requestTimeoutMs?: number }
+	{
+		moonrakerUrl: string;
+		apiKey?: string;
+		requestTimeoutMs?: number;
+		klipperWorkingDirectory?: string;
+	}
 >()('perilune/ConfigurationSettings') {}
 export class ConfigurationService extends Context.Service<
 	ConfigurationService,
 	{
+		sources: (root: string, actor: ConfigActor) => Effect.Effect<ConfigSources, ConfigurationError>;
 		list: (actor: ConfigActor) => Effect.Effect<ConfigFile[], ConfigurationError>;
 		read: (path: string, actor: ConfigActor) => Effect.Effect<ConfigDocument, ConfigurationError>;
 		backup: (
@@ -238,6 +247,75 @@ export const ConfigurationServiceLive = Layer.effect(
 		return {
 			list,
 			read,
+			sources: (root, actor) =>
+				Effect.tryPromise({
+					try: async (signal) => {
+						const listing = await Effect.runPromise(list(actor), { signal });
+						let main = root;
+						if (root === '@main') {
+							if (base) {
+								const raw = await Effect.runPromise(upstream('/printer/info', 64 * 1024, actor), {
+									signal
+								});
+								let config = JSON.parse(raw)?.result?.config_file;
+								if (typeof config === 'string' && !config.startsWith('/')) {
+									const cwd = settings.klipperWorkingDirectory;
+									if (
+										!cwd ||
+										!cwd.startsWith('/') ||
+										/[\0\r\n\\]/.test(cwd) ||
+										/[\0\r\n\\]/.test(config)
+									)
+										throw fail(
+											'A relative Klipper config path requires a valid server-side Klipper working directory.'
+										);
+									config = posix.resolve(cwd, config);
+								}
+								const roots = JSON.parse(
+									await Effect.runPromise(upstream('/server/files/roots', 64 * 1024, actor), {
+										signal
+									})
+								)?.result;
+								const configRoots = Array.isArray(roots)
+									? roots.filter((item) => item?.name === 'config' && typeof item.path === 'string')
+									: [];
+								if (
+									typeof config !== 'string' ||
+									!config.startsWith('/') ||
+									configRoots.length !== 1 ||
+									!configRoots[0].path.startsWith('/')
+								)
+									throw fail(
+										'Cannot verify the main configuration within Moonraker’s config folder.'
+									);
+								const relative = posix.relative(
+									posix.normalize(configRoots[0].path),
+									posix.normalize(config)
+								);
+								if (!validConfigPath(relative) || !listing.some((file) => file.path === relative))
+									throw fail(
+										'The main configuration is outside Moonraker’s supported config folder. Review it manually.'
+									);
+								main = relative;
+							} else main = 'printer.cfg';
+						}
+						const sources = await resolveConfigSources(
+							main,
+							listing.map((file) => file.path),
+							(path) => Effect.runPromise(read(path, actor), { signal })
+						);
+						authorize(actor);
+						return sources;
+					},
+					catch: (cause) =>
+						cause instanceof ConfigurationError
+							? cause
+							: fail(
+									cause instanceof Error
+										? cause.message
+										: 'Could not resolve configuration sources.'
+								)
+				}),
 			backup: (path, id, actor) =>
 				Effect.gen(function* () {
 					yield* guarded(() => {

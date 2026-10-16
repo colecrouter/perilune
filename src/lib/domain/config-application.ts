@@ -2,7 +2,7 @@ export type ApplicationPhase = 'queued' | 'writing' | 'restarting' | 'ready' | '
 export interface ConfigApplication {
 	id: string;
 	path: string;
-	mode: 'apply' | 'revert';
+	mode: 'apply' | 'revert' | 'calibration';
 	phase: ApplicationPhase;
 	message: string;
 	diagnostic: string | null;
@@ -20,5 +20,19 @@ export interface ApplyConfiguration {
 	path: string;
 	expectedVersion: string;
 	text: string;
+	sources?: { root: string; fingerprint: string };
+	confirmedRestart: true;
+}
+
+export interface PendingConfigurationReview {
+	path: string;
+	manifest: Record<string, Record<string, string>>;
+	fingerprint: string;
+	sources: { root: string; fingerprint: string };
+}
+export interface SavePendingConfiguration {
+	id: string;
+	pending: string;
+	sources: { root: string; fingerprint: string };
 	confirmedRestart: true;
 }
