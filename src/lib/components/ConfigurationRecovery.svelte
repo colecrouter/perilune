@@ -118,7 +118,7 @@
 				{#if !pending}<button disabled={busy} onclick={() => action('check')}
 						>Check saved bytes and printer state</button
 					>
-					{#if recovery?.enabled && (application.mode === 'apply' ? application.writeVerified : application.phase === 'error')}<label
+					{#if recovery?.enabled && (application.mode !== 'revert' ? application.writeVerified : application.phase === 'error')}<label
 							><input type="checkbox" bind:checked={confirmed} />Restore the snapshot and restart
 							Klipper. Unsaved runtime calibration changes may be lost.</label
 						>

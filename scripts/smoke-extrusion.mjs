@@ -94,7 +94,8 @@ try {
 	await page.getByRole('button', { name: 'Review in configuration' }).click();
 	await page.getByRole('heading', { name: 'Review extrusion distance' }).waitFor();
 	await page.getByRole('checkbox', { name: /repeated the measurement/ }).check();
-	await page.getByRole('checkbox', { name: /reviewed included files/ }).check();
+	await page.getByRole('button', { name: 'Find effective setting' }).click();
+	await page.getByText('Effective setting:', { exact: false }).waitFor();
 	await page.getByRole('button', { name: 'Add to this draft' }).click();
 	await page.getByRole('button', { name: 'Review changes…' }).click();
 	await page.getByRole('checkbox', { name: 'I reviewed the source changes.' }).check();

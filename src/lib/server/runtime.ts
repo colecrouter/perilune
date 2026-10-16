@@ -144,7 +144,8 @@ const configurationLayer = ConfigurationServiceLive.pipe(
 	Layer.provide(
 		Layer.succeed(ConfigurationSettings, {
 			moonrakerUrl: moonrakerUrl ?? '',
-			apiKey: process.env.PERILUNE_MOONRAKER_API_KEY
+			apiKey: process.env.PERILUNE_MOONRAKER_API_KEY,
+			klipperWorkingDirectory: process.env.PERILUNE_KLIPPER_WORKING_DIRECTORY
 		})
 	),
 	Layer.provide(databaseLayer)
@@ -158,7 +159,8 @@ const applicationLayer = ConfigurationApplicationServiceLive.pipe(
 	Layer.provide(
 		Layer.succeed(ConfigurationSettings, {
 			moonrakerUrl: moonrakerUrl ?? '',
-			apiKey: process.env.PERILUNE_MOONRAKER_API_KEY
+			apiKey: process.env.PERILUNE_MOONRAKER_API_KEY,
+			klipperWorkingDirectory: process.env.PERILUNE_KLIPPER_WORKING_DIRECTORY
 		})
 	),
 	Layer.provide(configurationLayer),

@@ -1,3 +1,5 @@
+import { pendingConfigurationText } from './pending-configuration.js';
+import { resolveConfigSources } from './config-sources.js';
 import { printerInterlock } from './printer-admission.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -39,16 +41,28 @@ async function fixture() {
 		serverStartupOnly: false,
 		transient: false,
 		pending: false,
+		manifest: { probe: { z_offset: '1.250' } },
+		saves: 0,
+		changePendingOnRead: false,
+		mainPath: '/private/config/printer.cfg',
 		target: 0,
+		manualProbe: false,
+		extraTarget: 0,
 		uploadAck: undefined as (() => Promise<void>) | undefined
 	};
 	const server = createServer((request, response) => {
 		void (async () => {
 			response.setHeader('Content-Type', 'application/json');
 			let result: unknown;
-			if (request.url === '/server/files/list?root=config')
+			if (request.url === '/server/files/roots')
+				result = [{ name: 'config', path: '/private/config', permissions: 'rw' }];
+			else if (request.url === '/server/files/list?root=config')
 				result = [{ path: 'printer.cfg', size: f.text.length, modified: 1, permissions: 'rw' }];
 			else if (request.url === '/server/files/config/printer.cfg') {
+				if (f.changePendingOnRead) {
+					f.manifest.probe.z_offset = '2.500';
+					f.changePendingOnRead = false;
+				}
 				response.end(f.text);
 				return;
 			} else if (request.url?.startsWith('/printer/objects/query'))
@@ -56,7 +70,10 @@ async function fixture() {
 					status: {
 						print_stats: { state: 'standby' },
 						idle_timeout: { state: 'Idle' },
-						configfile: { save_config_pending: f.pending },
+						configfile: { save_config_pending: f.pending, save_config_pending_items: f.manifest },
+						heaters: { available_heaters: ['extruder', 'heater_bed', 'heater_generic chamber'] },
+						manual_probe: { is_active: f.manualProbe },
+						'heater_generic chamber': { target: f.extraTarget },
 						extruder: { target: f.target },
 						heater_bed: { target: 0 }
 					}
@@ -64,11 +81,33 @@ async function fixture() {
 			else if (request.url === '/printer/info')
 				result = {
 					state: f.ticks > 0 ? 'startup' : f.error ? 'error' : 'ready',
+					config_file: f.mainPath,
 					state_message: f.error
 						? "Option 'bad' is not valid in section 'printer'"
 						: 'Printer is ready'
 				};
-			else if (request.url === '/server/info') {
+			else if (request.url === '/printer/gcode/script') {
+				let body = '';
+				for await (const part of request) body += part;
+				if (JSON.parse(body).script !== 'SAVE_CONFIG') throw Error('unexpected script');
+				f.saves++;
+				const sources = await resolveConfigSources('printer.cfg', ['printer.cfg'], async () => ({
+					path: 'printer.cfg',
+					text: f.text,
+					version: f.text,
+					source: 'moonraker',
+					backups: [],
+					updatedAt: 0
+				}));
+				f.text = pendingConfigurationText(f.text, sources, f.manifest);
+				f.pending = false;
+				f.ticks = 2;
+				if (f.dropped) {
+					request.socket.destroy();
+					return;
+				}
+				result = 'ok';
+			} else if (request.url === '/server/info') {
 				if (f.transient) {
 					f.transient = false;
 					response.statusCode = 503;
@@ -120,11 +159,17 @@ async function fixture() {
 	});
 	return { f, url: `ws://127.0.0.1:${address.port}/websocket` };
 }
-async function app(url: string, filename = ':memory:', enabled = true) {
+async function app(
+	url: string,
+	filename = ':memory:',
+	enabled = true,
+	klipperWorkingDirectory?: string
+) {
 	const database = SqliteClient.layer({ filename });
 	const settings = Layer.succeed(ConfigurationSettings, {
 		moonrakerUrl: url,
-		requestTimeoutMs: 500
+		requestTimeoutMs: 500,
+		klipperWorkingDirectory
 	});
 	const config = ConfigurationServiceLive.pipe(Layer.provide(settings), Layer.provide(database));
 	const state = await Effect.runPromise(SubscriptionRef.make(initialLiveSnapshot()));
@@ -243,7 +288,7 @@ it('fences disabled, revoked, heated and pending-autosave submissions before wri
 	await expect(disabled.submit(f.text + '# draft\n')).rejects.toThrow('disabled');
 	const a = await app(url);
 	f.target = 200;
-	await expect(a.submit(f.text + '# draft\n')).rejects.toThrow('activity');
+	await expect(a.submit(f.text + '# draft\n')).rejects.toThrow('heaters');
 	f.target = 0;
 	f.pending = true;
 	await expect(a.submit(f.text + '# draft\n')).rejects.toThrow('SAVE_CONFIG');
@@ -351,4 +396,152 @@ it('emergency epoch prevents restarting Klipper after a delayed upload acknowled
 	release();
 	await a.terminal();
 	expect(f.restarts).toBe(0);
+});
+
+it('rejects fresh manual probes and additional configured heaters before writes', async () => {
+	const { f, url } = await fixture(),
+		a = await app(url);
+	f.manualProbe = true;
+	await expect(a.submit(f.text + '# reviewed\n')).rejects.toThrow('manual-probe');
+	f.manualProbe = false;
+	f.extraTarget = 40;
+	await expect(a.submit(f.text + '# reviewed\n')).rejects.toThrow('heaters');
+	expect(f.uploads).toBe(0);
+	expect(f.restarts).toBe(0);
+});
+it('reviews all pending settings, sends SAVE_CONFIG once, verifies exact bytes and supports revert', async () => {
+	const { f, url } = await fixture(),
+		a = await app(url);
+	f.pending = true;
+	const review = await a.runtime.runPromise(a.service.reviewPending(owner));
+	expect(review.manifest).toEqual(f.manifest);
+	const request = {
+		id: randomUUID(),
+		pending: review.fingerprint,
+		sources: review.sources,
+		confirmedRestart: true as const
+	};
+	await a.runtime.runPromise(a.service.submit(request, owner));
+	const result = await a.terminal();
+	expect(result).toMatchObject({ phase: 'ready', mode: 'calibration', writeVerified: true });
+	expect(f.saves).toBe(1);
+	expect(f.uploads).toBe(0);
+	expect(f.restarts).toBe(0);
+	await a.runtime.runPromise(a.service.submit(request, owner));
+	expect(f.saves).toBe(1);
+	await a.runtime.runPromise(
+		a.service.submit({ id: randomUUID(), revertOf: result.id, confirmedRestart: true }, owner)
+	);
+	expect((await a.terminal()).phase).toBe('ready');
+	expect(f.text).toBe('[printer]\nmax_velocity: 200\n');
+});
+it('rejects changed pending manifests and source dependencies without saving', async () => {
+	const { f, url } = await fixture(),
+		a = await app(url);
+	f.pending = true;
+	const review = await a.runtime.runPromise(a.service.reviewPending(owner));
+	f.manifest.probe.z_offset = '2.000';
+	await expect(
+		a.runtime.runPromise(
+			a.service.submit(
+				{
+					id: randomUUID(),
+					pending: review.fingerprint,
+					sources: review.sources,
+					confirmedRestart: true
+				},
+				owner
+			)
+		)
+	).rejects.toThrow('Pending settings changed');
+	f.manifest.probe.z_offset = '1.250';
+	f.text += '# external change\n';
+	await expect(
+		a.runtime.runPromise(
+			a.service.submit(
+				{
+					id: randomUUID(),
+					pending: review.fingerprint,
+					sources: review.sources,
+					confirmedRestart: true
+				},
+				owner
+			)
+		)
+	).rejects.toThrow('sources changed');
+	expect(f.saves).toBe(0);
+});
+it('does not replay SAVE_CONFIG after a lost acknowledgement and verifies bytes only through recovery', async () => {
+	const { f, url } = await fixture(),
+		a = await app(url);
+	f.pending = true;
+	f.dropped = true;
+	const review = await a.runtime.runPromise(a.service.reviewPending(owner));
+	await a.runtime.runPromise(
+		a.service.submit(
+			{
+				id: randomUUID(),
+				pending: review.fingerprint,
+				sources: review.sources,
+				confirmedRestart: true
+			},
+			owner
+		)
+	);
+	const result = await a.terminal();
+	expect(result.phase).toBe('unknown');
+	expect(result.writeVerified).toBe(false);
+	expect(f.saves).toBe(1);
+	await a.runtime.runPromise(a.service.check(result.id, owner));
+	expect((await a.status()).application?.writeVerified).toBe(true);
+	expect(f.saves).toBe(1);
+});
+
+it('rechecks pending settings after source reads immediately before SAVE_CONFIG', async () => {
+	const { f, url } = await fixture(),
+		a = await app(url);
+	f.pending = true;
+	const review = await a.runtime.runPromise(a.service.reviewPending(owner));
+	await a.runtime.runPromise(
+		a.service.submit(
+			{
+				id: randomUUID(),
+				pending: review.fingerprint,
+				sources: review.sources,
+				confirmedRestart: true
+			},
+			owner
+		)
+	);
+	f.changePendingOnRead = true;
+	expect((await a.terminal()).phase).toBe('error');
+	expect(f.saves).toBe(0);
+});
+
+it('refuses pending saves when Klipper main file is outside the configuration root', async () => {
+	const { f, url } = await fixture(),
+		a = await app(url);
+	f.pending = true;
+	f.mainPath = '/etc/printer.cfg';
+	await expect(a.runtime.runPromise(a.service.reviewPending(owner))).rejects.toThrow('outside');
+	expect(f.saves).toBe(0);
+});
+
+it('resolves relative Klipper paths only with an explicit trusted process working directory', async () => {
+	for (const cwd of [undefined, 'relative', '/unsafe\npath']) {
+		const { f, url } = await fixture(),
+			a = await app(url, ':memory:', true, cwd);
+		f.pending = true;
+		f.mainPath = 'config/printer.cfg';
+		await expect(a.runtime.runPromise(a.service.reviewPending(owner))).rejects.toThrow(
+			'working directory'
+		);
+	}
+	const { f, url } = await fixture(),
+		a = await app(url, ':memory:', true, '/private');
+	f.pending = true;
+	f.mainPath = 'config/printer.cfg';
+	expect((await a.runtime.runPromise(a.service.reviewPending(owner))).path).toBe('printer.cfg');
+	f.mainPath = '../etc/printer.cfg';
+	await expect(a.runtime.runPromise(a.service.reviewPending(owner))).rejects.toThrow('outside');
 });

@@ -5,6 +5,13 @@ import { configActor, configBody, configResult } from '#lib/server/config-http.j
 import { ConfigurationApplicationService } from '#lib/server/config-application-service.js';
 export const GET = async (event) => {
 	const actor = configActor(event);
+	if (event.url.searchParams.has('pending'))
+		return json(
+			await configResult(
+				event,
+				Effect.flatMap(ConfigurationApplicationService, (service) => service.reviewPending(actor))
+			)
+		);
 	const snapshot = event.url.searchParams.get('snapshot');
 	const side = event.url.searchParams.get('side');
 	if (snapshot && (side === 'before' || side === 'after'))
@@ -55,16 +62,44 @@ export const POST = async (event) => {
 			)
 		);
 	}
+	if (body.action === 'savePending') {
+		const sources = body.sources as { root?: unknown; fingerprint?: unknown } | undefined;
+		if (
+			typeof body.pending !== 'string' ||
+			!sources ||
+			typeof sources.root !== 'string' ||
+			typeof sources.fingerprint !== 'string'
+		)
+			error(400, 'Review all pending calibration settings first.');
+		const request = {
+			id,
+			pending: body.pending,
+			sources: { root: sources.root, fingerprint: sources.fingerprint },
+			confirmedRestart: true as const
+		};
+		return json(
+			await configResult(
+				event,
+				Effect.flatMap(ConfigurationApplicationService, (service) => service.submit(request, actor))
+			)
+		);
+	}
 	if (
 		body.action !== 'apply' ||
 		!['path', 'expectedVersion', 'text'].every((key) => typeof body[key] === 'string')
 	)
 		error(400, 'Supply reviewed configuration source and its revision.');
+	const sources = body.sources as { root?: unknown; fingerprint?: unknown } | undefined;
+	if (sources && (typeof sources.root !== 'string' || typeof sources.fingerprint !== 'string'))
+		error(400, 'Supply a valid source review.');
 	const request = {
 		id,
 		path: body.path as string,
 		expectedVersion: body.expectedVersion as string,
 		text: body.text as string,
+		sources: sources
+			? { root: sources.root as string, fingerprint: sources.fingerprint as string }
+			: undefined,
 		confirmedRestart: true as const
 	};
 	return json(

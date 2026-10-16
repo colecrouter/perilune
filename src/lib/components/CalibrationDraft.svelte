@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { effectiveSetting, type ConfigSources } from '#lib/domain/config-sources.js';
 	import {
 		calibrationDraftChange,
 		checkCalibrationProposal,
@@ -14,6 +15,7 @@
 		includesPresent = false,
 		disabled = false,
 		onAdd,
+		onResolveSources,
 		onDismiss
 	}: {
 		proposal: CalibrationDraftProposal;
@@ -22,9 +24,33 @@
 		source: ConfigDocument['source'];
 		includesPresent?: boolean;
 		disabled?: boolean;
-		onAdd: (change: { path: string; expectedText: string; text: string }) => void;
+		onResolveSources?: () => Promise<ConfigSources>;
+		onAdd: (change: {
+			path: string;
+			expectedText: string;
+			text: string;
+			sources?: { root: string; fingerprint: string };
+		}) => void;
 		onDismiss: () => void;
 	} = $props();
+	let sources = $state<ConfigSources | null>(null);
+	let resolving = $state(false);
+	const origin = $derived(
+		sources ? effectiveSetting(sources, 'extruder', 'rotation_distance') : null
+	);
+	async function resolve() {
+		if (!onResolveSources) return;
+		resolving = true;
+		failure = '';
+		sources = null;
+		try {
+			sources = await onResolveSources();
+		} catch (cause) {
+			failure = cause instanceof Error ? cause.message : 'Could not review source files.';
+		} finally {
+			resolving = false;
+		}
+	}
 	let repeated = $state(false),
 		includesReviewed = $state(false),
 		failure = $state('');
@@ -42,6 +68,16 @@
 			return null;
 		}
 	});
+	const sourceReady = $derived(
+		!onResolveSources ||
+			Boolean(
+				origin &&
+				origin.path === path &&
+				!origin.generated &&
+				!origin.multiline &&
+				Number(origin.value) === measurement?.rotationDistance
+			)
+	);
 	const plan = $derived.by(() => {
 		try {
 			return { change: calibrationDraftChange(text, proposal, source, true), issue: '' };
@@ -65,9 +101,25 @@
 	function add() {
 		failure = '';
 		try {
-			if (disabled || !repeated || (includes && !includesReviewed)) return;
-			const next = calibrationDraftChange(text, proposal, source, !includes || includesReviewed);
-			onAdd({ path, expectedText: text, text: next.text });
+			if (
+				disabled ||
+				!repeated ||
+				!sourceReady ||
+				(includes && !includesReviewed && !onResolveSources)
+			)
+				return;
+			const next = calibrationDraftChange(
+				text,
+				proposal,
+				source,
+				Boolean(onResolveSources) || !includes || includesReviewed
+			);
+			onAdd({
+				path,
+				expectedText: text,
+				text: next.text,
+				sources: sources ? { root: sources.root, fingerprint: sources.fingerprint } : undefined
+			});
 			added = { id: proposal.id, path };
 		} catch (cause) {
 			failure =
@@ -103,20 +155,42 @@
 			Choose the file containing this setting from Configuration files. The draft must still use the
 			rotation distance from the measurement.
 		</p>
+		{#if onResolveSources}
+			<button type="button" onclick={resolve} disabled={disabled || resolving}
+				>{resolving ? 'Reviewing sources…' : 'Find effective setting'}</button
+			>
+			{#if origin}<p>
+					Effective setting: <a
+						href={`?file=${encodeURIComponent(origin.path)}`}
+						data-sveltekit-reset="false">{origin.path}:{origin.line}</a
+					>
+					· {origin.value}{origin.generated ? ' · protected generated setting' : ''}
+				</p>
+				{#if !sourceReady}<p class="issue">
+						Open the effective source file. Protected, multiline or changed values require manual
+						review.
+					</p>{/if}
+			{:else if sources}<p class="issue">
+					No effective rotation distance was found in the main configuration.
+				</p>{/if}
+		{/if}
 		{#if plan.issue}<p class="issue" role="status">{plan.issue}</p>{/if}
 		<label
 			><input type="checkbox" bind:checked={repeated} {disabled} />I repeated the measurement and
 			confirmed this result.</label
 		>
-		{#if includes}<label
+		{#if includes && !onResolveSources}<label
 				><input type="checkbox" bind:checked={includesReviewed} {disabled} />I reviewed included
 				files and runtime overrides; this is the setting to change.</label
 			>{/if}
 		<button
 			class="button primary"
 			onclick={add}
-			disabled={disabled || !plan.change || !repeated || (includes && !includesReviewed)}
-			>Add to this draft</button
+			disabled={disabled ||
+				!sourceReady ||
+				!plan.change ||
+				!repeated ||
+				(includes && !includesReviewed && !onResolveSources)}>Add to this draft</button
 		>
 	{/if}
 	<button onclick={onDismiss} {disabled}>Dismiss proposal</button>

@@ -5,6 +5,14 @@ import { ConfigurationService } from '#lib/server/config-service.js';
 import { configActor, configBody, configResult } from '#lib/server/config-http.js';
 export const GET = async (event) => {
 	const actor = configActor(event);
+	const root = event.url.searchParams.get('sources');
+	if (root)
+		return json(
+			await configResult(
+				event,
+				Effect.flatMap(ConfigurationService, (service) => service.sources(root, actor))
+			)
+		);
 	const path = event.url.searchParams.get('file');
 	const backup = event.url.searchParams.get('backup');
 	if (!path)
