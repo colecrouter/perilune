@@ -209,7 +209,7 @@
 		failure = '';
 		try {
 			await submitAction({ id: crypto.randomUUID(), command });
-			message = 'Action accepted. Watch its status below.';
+			message = ''; // The shared job card and activity already show command progress.
 		} catch (cause) {
 			failure = cause instanceof Error ? cause.message : 'Could not submit the action.';
 			throw cause;
