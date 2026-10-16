@@ -189,7 +189,7 @@
 					}
 				};
 				xhr.onerror = () =>
-					reject(new Error('Connection lost. Retry the same file; duplicate uploads are safe.'));
+					reject(new Error('Connection lost. Refresh the library before taking another action.'));
 				xhr.ontimeout = () =>
 					reject(new Error('Upload timed out. Retry the same file to check whether it was saved.'));
 				xhr.onabort = () =>
@@ -410,7 +410,7 @@
 					<input type="hidden" name="size" value={catalog.query.pageSize} />
 					<button class="button secondary" type="submit">Search</button>
 				</form>
-				{#if canOperate && !live}<div class="upload-zone">
+				{#if canOperate && (!live || snapshot.liveControls)}<div class="upload-zone">
 						<Icon name="jobs" size={28} />
 						<div>
 							<strong>Bring your next print aboard</strong>
@@ -440,7 +440,7 @@
 							</div>{/if}
 					</div>{:else}<p class="muted">
 						{live
-							? 'Files come from Moonraker. Uploads and physical printing will follow coordinated testing.'
+							? 'Live file changes are disabled on this server.'
 							: 'An operator account is needed to upload and start jobs.'}
 					</p>{/if}
 				{#if !catalog.metadataComplete}<p class="muted metadata-hint">
@@ -536,7 +536,7 @@
 							failure = '';
 						}}>Review & start {live ? 'print' : 'simulation'}</a
 					>
-					{#if canOperate && !live}<button
+					{#if canOperate && (!live || snapshot.liveControls)}<button
 							class="button secondary start-button"
 							disabled={submitting || missing}
 							onclick={() => {
@@ -591,8 +591,8 @@
 					<strong>Upload only</strong>; automatic printing is disabled.
 				</p>
 				{#if live}<p class="notice">
-						Live uploads are not enabled in this milestone. Keys can be prepared now, but file
-						writes remain blocked.
+						Files are stored on the printer. Uploaded names include a content fingerprint to keep
+						different versions separate; uploads never start printing.
 					</p>{/if}<label>Key name<input bind:value={keyName} maxlength="80" /></label><button
 					class="button secondary"
 					disabled={submitting}

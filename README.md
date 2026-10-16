@@ -11,8 +11,8 @@ without throwing away inputs.
 ## Jobs
 
 Browse and inspect G-code files, upload with visible progress, and start shared
-simulated prints with explicit confirmation. Slicer upload-only keys and persistent
-print observations are available under Jobs. Live files are read-only.
+prints with explicit confirmation. Slicer upload-only keys and persistent
+print observations are available under Jobs. Live file changes and printing require the live-controls opt-in.
 See [Jobs and OrcaSlicer setup](docs/jobs.md).
 
 ## Run locally
@@ -27,8 +27,7 @@ pnpm dev
 Open http://localhost:4181. By default this is **simulator mode**: no physical printer is
 connected or controlled. Pause, stop, temperature changes, and disconnects affect
 shared demo state. Stop the demo print to try the XY bed map, destination shortcuts,
-fine jogging, and separate Z controls at `/controls`. Live connections show motion
-telemetry but cannot move or home the printer. Overview includes temperature history, inferred heater state, and simulator target/
+fine jogging, and separate Z controls at `/controls`. Live connections default to read-only; opt-in physical controls are described below. Overview includes temperature history, inferred heater state, and simulator target/
 cooldown controls. Shared history survives page reloads and disconnects, retaining
 up to one hour until the backend restarts. Additional live sensors are read-only.
 The header toggle compares serif and sans-serif headings.
@@ -115,7 +114,14 @@ Better Auth uses its SQLite adapter, and app state continues to use Effect SQL.
 
 Live controls are read-only by default. Set `PERILUNE_LIVE_MESH=true` to opt into the
 [cold bed mesh workflow](docs/calibration.md#live-cold-bed-mesh-probing): physical homing/probing, temporary use/restoration, and explicitly confirmed
-configuration saving with a Klipper restart. Other live controls remain disabled.
+configuration saving with a Klipper restart.
+
+`PERILUNE_LIVE_CONTROLS=true` enables acknowledged homing/motion, motor release,
+primary heaters, job controls and live file changes. Separate opt-ins enable
+`PERILUNE_LIVE_FILAMENT`, `PERILUNE_LIVE_Z_CALIBRATION` and
+`PERILUNE_LIVE_CONFIGURATION`. See [live controls](docs/live-controls.md) and the
+[configuration guide](docs/configuration.md). Start with an attended, idle printer;
+unknown outcomes require explicit recovery and are never replayed.
 
 Set a direct Moonraker WebSocket endpoint on the **backend**:
 
@@ -132,9 +138,7 @@ Plain `pnpm dev` and `pnpm start` read process environment variables, not `.env`
 Live mode discovers available objects and displays job state and temperatures.
 Missing readings appear as unknown. Perilune and Moonraker reconnect independently;
 last telemetry and editable drafts remain visible. Klipper startup, shutdown, and
-unavailable states are separate from the Moonraker connection. Controls are disabled
-for generic actions, including simulator commands. The explicit live mesh option
-above enables only its reviewed physical workflow. Remove the URL to return to simulator mode.
+unavailable states are separate from the Moonraker connection. Controls follow the selected live feature flags. Simulator actions cannot control a live printer. Remove the URL to return to simulator mode.
 
 The backend connects directly to Moonraker; existing browser-facing Cloudflare
 Access protection does not authenticate this connection. Perilune authenticates browser access independently of Moonraker.

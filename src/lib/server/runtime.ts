@@ -110,6 +110,7 @@ const jobsLayer = JobServiceLive.pipe(
 	Layer.provide(
 		Layer.succeed(JobsConfig, {
 			moonrakerUrl: moonrakerUrl ?? '',
+			liveFiles: process.env.PERILUNE_LIVE_CONTROLS === 'true',
 			apiKey: process.env.PERILUNE_MOONRAKER_API_KEY,
 			checkUser: (id, epoch) => {
 				const user = authService?.db
