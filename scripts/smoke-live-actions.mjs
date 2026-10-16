@@ -66,7 +66,8 @@ const upstream = createServer((req, res) => {
 await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
 const protocol = new WebSocketServer({ server: upstream });
 let connections = 0,
-	drop = false;
+	drop = false,
+	stagedResume = false;
 const operations = [];
 const publish = () => {
 	for (const socket of protocol.clients)
@@ -140,11 +141,12 @@ protocol.on('connection', (socket) => {
 					socket.terminate();
 					return;
 				}
-				status.print_stats.state = req.method.endsWith('pause')
-					? 'paused'
-					: req.method.endsWith('cancel')
-						? 'cancelled'
-						: 'printing';
+				status.print_stats.state =
+					req.method.endsWith('pause') || (stagedResume && req.method.endsWith('resume'))
+						? 'paused'
+						: req.method.endsWith('cancel')
+							? 'cancelled'
+							: 'printing';
 				if (req.method.endsWith('start')) status.print_stats.filename = req.params.filename;
 				if (req.method.endsWith('cancel')) {
 					status.extruder.target = 0;
@@ -232,6 +234,17 @@ try {
 	await page.goto(base);
 	await page.getByRole('button', { name: 'Pause print', exact: true }).click();
 	await page.getByRole('button', { name: 'Resume print', exact: true }).waitFor();
+	stagedResume = true;
+	await page.getByRole('button', { name: 'Resume print', exact: true }).click();
+	await page
+		.getByText('Resume macro completed; the print remains paused.', { exact: false })
+		.waitFor();
+	assert.equal(status.print_stats.state, 'paused');
+	assert.equal(
+		await page.getByText('Check the printer before continuing', { exact: true }).count(),
+		0
+	);
+	stagedResume = false;
 	await page.getByRole('button', { name: 'Resume print', exact: true }).click();
 	await page.getByRole('button', { name: 'Pause print', exact: true }).waitFor();
 	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
@@ -412,8 +425,15 @@ try {
 	await page
 		.getByText('Stop current job during recovery: completed', { exact: false })
 		.first()
-		.waitFor();
+		.waitFor({ state: 'attached' });
 	await safetyDialog.getByRole('button', { name: 'Back', exact: true }).click();
+	const safetyHistory = page.locator('[aria-label="Printer safety"] details');
+	assert.equal(await safetyHistory.evaluate((element) => element.open), false);
+	await safetyHistory.getByText('Recent safety actions', { exact: true }).click();
+	await safetyHistory
+		.getByText('Stop current job during recovery: completed', { exact: true })
+		.waitFor();
+	await safetyHistory.getByText('Recent safety actions', { exact: true }).click();
 	assert.equal(status.print_stats.state, 'cancelled');
 	await nativePage.goto(base);
 	await nativePage.getByRole('link', { name: 'Turn off heaters', exact: true }).click();
@@ -450,7 +470,10 @@ try {
 	const emergency = page.getByRole('dialog');
 	await emergency.getByRole('checkbox', { name: 'Confirm emergency shutdown' }).check();
 	await emergency.getByRole('button', { name: 'Emergency stop', exact: true }).click();
-	await page.getByText('Emergency stop: completed', { exact: false }).first().waitFor();
+	await page
+		.getByText('Emergency stop: completed', { exact: false })
+		.first()
+		.waitFor({ state: 'attached' });
 	await emergency.getByRole('button', { name: 'Back', exact: true }).click();
 	assert.equal(safetyRequests.filter((p) => p === '/printer/emergency_stop').length, 1);
 	safetyShutdown = false; // Represents an explicit external restart after resolving the hazard.
@@ -511,6 +534,51 @@ try {
 	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.waitForFunction(
 		() => document.querySelector('.current-job .job-state').textContent === 'cancelled'
+	);
+
+	// A genuine lost acknowledgement stays unknown; paused unlock needs owner attestation.
+	status.print_stats.state = 'paused';
+	publish();
+	await page.goto(base);
+	drop = true;
+	await page.getByRole('button', { name: 'Resume print', exact: true }).click();
+	await page.getByText('Check the printer before continuing', { exact: true }).waitFor();
+	drop = false;
+	await page.reload();
+	await page.getByRole('button', { name: 'Review recovery', exact: true }).click();
+	const pausedReview = page.getByRole('dialog');
+	const unlock = pausedReview.getByRole('button', {
+		name: 'Printer checked · unlock controls',
+		exact: true
+	});
+	assert.equal(await unlock.isDisabled(), true);
+	await pausedReview
+		.getByRole('checkbox', {
+			name: 'I have verified this is the same paused print and movement has stopped.'
+		})
+		.check();
+	await page.setViewportSize({ width: 320, height: 800 });
+	await mkdir('test-results', { recursive: true });
+	await page.screenshot({ path: 'test-results/paused-resume-recovery-mobile.png', fullPage: true });
+	const resumesBeforeUnlock = operations.filter(
+		(op) => op.method === 'printer.print.resume'
+	).length;
+	await unlock.click();
+	await page
+		.getByText('Check the printer before continuing', { exact: true })
+		.waitFor({ state: 'hidden' });
+	assert.equal(status.print_stats.state, 'paused');
+	assert.equal(
+		operations.filter((op) => op.method === 'printer.print.resume').length,
+		resumesBeforeUnlock
+	);
+	assert.equal(
+		database
+			.prepare(
+				"SELECT status FROM actions WHERE label='Resume print' ORDER BY created_at DESC LIMIT 1"
+			)
+			.get().status,
+		'unknown'
 	);
 
 	database.close();

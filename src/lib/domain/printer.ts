@@ -119,7 +119,7 @@ export interface PrinterSnapshot {
 		maxDistance: number | null;
 		minTemp: number | null;
 	};
-	liveRecovery?: { id: string; message: string } | null;
+	liveRecovery?: { id: string; message: string; resumeFilename?: string } | null;
 	revision: number;
 	updatedAt: number;
 	mode: 'simulator' | 'moonraker';

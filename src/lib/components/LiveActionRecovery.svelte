@@ -6,24 +6,49 @@
 	import { recoverLiveAction } from '../../routes/printer.remote.js';
 	let { snapshot }: { snapshot?: PrinterSnapshot } = $props();
 	const recovery = $derived(snapshot?.liveRecovery);
-	const ready = $derived(
+	let pausedConfirmed = $state(false);
+	const pausedCandidate = $derived(
+		snapshot?.job.state === 'paused' &&
+			Boolean(snapshot.job.runId) &&
+			recovery?.resumeFilename === snapshot.job.filename
+	);
+	const reviewIdentity = $derived(
+		`${recovery?.id}:${snapshot?.job.runId}:${snapshot?.job.filename}`
+	);
+	$effect(() => {
+		void reviewIdentity;
+		void open;
+		pausedConfirmed = false;
+	});
+	const printerReady = $derived(
 		!safetyReason(snapshot?.safety) &&
 			snapshot?.connection === 'connected' &&
 			snapshot.klippy === 'ready' &&
 			snapshot.telemetryReady &&
 			snapshot.motion.busy === false &&
-			!snapshot.motion.calibration &&
-			['standby', 'complete', 'cancelled', 'error'].includes(snapshot.job.state)
+			!snapshot.motion.calibration
 	);
+	const ready = $derived(
+		printerReady &&
+			(['standby', 'complete', 'cancelled', 'error'].includes(snapshot?.job.state ?? '') ||
+				(pausedCandidate && pausedConfirmed))
+	);
+
 	let open = $state(false),
 		busy = $state(false),
 		failure = $state('');
 	async function recover() {
-		if (!recovery || busy) return;
+		if (!recovery || busy || !ready) return;
 		busy = true;
 		failure = '';
 		try {
-			await recoverLiveAction({ id: recovery.id, confirmed: true });
+			await recoverLiveAction({
+				id: recovery.id,
+				confirmed: true,
+				...(pausedCandidate && pausedConfirmed && snapshot?.job.runId
+					? { pausedJob: { filename: snapshot.job.filename, runId: snapshot.job.runId } }
+					: {})
+			});
 			open = false;
 		} catch (cause) {
 			failure =
@@ -61,7 +86,23 @@
 							displayed heater targets are appropriate. Clearing this lock does not undo or resend
 							the previous action.</Dialog.Description
 						>
-						{#if !ready}<p>
+						{#if pausedCandidate}<label class="paused-review"
+								><input
+									type="checkbox"
+									bind:checked={pausedConfirmed}
+									disabled={!printerReady || busy}
+								/> I have verified this is the same paused print and movement has stopped.</label
+							>
+							<p>
+								The previous Resume outcome stays unknown. Unlocking leaves the print paused and
+								does not send another Resume. Check printer messages and any purged material before
+								continuing.
+							</p>{/if}
+						{#if pausedCandidate && !printerReady}<p>
+								Waiting for a connected, idle printer before you can confirm this paused print.
+								Current print data is retained.
+							</p>{/if}
+						{#if !ready && !pausedCandidate}<p>
 								Recovery needs a connected, idle printer. If a print is running or paused, stop it
 								using the recovery controls above, then return here. Unlocking does not stop a job
 								or turn heaters off.
@@ -82,6 +123,15 @@
 {/if}
 
 <style>
+	.paused-review {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.6rem;
+		margin: 1rem 0;
+	}
+	.paused-review input {
+		margin-top: 0.2rem;
+	}
 	.live-recovery {
 		display: flex;
 		gap: 1rem;
