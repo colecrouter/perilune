@@ -1012,3 +1012,7 @@ progress::-moz-progress-bar {
 	opacity: 0.5;
 	cursor: not-allowed;
 }
+
+.job-actions {
+	align-items: flex-start;
+}
