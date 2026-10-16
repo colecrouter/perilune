@@ -178,7 +178,7 @@ try {
 	await first.getByRole('checkbox', { name: 'Cool down bed', exact: true }).uncheck();
 	await first.screenshot({ path: 'test-results/stop-print.png', fullPage: true });
 	await first.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
-	await second.getByText('cancelled', { exact: true }).waitFor();
+	await second.getByRole('heading', { name: 'Print stopped', exact: true }).waitFor();
 	await first.waitForFunction(
 		() => !document.querySelector('link[rel="icon"]')?.href.startsWith('data:')
 	);

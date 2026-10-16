@@ -69,6 +69,9 @@ test('inspection selects a point on the plot with a marker and supports keyboard
 test('combined history plots all sensors with shared inspection and optional focused view', async () => {
 	const screen = await render(TemperatureHistory, { samples, sensors, combined: true });
 	await expect
+		.element(screen.getByRole('combobox', { name: 'Sensor', exact: true }))
+		.toHaveValue('*');
+	await expect
 		.element(screen.getByRole('slider', { name: /All sensor temperatures/ }))
 		.toBeVisible();
 	await expect

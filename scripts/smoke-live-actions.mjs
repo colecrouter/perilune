@@ -253,7 +253,7 @@ try {
 	await stop.getByRole('checkbox', { name: /bed/i }).uncheck();
 	assert.equal(await stop.getByRole('checkbox', { name: /nozzle/i }).isDisabled(), true);
 	await stop.getByRole('button', { name: 'Stop print', exact: true }).click();
-	await page.getByText('cancelled', { exact: true }).first().waitFor();
+	await page.getByRole('heading', { name: 'Print stopped', exact: true }).waitFor();
 	await page.waitForFunction(() =>
 		Array.from(document.querySelectorAll('.activity-list .action-status')).some(
 			(e) => e.textContent === 'completed'

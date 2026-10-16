@@ -148,7 +148,7 @@
 	<div class="history-options">
 		<label
 			>Sensor<select
-				value={sensor?.id ?? ''}
+				value={all ? '*' : (sensor?.id ?? '')}
 				onchange={(event) => {
 					selected = event.currentTarget.value;
 					inspectedAt = null;
