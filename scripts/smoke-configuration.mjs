@@ -54,6 +54,7 @@ const upstream = createServer((request, response) => {
 			JSON.stringify({
 				result: {
 					state: startupPolls > 0 ? 'startup' : startupError ? 'error' : 'ready',
+					config_file: '/fixture/config/printer.cfg',
 					state_message: startupError
 						? "Option 'bad' is not valid in section 'printer'"
 						: 'Printer is ready'
@@ -68,11 +69,17 @@ const upstream = createServer((request, response) => {
 						print_stats: { state: 'standby' },
 						idle_timeout: { state: 'Idle' },
 						configfile: { save_config_pending: false },
+						heaters: { available_heaters: ['extruder', 'heater_bed'] },
+						manual_probe: { is_active: false },
 						extruder: { target: 0 },
 						heater_bed: { target: 0 }
 					}
 				}
 			})
+		);
+	} else if (request.url === '/server/files/roots') {
+		response.end(
+			JSON.stringify({ result: [{ name: 'config', path: '/fixture/config', permissions: 'rw' }] })
 		);
 	} else if (request.url === '/server/files/list?root=config') {
 		response.setHeader('Content-Type', 'application/json');
@@ -416,6 +423,12 @@ try {
 	await handoffPage.getByRole('heading', { name: 'Review extrusion distance' }).waitFor();
 	await handoffPage.getByRole('spinbutton', { name: 'Maximum velocity', exact: true }).fill('180');
 	await handoffPage.getByRole('checkbox', { name: /repeated the measurement/ }).check();
+	assert.equal(
+		await handoffPage.getByRole('button', { name: 'Add to this draft' }).isEnabled(),
+		false
+	);
+	await handoffPage.getByRole('button', { name: 'Find effective setting' }).click();
+	await handoffPage.getByText('Effective setting:', { exact: false }).waitFor();
 	await handoffPage.getByRole('button', { name: 'Add to this draft' }).click();
 	assert.equal(
 		await handoffPage

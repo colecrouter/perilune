@@ -187,6 +187,7 @@
 			class="button primary"
 			onclick={add}
 			disabled={disabled ||
+				!sourceReady ||
 				!plan.change ||
 				!repeated ||
 				(includes && !includesReviewed && !onResolveSources)}>Add to this draft</button
