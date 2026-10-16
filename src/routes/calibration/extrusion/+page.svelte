@@ -45,7 +45,7 @@
 </script>
 
 <svelte:head><title>Filament & extrusion · Perilune</title></svelte:head>
-<AppShell active="Calibration"
+<AppShell {snapshot} active="Calibration"
 	><div class="page serif">
 		<header>
 			<p class="eyebrow">Calibration workshop</p>

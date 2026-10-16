@@ -1,3 +1,5 @@
+import { Effect, SubscriptionRef } from 'effect';
+import { JobService } from '#lib/server/job-service.js';
 import { readActionBody } from '#lib/server/action-body.js';
 import { ActionStore } from '#lib/server/action-store.js';
 import { runtime } from '#lib/server/runtime.js';
@@ -17,9 +19,20 @@ export const load: PageServerLoad = async (event) => {
 		};
 	if (intent === 'start') {
 		const fileId = event.url.searchParams.get('fileId') ?? '';
-		if (!/^[a-f0-9-]{36}$/i.test(fileId)) return { review: null };
+		if (!/^(?:[a-f0-9-]{36}|[a-f0-9]{64})$/i.test(fileId)) return { review: null };
 		const store = await runtime.runPromise(ActionStore);
-		const file = await runtime.runPromise(store.jobFile(fileId));
+		const file =
+			fileId.length === 64
+				? await runtime.runPromise(
+						Effect.gen(function* () {
+							const jobs = yield* JobService;
+							if (jobs.refresh) yield* jobs.refresh;
+							return (yield* SubscriptionRef.get(jobs.state)).files.find(
+								(file) => file.id === fileId
+							);
+						}).pipe(Effect.catch(() => Effect.succeed(undefined)))
+					)
+				: await runtime.runPromise(store.jobFile(fileId));
 		if (file) return { review: { intent, fileId, name: file.name, filename: '', runId: '' } };
 	}
 	return { review: null };

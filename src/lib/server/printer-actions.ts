@@ -1,3 +1,4 @@
+import { LiveActionService } from './live-action-service.js';
 import { error, type RequestEvent } from '@sveltejs/kit';
 import { Effect, SubscriptionRef } from 'effect';
 import { authService, requireIdentity } from './auth/index.js';
@@ -20,7 +21,9 @@ export async function submitPrinterAction(event: RequestEvent, request: ActionRe
 			const service = yield* PrinterService;
 			const snapshot = yield* SubscriptionRef.get(service.state);
 			return yield* snapshot.mode === 'moonraker'
-				? (yield* LiveMeshService).submit(request, actor)
+				? request.command.type.startsWith('meshProbe')
+					? (yield* LiveMeshService).submit(request, actor)
+					: (yield* LiveActionService).submit(request, actor)
 				: service.submit(request, actor);
 		}).pipe(Effect.result)
 	);

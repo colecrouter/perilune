@@ -1,3 +1,5 @@
+import { LiveActionService } from '#lib/server/live-action-service.js';
+import { error } from '@sveltejs/kit';
 import { submitPrinterAction } from '#lib/server/printer-actions.js';
 import { command, getRequestEvent, query } from '$app/server';
 import { Effect, Schema, Stream, SubscriptionRef } from 'effect';
@@ -104,4 +106,24 @@ export const resetSimulator = command(
 			runtime.runPromise(Effect.flatMap(PrinterService, (service) => service.reset))
 		);
 	})
+);
+
+export const recoverLiveAction = command(
+	Schema.toStandardSchemaV1(
+		Schema.Struct({ id: Schema.String.check(Schema.isUUID()), confirmed: Schema.Literal(true) })
+	),
+	async ({ id }) => {
+		const identity = requireIdentity(getRequestEvent(), 'owner');
+		const result = await runtime.runPromise(
+			Effect.gen(function* () {
+				return yield* (yield* LiveActionService).recover(id, {
+					id: identity.user.id,
+					name: identity.user.name,
+					role: identity.user.role,
+					authorized: () => Boolean(authService?.valid(identity))
+				});
+			}).pipe(Effect.result)
+		);
+		if (result._tag === 'Failure') error(409, result.failure.message);
+	}
 );

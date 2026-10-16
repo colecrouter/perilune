@@ -78,7 +78,13 @@
 		snapshot.actions.some((action) => action.status === 'queued' || action.status === 'sending')
 	);
 	const live = $derived(snapshot.mode === 'moonraker');
-	const readOnly = $derived(live || data.user?.role === 'viewer');
+	const readOnly = $derived(
+		(live && !snapshot.liveControls) ||
+			!!snapshot.liveRecovery ||
+			!!snapshot.configurationBusy ||
+			snapshot.motion.calibration ||
+			data.user?.role === 'viewer'
+	);
 	const connectionLabel = $derived(
 		snapshot.connection.charAt(0).toUpperCase() + snapshot.connection.slice(1)
 	);
@@ -133,7 +139,7 @@
 		content="Perilune printer control development preview"
 	/></svelte:head
 >
-<AppShell>
+<AppShell {snapshot}>
 	<div class:serif class="dashboard">
 		<header class="page-header">
 			<div>
@@ -156,7 +162,7 @@
 				>
 			</div>
 		</header>
-		{#if !readOnly}<section class="simulator-banner" aria-label="Simulator controls">
+		{#if !live && !readOnly}<section class="simulator-banner" aria-label="Simulator controls">
 				<div>
 					<Icon name="monitor" size={24} />
 					<p><strong>Simulator</strong><span> · No physical printer is controlled</span></p>
@@ -181,7 +187,9 @@
 					<p>
 						<strong>{live ? 'Live printer' : 'Simulator'}</strong><span>
 							· {live
-								? 'Read-only connection; controls are not enabled yet'
+								? snapshot.liveControls
+									? 'Live controls enabled · shared across operators'
+									: 'Read-only connection; controls are not enabled yet'
 								: 'Viewer access; printer controls require an operator'}</span
 						>
 					</p>

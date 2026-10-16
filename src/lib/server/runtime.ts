@@ -1,3 +1,8 @@
+import {
+	LiveActionServiceLive,
+	LiveActionSettings,
+	LiveActionDisabled
+} from './live-action-service.js';
 import { ConsoleServiceLive } from './console-service.js';
 import { NotificationServiceLive, NotificationSettings } from './notification-service.js';
 import {
@@ -67,6 +72,7 @@ const liveServices = Layer.mergeAll(
 				url: moonrakerUrl ?? '',
 				discoverWebcams: Boolean(cameraBaseUrl && !cameraSource),
 				liveMeshEnabled: process.env.PERILUNE_LIVE_MESH === 'true',
+				liveControlsEnabled: process.env.PERILUNE_LIVE_CONTROLS === 'true',
 				...(process.env.PERILUNE_MOONRAKER_API_KEY
 					? { apiKey: process.env.PERILUNE_MOONRAKER_API_KEY }
 					: {})
@@ -103,6 +109,20 @@ const jobsLayer = JobServiceLive.pipe(
 	Layer.provide(SqliteClient.layer({ filename })),
 	Layer.provideMerge(commandsLayer)
 );
+const liveActionsLayer = moonrakerUrl
+	? LiveActionServiceLive.pipe(
+			Layer.provide(
+				Layer.succeed(LiveActionSettings, {
+					enabled: process.env.PERILUNE_LIVE_CONTROLS === 'true',
+					target: moonrakerUrl
+				})
+			),
+			Layer.provide(databaseLayer),
+			Layer.provide(actionStoreLayer),
+			Layer.provide(liveServices),
+			Layer.provideMerge(jobsLayer)
+		)
+	: Layer.merge(jobsLayer, LiveActionDisabled);
 const configurationLayer = ConfigurationServiceLive.pipe(
 	Layer.provide(
 		Layer.succeed(ConfigurationSettings, {
@@ -126,7 +146,7 @@ const applicationLayer = ConfigurationApplicationServiceLive.pipe(
 	),
 	Layer.provide(configurationLayer),
 	Layer.provide(databaseLayer),
-	Layer.provideMerge(jobsLayer)
+	Layer.provideMerge(liveActionsLayer)
 );
 const notificationLayer = NotificationServiceLive.pipe(
 	Layer.provide(databaseLayer),

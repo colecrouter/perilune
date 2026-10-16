@@ -58,7 +58,7 @@ print duration and file progress, not a slicer prediction.
 Live initialization is immediate with unknown values, so a slow/offline printer does
 not block rendering. Reconnects retain last known values with a telemetry timestamp.
 Shutdown/startup retain visible readings while indicating that Klipper is unavailable.
-Generic live controls remain read-only. The opt-in cold bed mesh workflow has a separate persistent command lifecycle described below. Simulator connection/reset methods cannot change live state.
+Generic live controls remain read-only unless `PERILUNE_LIVE_CONTROLS` is enabled (see shared live-action coordination below). The opt-in cold bed mesh workflow has a separate persistent command lifecycle described below. Simulator connection/reset methods cannot change live state.
 URLs, API keys, raw server errors, and printer configuration stay out of client state.
 
 ## Browser and interface
@@ -862,3 +862,26 @@ cancel action, traps/restores focus, and retains server rejection text. Pending
 submission disables duplicate actions and dismissal; acknowledgement closes the
 dialog while execution status remains in shared activity. Backend dispatch and
 live-execution gates are unchanged.
+
+## Shared live-action coordination
+
+`PERILUNE_LIVE_CONTROLS` enables the basic live motion, primary heater and existing
+live-library job controls through `LiveActionService`. The process-owned worker
+has one durable pending slot, account/payload idempotence, 30-second admission
+expiry, generation fencing, fresh execution checks and observed-state completion.
+`printerAdmission` ties a shared admission semaphore to the process-owned printer
+instance; mesh, configuration and basic actions use it through durable reservation.
+
+Migration 011 retains ordinary live reservations across restart. Unknown outcomes
+keep an explicit owner recovery lock, including after storage/worker defects; no
+physical command is automatically replayed. Cancellation verifies the stopped run
+before applying independent heater choices. Manual movement preserves G-code state
+and uses relative physical deltas with `M400`; configured heater limits are checked.
+Basic forms also support live job review/start without JavaScript. See
+[live controls](live-controls.md) for scope, acceptance and external-client limits.
+Arbitrary console/macros and the live Z-offset/extrusion workflows remain follow-ups.
+
+Camera playback tracks primitive source URLs, configured state and source generation,
+so equivalent camera descriptors delivered with frequent printer updates do not
+restart the stream. A headless browser regression covers descriptor churn,
+orientation-only updates and real source-generation replacement.

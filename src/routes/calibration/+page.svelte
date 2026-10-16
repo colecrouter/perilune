@@ -169,7 +169,7 @@
 </script>
 
 <svelte:head><title>Calibration · Perilune</title></svelte:head>
-<AppShell active="Calibration">
+<AppShell {snapshot} active="Calibration">
 	<div class="calibration-page serif">
 		<header>
 			<div>

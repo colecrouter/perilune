@@ -11,7 +11,7 @@ const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
 	for (const fn of cleanup.splice(0).reverse()) await fn();
 });
-async function fixture() {
+async function fixture(controls = false) {
 	const server = new WebSocketServer({ port: 0, host: '127.0.0.1' });
 	await new Promise<void>((r) => server.once('listening', r));
 	cleanup.push(
@@ -104,7 +104,8 @@ async function fixture() {
 			Layer.provide(
 				Layer.succeed(MoonrakerConfig, {
 					url: `ws://127.0.0.1:${address.port}/websocket`,
-					liveMeshEnabled: true,
+					liveMeshEnabled: !controls,
+					liveControlsEnabled: controls,
 					requestTimeoutMs: 30,
 					heartbeatMs: 1000,
 					reconnectMinMs: 5
@@ -175,4 +176,22 @@ it('only builds bounded profile operations and rejects command injection', () =>
 		'BED_MESH_PROFILE SAVE=new-mesh\nBED_MESH_PROFILE REMOVE=perilune_run\nSAVE_CONFIG'
 	);
 	expect(() => meshScript({ type: 'probe', name: 'mesh\nG28' })).toThrow(/identifier/);
+});
+
+it('fences basic controls independently from mesh enablement and never replays a dropped control', async () => {
+	const f = await fixture(true),
+		generation = (await f.snapshot()).generation;
+	await expect(
+		f.runtime.runPromise(f.transport.command({ type: 'home' }, generation))
+	).rejects.toMatchObject({ sent: false });
+	await f.runtime.runPromise(
+		f.transport.control!({ type: 'controlScript', script: 'M84' }, generation)
+	);
+	expect(f.scripts()).toBe(1);
+	f.setBehavior('drop');
+	await expect(
+		f.runtime.runPromise(f.transport.control!({ type: 'controlScript', script: 'M84' }, generation))
+	).rejects.toMatchObject({ sent: true });
+	await expect.poll(async () => (await f.snapshot()).generation).toBeGreaterThan(generation);
+	expect(f.scripts()).toBe(2);
 });

@@ -19,6 +19,7 @@ export interface MoonrakerSettings {
 	reconnectMaxMs?: number;
 	discoverWebcams?: boolean;
 	liveMeshEnabled?: boolean;
+	liveControlsEnabled?: boolean;
 }
 export class MoonrakerConfig extends Context.Service<MoonrakerConfig, MoonrakerSettings>()(
 	'perilune/MoonrakerConfig'
@@ -26,6 +27,7 @@ export class MoonrakerConfig extends Context.Service<MoonrakerConfig, MoonrakerS
 export type KlippyState = 'unknown' | 'ready' | 'startup' | 'shutdown' | 'error' | 'disconnected';
 export interface MoonrakerSnapshot {
 	/** Operator-only data; never forwarded into PrinterSnapshot/dashboard. */
+	heaterLimits?: Partial<Record<'bed' | 'nozzle', { min: number; max: number }>>;
 	console?: { macros: PrinterMacro[]; responses: ConsoleLine[] };
 	connection: 'connecting' | 'connected' | 'reconnecting';
 	klippy: KlippyState;
@@ -40,8 +42,9 @@ export interface MoonrakerSnapshot {
 	liveMesh: { enabled: boolean; plan: LiveMeshPlan | null; pendingConfig: boolean };
 	probeResponses: Array<{ sequence: number; x: number; y: number; space?: 'probe' | 'nozzle' }>;
 	job: {
+		runId?: string;
 		filename: string;
-		state: 'standby' | 'printing' | 'paused' | 'complete' | 'cancelled' | 'error';
+		state: 'unknown' | 'standby' | 'printing' | 'paused' | 'complete' | 'cancelled' | 'error';
 		progress: number | null;
 		layer: number | null;
 		totalLayers: number | null;
@@ -81,12 +84,19 @@ export function meshScript(operation: MeshOperation): string {
 			return `BED_MESH_PROFILE SAVE=${operation.name}\nBED_MESH_PROFILE REMOVE=${operation.remove}\nSAVE_CONFIG`;
 	}
 }
+export type ControlOperation =
+	| { type: 'controlScript'; script: string }
+	| { type: 'job'; method: 'start' | 'pause' | 'resume' | 'cancel'; filename?: string };
 export class MoonrakerService extends Context.Service<
 	MoonrakerService,
 	{
 		state: SubscriptionRef.SubscriptionRef<MoonrakerSnapshot>;
 		command: (
 			operation: MeshOperation,
+			generation: number
+		) => Effect.Effect<void, MoonrakerCommandError>;
+		control?: (
+			operation: ControlOperation,
 			generation: number
 		) => Effect.Effect<void, MoonrakerCommandError>;
 		refresh: (generation: number) => Effect.Effect<MoonrakerSnapshot, MoonrakerCommandError>;
@@ -148,12 +158,24 @@ export function normalizeMoonrakerStatus(
 		String(print.state)
 	)
 		? (print.state as MoonrakerSnapshot['job']['state'])
-		: 'standby';
+		: 'unknown';
 	return {
 		...previous,
 		updatedAt: Date.now(),
 		telemetryReady: true,
 		motion: normalizeMotion(status),
+		heaterLimits: Object.fromEntries(
+			(['bed', 'nozzle'] as const).flatMap((heater) => {
+				const config = record(
+					record(status.configfile?.config)[heater === 'bed' ? 'heater_bed' : 'extruder']
+				);
+				const min = Number(config.min_temp),
+					max = Number(config.max_temp);
+				return Number.isFinite(min) && Number.isFinite(max) && min < max
+					? [[heater, { min, max }]]
+					: [];
+			})
+		),
 		liveMesh: {
 			enabled: previous.liveMesh.enabled,
 			plan: liveMeshPlan(status.configfile?.config),
@@ -173,6 +195,13 @@ export function normalizeMoonrakerStatus(
 				heater: temperatureFields(name)?.includes('target') ?? false
 			})),
 		job: {
+			runId: ['printing', 'paused'].includes(state)
+				? previous.telemetryReady &&
+					['printing', 'paused'].includes(previous.job.state) &&
+					previous.job.filename === print.filename
+					? previous.job.runId
+					: crypto.randomUUID()
+				: previous.job.runId,
 			filename: typeof print.filename === 'string' ? print.filename : '',
 			state,
 			progress: progress === null ? null : Math.max(0, Math.min(100, progress * 100)),
@@ -214,7 +243,9 @@ export const MoonrakerServiceLive = Layer.effect(
 		const heartbeat = config.heartbeatMs ?? 15_000;
 		const reconnectMin = config.reconnectMinMs ?? 500;
 		const reconnectMax = config.reconnectMaxMs ?? 30_000;
-		let dispatch: ((operation: MeshOperation, generation: number) => Promise<void>) | undefined;
+		let dispatch:
+			| ((operation: MeshOperation | ControlOperation, generation: number) => Promise<void>)
+			| undefined;
 		let refresh: ((generation: number) => Promise<MoonrakerSnapshot>) | undefined;
 		let responseSequence = 0;
 		const worker = Effect.promise(async (signal) => {
@@ -456,7 +487,11 @@ export const MoonrakerServiceLive = Layer.effect(
 							const requested = Object.fromEntries([
 								...objects
 									.filter(
-										(name) => name in wanted && (name !== 'configfile' || config.liveMeshEnabled)
+										(name) =>
+											name in wanted &&
+											(name !== 'configfile' ||
+												config.liveMeshEnabled ||
+												config.liveControlsEnabled)
 									)
 									.map((name) => [name, wanted[name]]),
 								...objects
@@ -510,7 +545,7 @@ export const MoonrakerServiceLive = Layer.effect(
 						}
 						const fence = (generation: number) => {
 							if (
-								!config.liveMeshEnabled ||
+								(!config.liveMeshEnabled && !config.liveControlsEnabled) ||
 								closed ||
 								signal.aborted ||
 								!subscribed ||
@@ -522,12 +557,29 @@ export const MoonrakerServiceLive = Layer.effect(
 						};
 						dispatch = async (operation, generation) => {
 							fence(generation);
-							const script = meshScript(operation);
+							const basic = operation.type === 'controlScript' || operation.type === 'job';
+							if (basic ? !config.liveControlsEnabled : !config.liveMeshEnabled)
+								throw new MoonrakerCommandError({ sent: false });
+							const method =
+								operation.type === 'job'
+									? `printer.print.${operation.method}`
+									: 'printer.gcode.script';
+							const params =
+								operation.type === 'job'
+									? operation.method === 'start'
+										? { filename: operation.filename }
+										: {}
+									: {
+											script:
+												operation.type === 'controlScript'
+													? operation.script
+													: meshScript(operation)
+										};
 							try {
 								await request(
-									'printer.gcode.script',
-									{ script },
-									operation.type === 'save' ? 30_000 : 10 * 60 * 1000
+									method,
+									params,
+									operation.type === 'save' || basic ? 120_000 : 10 * 60 * 1000
 								);
 							} catch {
 								throw new MoonrakerCommandError({ sent: true });
@@ -604,6 +656,17 @@ export const MoonrakerServiceLive = Layer.effect(
 		yield* worker.pipe(Effect.forkScoped);
 		return {
 			state,
+			control: (operation, generation) =>
+				Effect.tryPromise({
+					try: () =>
+						dispatch
+							? dispatch(operation, generation)
+							: Promise.reject(new MoonrakerCommandError({ sent: false })),
+					catch: (cause) =>
+						cause instanceof MoonrakerCommandError
+							? cause
+							: new MoonrakerCommandError({ sent: false })
+				}),
 			command: (operation, generation) =>
 				Effect.tryPromise({
 					try: () =>

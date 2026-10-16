@@ -70,7 +70,8 @@ export function temperatureReason(
 	includePending = true
 ): string | null {
 	if (state.configurationBusy) return 'Configuration recovery owns the printer.';
-	if (state.mode === 'moonraker')
+	if (state.liveRecovery) return state.liveRecovery.message;
+	if (state.mode === 'moonraker' && !state.liveControls)
 		return 'Live temperature controls are read-only until coordinated printer testing.';
 	if (state.connection !== 'connected' || state.klippy !== 'ready')
 		return 'Wait for the printer to reconnect and become ready.';

@@ -62,7 +62,8 @@ export function safeRelativePath(value: string): boolean {
 	);
 }
 export function startReason(snapshot: PrinterSnapshot, checkPending = true): string | null {
-	if (snapshot.mode !== 'simulator')
+	if (snapshot.liveRecovery) return snapshot.liveRecovery.message;
+	if (snapshot.mode !== 'simulator' && !snapshot.liveControls)
 		return 'Live printing is read-only until coordinated printer testing.';
 	if (snapshot.configurationBusy) return 'Configuration recovery owns the printer.';
 	if (snapshot.connection !== 'connected' || snapshot.klippy !== 'ready')
