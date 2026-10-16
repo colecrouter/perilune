@@ -10,7 +10,7 @@ export const LiveZCommand = Schema.Union([
 		run: Schema.String.check(Schema.isUUID()),
 		version: Schema.Int,
 		expectedZ: Schema.Number.check(Schema.isFinite()),
-		delta: Schema.Literals([-0.1, -0.05, -0.01, -0.005, 0.005, 0.01, 0.05, 0.1])
+		delta: Schema.Literals([-1, -0.5, -0.1, -0.05, -0.01, -0.005, 0.005, 0.01, 0.05, 0.1, 0.5, 1])
 	}),
 	Schema.Struct({
 		type: Schema.Literal('zProbeAccept'),
@@ -35,6 +35,8 @@ export interface ZProbeCapability {
 	pending: boolean;
 	pendingKeys: string[];
 	pendingOffset: number | null;
+	configuredOffset?: number | null;
+	setting?: string;
 }
 export interface LiveZSession {
 	id: string;
@@ -45,6 +47,9 @@ export interface LiveZSession {
 	method: 'probe' | 'endstop';
 	z: number | null;
 	candidate: number | null;
+	previousOffset?: number | null;
+	setting?: string;
+	paperZ?: number;
 	startedAt: number;
 	expiresAt: number;
 	message: string | null;

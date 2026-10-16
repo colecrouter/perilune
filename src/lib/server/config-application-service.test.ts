@@ -413,6 +413,28 @@ it('reviews all pending settings, sends SAVE_CONFIG once, verifies exact bytes a
 	const { f, url } = await fixture(),
 		a = await app(url);
 	f.pending = true;
+	const calibrationRun = randomUUID();
+	await a.runtime.runPromise(
+		SubscriptionRef.update(a.state, (s) => ({
+			...s,
+			liveZ: {
+				session: {
+					id: calibrationRun,
+					ownerId: 'owner',
+					ownerName: 'Owner',
+					version: 2,
+					stage: 'staged' as const,
+					method: 'probe' as const,
+					z: null,
+					candidate: 1.25,
+					setting: 'probe.z_offset',
+					startedAt: Date.now(),
+					expiresAt: Date.now() + 60000,
+					message: null
+				}
+			}
+		}))
+	);
 	const review = await a.runtime.runPromise(a.service.reviewPending(owner));
 	expect(review.manifest).toEqual(f.manifest);
 	const request = {
@@ -423,7 +445,12 @@ it('reviews all pending settings, sends SAVE_CONFIG once, verifies exact bytes a
 	};
 	await a.runtime.runPromise(a.service.submit(request, owner));
 	const result = await a.terminal();
-	expect(result).toMatchObject({ phase: 'ready', mode: 'calibration', writeVerified: true });
+	expect(result).toMatchObject({
+		phase: 'ready',
+		mode: 'calibration',
+		writeVerified: true,
+		calibrationRun
+	});
 	expect(f.saves).toBe(1);
 	expect(f.uploads).toBe(0);
 	expect(f.restarts).toBe(0);
@@ -432,7 +459,7 @@ it('reviews all pending settings, sends SAVE_CONFIG once, verifies exact bytes a
 	await a.runtime.runPromise(
 		a.service.submit({ id: randomUUID(), revertOf: result.id, confirmedRestart: true }, owner)
 	);
-	expect((await a.terminal()).phase).toBe('ready');
+	expect(await a.terminal()).toMatchObject({ phase: 'ready', mode: 'revert', calibrationRun });
 	expect(f.text).toBe('[printer]\nmax_velocity: 200\n');
 });
 it('rejects changed pending manifests and source dependencies without saving', async () => {
@@ -544,4 +571,47 @@ it('resolves relative Klipper paths only with an explicit trusted process workin
 	expect((await a.runtime.runPromise(a.service.reviewPending(owner))).path).toBe('printer.cfg');
 	f.mainPath = '../etc/printer.cfg';
 	await expect(a.runtime.runPromise(a.service.reviewPending(owner))).rejects.toThrow('outside');
+});
+
+it('does not associate a calibration save with a mismatched or non-staged Z result', async () => {
+	for (const mismatch of ['value', 'setting', 'stage'] as const) {
+		const { f, url } = await fixture(),
+			a = await app(url);
+		f.pending = true;
+		await a.runtime.runPromise(
+			SubscriptionRef.update(a.state, (s) => ({
+				...s,
+				liveZ: {
+					session: {
+						id: randomUUID(),
+						ownerId: 'owner',
+						ownerName: 'Owner',
+						version: 2,
+						stage: mismatch === 'stage' ? ('resolved' as const) : ('staged' as const),
+						method: 'probe' as const,
+						z: null,
+						candidate: mismatch === 'value' ? 9 : 1.25,
+						setting: mismatch === 'setting' ? 'stepper_z.position_endstop' : 'probe.z_offset',
+						startedAt: Date.now(),
+						expiresAt: Date.now() + 60000,
+						message: null
+					}
+				}
+			}))
+		);
+		const review = await a.runtime.runPromise(a.service.reviewPending(owner));
+		await a.runtime.runPromise(
+			a.service.submit(
+				{
+					id: randomUUID(),
+					pending: review.fingerprint,
+					sources: review.sources,
+					confirmedRestart: true
+				},
+				owner
+			)
+		);
+		expect((await a.terminal()).calibrationRun).toBeUndefined();
+		expect(f.saves).toBe(1);
+	}
 });

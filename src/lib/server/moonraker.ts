@@ -765,6 +765,8 @@ function normalizeZProbe(status: ObjectStatus): import('#lib/domain/live-z.js').
 	const offset: [number, number] = [Number(probe.x_offset ?? 0), Number(probe.y_offset ?? 0)];
 	return {
 		method,
+		configuredOffset: number(Number((method === 'probe' ? probe : endstop)[option] ?? NaN)),
+		setting: `${method === 'probe' ? section : 'stepper_z'}.${option}`,
 		active: status.manual_probe?.is_active === true,
 		z: number(status.manual_probe?.z_position),
 		offset: offset.every(Number.isFinite) ? offset : null,

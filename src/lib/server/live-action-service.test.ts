@@ -754,6 +754,8 @@ async function zReady(f: Awaited<ReturnType<typeof fixture>>) {
 				offset: [-24, -13] as [number, number],
 				pending: false,
 				pendingOffset: null,
+				configuredOffset: 1.25,
+				setting: 'probe.z_offset',
 				pendingKeys: []
 			}
 		}))
@@ -770,14 +772,20 @@ it('live Z helper reconciles begin/adjust/accept and stages a result without sav
 		id,
 		stage: 'active',
 		version: 0,
-		z: 5
+		z: 5,
+		previousOffset: 1.25,
+		setting: 'probe.z_offset'
 	});
 	await f.submit({ type: 'zProbeAdjust', run: id, version: 0, expectedZ: 5, delta: -0.1 });
 	await f.finished();
 	expect((await f.snapshot()).liveZ?.session).toMatchObject({ version: 1, z: 4.9 });
 	await f.submit({ type: 'zProbeAccept', run: id, version: 1, expectedZ: 4.9, confirmed: true });
 	await f.finished();
-	expect((await f.snapshot()).liveZ?.session).toMatchObject({ stage: 'staged', candidate: 1.234 });
+	expect((await f.snapshot()).liveZ?.session).toMatchObject({
+		stage: 'staged',
+		candidate: 1.234,
+		paperZ: 4.9
+	});
 	expect(f.operations).toHaveLength(3);
 	expect(f.operations.some((o) => 'script' in o && o.script.includes('SAVE_CONFIG'))).toBe(false);
 });
@@ -906,4 +914,32 @@ it('resolved pending Z results allow a fresh calibration without claiming they r
 	await f.submit({ type: 'zProbeBegin', run: crypto.randomUUID(), confirmed: true });
 	await f.finished();
 	expect((await f.snapshot()).actions[0].status).toBe('completed');
+});
+
+it('live Z coarse steps retain fresh version, observed position and configured travel validation', async () => {
+	const f = await fixture();
+	await zReady(f);
+	const run = crypto.randomUUID();
+	await f.submit({ type: 'zProbeBegin', run, confirmed: true });
+	await f.finished();
+	await f.submit({ type: 'zProbeAdjust', run, version: 0, expectedZ: 5, delta: -1 });
+	await f.finished();
+	expect((await f.snapshot()).liveZ?.session).toMatchObject({ version: 1, z: 4 });
+	await f.submit({ type: 'zProbeAdjust', run, version: 1, expectedZ: 4, delta: -0.5 });
+	await f.finished();
+	expect((await f.snapshot()).liveZ?.session).toMatchObject({ version: 2, z: 3.5 });
+	const count = f.operations.length;
+	await f.submit({ type: 'zProbeAdjust', run, version: 1, expectedZ: 4, delta: -1 });
+	await f.finished();
+	expect(f.operations).toHaveLength(count);
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			motion: { ...s.motion, limits: { ...s.motion.limits, z: { min: 3, max: 250 } } }
+		}))
+	);
+	await f.submit({ type: 'zProbeAdjust', run, version: 2, expectedZ: 3.5, delta: -1 });
+	await f.finished();
+	expect(f.operations).toHaveLength(count);
+	expect((await f.snapshot()).actions[0].message).toContain('travel');
 });
