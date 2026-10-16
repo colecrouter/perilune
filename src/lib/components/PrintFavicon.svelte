@@ -1,17 +1,19 @@
 <script lang="ts">
-	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import { asset } from '$app/paths';
 	import { moonPhasePath } from '#lib/domain/moon.js';
 	import { getPrinter, getDashboard } from '../../routes/printer.remote.js';
 	import fallback from '#lib/assets/favicon.svg';
 
-	const dashboard = getDashboard();
-	const status = getPrinter();
-	const overview = $derived(page.url.pathname === '/');
+	let { overview }: { overview: boolean } = $props();
+	const source = untrack(() => (overview ? getDashboard() : getPrinter()));
 	$effect(() => {
-		void Promise.resolve(overview ? dashboard : status).catch(() => {});
+		void Promise.resolve(source).catch(() => {});
 	});
-	const printer = $derived(overview ? dashboard.current?.printer : status.current);
+	const printer = $derived.by(() => {
+		const value = source.current;
+		return value && 'printer' in value ? value.printer : value;
+	});
 	const progress = $derived.by(() => {
 		if (!printer) return null;
 		if (printer.job.state === 'complete') return 1;
@@ -19,9 +21,7 @@
 		return printer.job.progress === null ? null : Math.round(printer.job.progress) / 100;
 	});
 	const unavailable = $derived(
-		!(overview ? dashboard.connected : status.connected) ||
-			printer?.connection !== 'connected' ||
-			printer?.klippy !== 'ready'
+		!source.connected || printer?.connection !== 'connected' || printer?.klippy !== 'ready'
 	);
 	const paused = $derived(printer?.job.state === 'paused');
 	let href = $state(fallback);

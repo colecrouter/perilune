@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '#lib/styles.css';
+	import { page } from '$app/state';
 	import { calibrationHandoff } from '#lib/client/calibration-draft.svelte.js';
 	import AppUpdate from '#lib/components/AppUpdate.svelte';
 	import PrintFavicon from '#lib/components/PrintFavicon.svelte';
@@ -24,7 +25,9 @@
 		content="Perilune"
 	/>{#if !data.user}<link rel="icon" href={favicon} />{/if}</svelte:head
 >
-{#if data.user}<PrintFavicon />{/if}
+{#if data.user}{#key page.url.pathname === '/'}<PrintFavicon
+			overview={page.url.pathname === '/'}
+		/>{/key}{/if}
 {@render children()}
 
 <AppUpdate />

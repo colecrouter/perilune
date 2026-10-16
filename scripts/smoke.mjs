@@ -202,18 +202,51 @@ try {
 	);
 	await first.setViewportSize({ width: 1505, height: 1045 });
 
-	await first.goto(`${base}/controls`);
+	await first.getByRole('link', { name: 'Controls', exact: true }).click();
 	await first.getByRole('heading', { name: 'Printer controls', exact: true }).waitFor();
 	assert.equal(await first.locator('link[rel="icon"]').count(), 1);
+	const protocol = await context.newCDPSession(first);
+	await protocol.send('HeapProfiler.collectGarbage');
 	const streamDeadline = Date.now() + 5000;
 	while (heldStatusRequests.size !== 1 && Date.now() < streamDeadline) {
 		await new Promise((resolve) => setTimeout(resolve, 50));
+		await protocol.send('HeapProfiler.collectGarbage');
 	}
 	assert.equal(heldStatusRequests.size, 1, 'One printer-only stream after navigating to Controls');
 	assert.ok(
 		[...heldStatusRequests][0].url().includes('/getPrinter'),
 		'Controls does not subscribe to camera updates'
 	);
+
+	await first.getByRole('link', { name: 'Overview', exact: true }).click();
+	await first.getByRole('heading', { name: 'Overview', exact: true }).waitFor();
+	await protocol.send('HeapProfiler.collectGarbage');
+	for (
+		let i = 0;
+		i < 100 &&
+		(heldStatusRequests.size !== 1 || ![...heldStatusRequests][0].url().includes('/getDashboard'));
+		i++
+	) {
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		await protocol.send('HeapProfiler.collectGarbage');
+	}
+	assert.equal(heldStatusRequests.size, 1, 'SPA roundtrip releases unused printer stream');
+	assert.ok([...heldStatusRequests][0].url().includes('/getDashboard'));
+	await first.getByRole('link', { name: 'Controls', exact: true }).click();
+	await first.getByRole('heading', { name: 'Printer controls', exact: true }).waitFor();
+	await protocol.send('HeapProfiler.collectGarbage');
+	for (
+		let i = 0;
+		i < 100 &&
+		(heldStatusRequests.size !== 1 || ![...heldStatusRequests][0].url().includes('/getPrinter'));
+		i++
+	) {
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		await protocol.send('HeapProfiler.collectGarbage');
+	}
+	assert.equal(heldStatusRequests.size, 1, 'SPA roundtrip releases unused dashboard stream');
+	assert.ok([...heldStatusRequests][0].url().includes('/getPrinter'));
+	await protocol.detach();
 	await second.goto(`${base}/controls`);
 	assert.equal(await first.title(), 'Printer controls · Perilune');
 	await first.locator('.bed-map').click();

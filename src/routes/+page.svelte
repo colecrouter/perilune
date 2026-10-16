@@ -1,3 +1,8 @@
+<script module lang="ts">
+	// Vite's CSS preload listeners may retain this factory; keep it outside page state.
+	const loadTemperatureHistory = () => import('#lib/components/TemperatureHistory.svelte');
+</script>
+
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { liveConnection } from '#lib/client/live-connection.svelte.js';
@@ -9,7 +14,7 @@
 		typeof import('#lib/components/TemperatureHistory.svelte').default | null
 	>(null);
 	onMount(() => {
-		void import('#lib/components/TemperatureHistory.svelte')
+		void loadTemperatureHistory()
 			.then((module) => (TemperatureHistory = module.default))
 			.catch(() => {
 				historyUnavailable = true;
