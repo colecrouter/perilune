@@ -3,6 +3,7 @@ import type { RequestEvent } from '@sveltejs/kit';
 import { Effect, SubscriptionRef } from 'effect';
 import { authService, requireIdentity, sameOrigin } from './auth/index.js';
 import { JobService } from './job-service.js';
+import { slicerStart } from './slicer-http.js';
 import { runtime, shutdownSignal } from './runtime.js';
 export async function jobUpload(event: RequestEvent, slicer = false) {
 	const service = await runtime.runPromise(JobService);
@@ -31,6 +32,7 @@ export async function jobUpload(event: RequestEvent, slicer = false) {
 		const contentType = event.request.headers.get('content-type') ?? '';
 		let name: string;
 		let content: Uint8Array;
+		let start = false;
 		if (contentType.startsWith('multipart/form-data')) {
 			let form: FormData;
 			try {
@@ -40,11 +42,16 @@ export async function jobUpload(event: RequestEvent, slicer = false) {
 			} catch {
 				error(400, 'Invalid file upload.');
 			}
-			if (
-				!['', 'false', '0'].includes((form.get('print') as string) ?? 'false') ||
-				!['', 'false', '0'].includes((form.get('start_print') as string) ?? 'false')
-			)
-				error(409, 'Upload and print is disabled. Upload only, then review the job in Perilune.');
+			for (const field of ['print', 'start_print']) {
+				const value = form.get(field) ?? 'false';
+				if (!['', 'false', '0', 'true', '1'].includes(value as string))
+					error(400, 'Invalid print flag.');
+				start ||= value === 'true' || value === '1';
+			}
+			if (start) {
+				const key = slicer && token ? await runtime.runPromise(service.printKey(token)) : null;
+				if (!key?.canPrint) error(403, 'An upload-and-print slicer key is required.');
+			}
 			if (form.get('path') || (form.get('root') && form.get('root') !== 'gcodes'))
 				error(400, 'Upload to the G-code library without a subfolder.');
 			const file = form.get('file');
@@ -69,19 +76,18 @@ export async function jobUpload(event: RequestEvent, slicer = false) {
 				)
 			: service.validateKey(token!).pipe(Effect.map((valid) => valid && !signal.aborted));
 		const file = await runtime.runPromise(service.upload(name, content, authorized), { signal });
-		return slicer
-			? json({
-					item: {
-						path: file.name,
-						root: 'gcodes',
-						size: file.size,
-						modified: file.modified / 1000
-					},
-					print_started: false,
-					print_queued: false,
-					action: 'create_file'
-				})
-			: json({ file });
+		if (start && token) {
+			const receipt = await slicerStart(token, file.name, signal);
+			if (receipt instanceof Response) return receipt;
+		}
+		const result = {
+			item: { path: file.name, root: 'gcodes', size: file.size, modified: file.modified / 1000 },
+			print_started: start,
+			print_queued: false,
+			action: 'create_file'
+		};
+		// Older Orca versions read result.item.path; newer clients read item.path.
+		return slicer ? json({ ...result, result }) : json({ file });
 	} catch (cause) {
 		if (cause && typeof cause === 'object' && 'status' in cause) throw cause;
 		error(

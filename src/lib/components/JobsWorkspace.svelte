@@ -76,9 +76,12 @@
 	let uploading = $state(false);
 	let uploadRequest: XMLHttpRequest | undefined;
 	let fileInput = $state<HTMLInputElement>();
+	let keyCanPrint = $state(false);
 	let keyName = $state('OrcaSlicer');
 	let newToken = $state('');
-	let keys = $state<Array<{ id: string; name: string; suffix: string; expires: number }>>([]);
+	let keys = $state<
+		Array<{ id: string; name: string; suffix: string; expires: number; canPrint: boolean }>
+	>([]);
 	const requests = new AbortController();
 
 	let thumbnailFailed = $state(false);
@@ -260,7 +263,8 @@
 		failure = '';
 		try {
 			const result = await api<{ token: string; key: (typeof keys)[number] }>('key', {
-				name: keyName
+				name: keyName,
+				canPrint: keyCanPrint
 			});
 			newToken = result.token;
 			keys = [result.key, ...keys];
@@ -587,16 +591,17 @@
 				<summary>Send files from your slicer</summary>
 				<p>
 					Choose <strong>Klipper / Moonraker</strong> in OrcaSlicer or another compatible slicer.
-					Use this app’s address as the host and an upload key below. Choose
-					<strong>Upload only</strong>; automatic printing is disabled.
+					Use this app’s address as the host and a key below. Enable print permission to use
+					<strong>Upload and print</strong> directly from your slicer.
 				</p>
 				{#if live}<p class="notice">
 						Files are stored on the printer. Uploaded names include a content fingerprint to keep
-						different versions separate; uploads never start printing.
-					</p>{/if}<label>Key name<input bind:value={keyName} maxlength="80" /></label><button
-					class="button secondary"
-					disabled={submitting}
-					onclick={() => void createKey()}>Create upload-only key</button
+						different versions separate.
+					</p>{/if}<label>Key name<input bind:value={keyName} maxlength="80" /></label><label
+					class="print-permission"
+					><input type="checkbox" bind:checked={keyCanPrint} /> Allow starting prints</label
+				><button class="button secondary" disabled={submitting} onclick={() => void createKey()}
+					>{keyCanPrint ? 'Create upload-and-print key' : 'Create upload-only key'}</button
 				>{#if newToken}<div class="new-key">
 						<strong>Copy this key now—it is shown once.</strong><input
 							readonly
@@ -612,13 +617,14 @@
 						>
 					</div>{/if}
 				<p class="muted">
-					Keys expire after 90 days, only allow uploads, and stop working if their account is
-					removed or recovered. Revoking a key does not sign you out.
+					Keys expire after 90 days and stop working if their account is removed or recovered.
+					Revoking a key does not sign you out.
 				</p>
 				{#each keys as key}<div class="key-row">
 						<span
-							>{key.name} · …{key.suffix}<small
-								>Expires {new Date(key.expires).toLocaleDateString()}</small
+							>{key.name} · …{key.suffix} · {key.canPrint
+								? 'Upload and print'
+								: 'Upload only'}<small>Expires {new Date(key.expires).toLocaleDateString()}</small
 							></span
 						><button class="button secondary" onclick={() => void revokeKey(key.id)}>Revoke</button>
 					</div>{/each}<a
@@ -987,6 +993,17 @@
 		gap: 0.5rem;
 		max-width: 320px;
 		margin: 1rem 0;
+	}
+	.slicer .print-permission {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+	.print-permission input {
+		width: 1.1rem;
+		height: 1.1rem;
+		padding: 0;
+		accent-color: var(--accent);
 	}
 	.new-key {
 		border: 1px solid var(--border);

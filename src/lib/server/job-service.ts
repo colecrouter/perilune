@@ -25,6 +25,7 @@ export interface KeySummary {
 	suffix: string;
 	created: number;
 	expires: number;
+	canPrint: boolean;
 }
 export class JobsConfig extends Context.Service<
 	JobsConfig,
@@ -33,6 +34,7 @@ export class JobsConfig extends Context.Service<
 		apiKey?: string;
 		liveFiles?: boolean;
 		checkUser: (id: string, epoch: number) => boolean;
+		checkPrintKey?: (id: string, owner: string, epoch: number) => boolean;
 	}
 >()('perilune/JobsConfig') {}
 export class JobService extends Context.Service<
@@ -61,9 +63,16 @@ export class JobService extends Context.Service<
 		issueKey: (
 			owner: string,
 			epoch: number,
-			name: string
+			name: string,
+			canPrint?: boolean
 		) => Effect.Effect<{ token: string; key: KeySummary }, JobError>;
 		revokeKey: (owner: string, id: string) => Effect.Effect<void, JobError>;
+		printKey: (
+			token: string
+		) => Effect.Effect<
+			{ id: string; owner: string; canPrint: boolean; authorized: () => boolean } | null,
+			JobError
+		>;
 		validateKey: (token: string) => Effect.Effect<boolean, JobError>;
 		beginUpload: Effect.Effect<() => void, JobError>;
 		readBody: (
@@ -706,11 +715,11 @@ export const JobServiceLive = Layer.effect(
 				),
 			keys: (owner) =>
 				mapErrors(
-					sql<KeySummary>`SELECT id,name,suffix,created,expires FROM slicer_keys WHERE owner=${owner} AND expires>${Date.now()} ORDER BY created DESC`.pipe(
-						Effect.map((rows) => [...rows])
+					sql<KeySummary>`SELECT id,name,suffix,created,expires,can_print AS canPrint FROM slicer_keys WHERE owner=${owner} AND expires>${Date.now()} ORDER BY created DESC`.pipe(
+						Effect.map((rows) => rows.map((row) => ({ ...row, canPrint: Boolean(row.canPrint) })))
 					)
 				),
-			issueKey: (owner, epoch, name) =>
+			issueKey: (owner, epoch, name, canPrint = false) =>
 				mapErrors(
 					lock.withPermits(1)(
 						Effect.gen(function* () {
@@ -724,11 +733,12 @@ export const JobServiceLive = Layer.effect(
 							const key = {
 								id: randomUUID(),
 								name: name.trim().slice(0, 80) || 'Slicer',
+								canPrint,
 								suffix: token.slice(-4),
 								created: Date.now(),
 								expires: Date.now() + 90 * 86400_000
 							};
-							yield* sql`INSERT INTO slicer_keys (id,owner,epoch,hash,name,suffix,created,expires) VALUES (${key.id},${owner},${epoch},${digest(token)},${key.name},${key.suffix},${key.created},${key.expires})`;
+							yield* sql`INSERT INTO slicer_keys (id,owner,epoch,hash,name,suffix,created,expires,can_print) VALUES (${key.id},${owner},${epoch},${digest(token)},${key.name},${key.suffix},${key.created},${key.expires},${canPrint ? 1 : 0})`;
 							return { token, key };
 						})
 					)
@@ -736,6 +746,26 @@ export const JobServiceLive = Layer.effect(
 			revokeKey: (owner, id) =>
 				mapErrors(
 					sql`DELETE FROM slicer_keys WHERE owner=${owner} AND id=${id}`.pipe(Effect.asVoid)
+				),
+			printKey: (token) =>
+				mapErrors(
+					Effect.gen(function* () {
+						if (token.length !== 43) return null;
+						const rows = yield* sql<{
+							id: string;
+							owner: string;
+							epoch: number;
+							can_print: number;
+						}>`SELECT id,owner,epoch,can_print FROM slicer_keys WHERE hash=${digest(token)} AND expires>${Date.now()}`;
+						const key = rows[0];
+						if (!key || !config.checkUser(key.owner, key.epoch)) return null;
+						return {
+							id: key.id,
+							owner: key.owner,
+							canPrint: Boolean(key.can_print),
+							authorized: () => config.checkPrintKey?.(key.id, key.owner, key.epoch) === true
+						};
+					})
 				),
 			validateKey: (token) =>
 				mapErrors(

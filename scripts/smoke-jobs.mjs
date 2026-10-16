@@ -183,7 +183,9 @@ try {
 		).status,
 		401
 	);
-	assert.equal((await response.json()).item.path, 'slicer-bracket.gcode');
+	const uploaded = await response.json();
+	assert.equal(uploaded.item.path, 'slicer-bracket.gcode');
+	assert.deepEqual(uploaded.item, uploaded.result.item);
 	const duplicate = await fetch(base + '/server/files/upload', {
 		method: 'POST',
 		headers,
@@ -195,29 +197,53 @@ try {
 	assert.equal(
 		(await fetch(base + '/server/files/upload', { method: 'POST', headers, body: implicit }))
 			.status,
-		409
+		403
 	);
 	assert.equal(
 		(await fetch(base + '/api/jobs/library', { headers })).status,
 		401,
 		'upload keys cannot read the library'
 	);
+	const deniedStart = await fetch(base + '/printer/print/start', {
+		method: 'POST',
+		headers: { ...headers, 'Content-Type': 'application/json' },
+		body: JSON.stringify({ filename: 'slicer-bracket.gcode' })
+	});
+	assert.equal(deniedStart.status, 403, 'valid upload key lacks print permission');
+	assert.match((await deniedStart.json()).error.message, /uploads only.*Upload only/);
 	assert.equal(
 		(
 			await fetch(base + '/printer/print/start', {
 				method: 'POST',
-				headers: { ...headers, 'Content-Type': 'application/json' },
-				body: '{}'
+				headers: { 'Content-Type': 'application/json' }
 			})
 		).status,
-		401,
-		'upload keys cannot start a print'
+		401
 	);
+	assert.equal(
+		(
+			await fetch(base + '/printer/print/start', {
+				method: 'POST',
+				headers: { 'X-Api-Key': 'A'.repeat(43), 'Content-Type': 'application/json' }
+			})
+		).status,
+		401
+	);
+
 	await page.getByRole('button', { name: 'Revoke', exact: true }).click();
 	await page
 		.getByRole('textbox', { name: 'New upload key', exact: true })
 		.waitFor({ state: 'hidden' });
 	assert.equal((await fetch(base + '/server/info', { headers })).status, 401);
+	assert.equal(
+		(
+			await fetch(base + '/printer/print/start', {
+				method: 'POST',
+				headers: { ...headers, 'Content-Type': 'application/json' }
+			})
+		).status,
+		401
+	);
 	await second.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
@@ -339,6 +365,48 @@ try {
 	await page.getByRole('link', { name: 'Back to library' }).click();
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 	await page.screenshot({ path: 'test-results/jobs-table-mobile.png', fullPage: true });
+	await page.getByText('Send files from your slicer', { exact: true }).click();
+	await page.getByRole('checkbox', { name: 'Allow starting prints', exact: true }).check();
+	await page
+		.locator('.slicer')
+		.screenshot({ path: 'test-results/jobs-slicer-permissions-mobile.png' });
+	await page.getByRole('button', { name: 'Create upload-and-print key', exact: true }).click();
+	const printToken = await page
+		.getByRole('textbox', { name: 'New upload key', exact: true })
+		.inputValue();
+	const printHeaders = { 'X-Api-Key': printToken };
+	const legacy = () =>
+		fetch(base + '/printer/print/start', {
+			method: 'POST',
+			headers: { ...printHeaders, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ filename: uploaded.result.item.path })
+		});
+	const [firstStart, retryStart] = await Promise.all([legacy(), legacy()]);
+	assert.equal(firstStart.status, 200);
+	assert.equal(retryStart.status, 200);
+	assert.equal(
+		(await firstStart.json()).perilune.receiptId,
+		(await retryStart.json()).perilune.receiptId
+	);
+	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
+	await page.waitForFunction(
+		() => document.querySelector('.current-job .job-state').textContent === 'cancelled'
+	);
+	const combined = form();
+	combined.set('print', 'true');
+	combined.set('file', new Blob([gcode]), 'modern-slicer.gcode');
+	const modern = await fetch(base + '/server/files/upload', {
+		method: 'POST',
+		headers: printHeaders,
+		body: combined
+	});
+	assert.equal(modern.status, 200);
+	const modernResult = await modern.json();
+	assert.equal(modernResult.print_started, true);
+	assert.equal(modernResult.print_queued, false);
+	assert.deepEqual(modernResult.item, modernResult.result.item);
+	assert.equal((await fetch(base + '/api/jobs/library', { headers: printHeaders })).status, 401);
 	assert.deepEqual(errors, []);
 	console.log(
 		'Jobs smoke passed: uploads, PNG proxy, metadata, shared starts/pause/cancel, deletion safeguards, history, scoped slicer uploads, revocation, 320px layout.'
