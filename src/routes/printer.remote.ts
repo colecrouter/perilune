@@ -110,18 +110,26 @@ export const resetSimulator = command(
 
 export const recoverLiveAction = command(
 	Schema.toStandardSchemaV1(
-		Schema.Struct({ id: Schema.String.check(Schema.isUUID()), confirmed: Schema.Literal(true) })
+		Schema.Struct({
+			id: Schema.String.check(Schema.isUUID()),
+			confirmed: Schema.Literal(true),
+			pausedJob: Schema.optional(Schema.Struct({ filename: Schema.String, runId: Schema.String }))
+		})
 	),
-	async ({ id }) => {
+	async ({ id, pausedJob }) => {
 		const identity = requireIdentity(getRequestEvent(), 'owner');
 		const result = await runtime.runPromise(
 			Effect.gen(function* () {
-				return yield* (yield* LiveActionService).recover(id, {
-					id: identity.user.id,
-					name: identity.user.name,
-					role: identity.user.role,
-					authorized: () => Boolean(authService?.valid(identity))
-				});
+				return yield* (yield* LiveActionService).recover(
+					id,
+					{
+						id: identity.user.id,
+						name: identity.user.name,
+						role: identity.user.role,
+						authorized: () => Boolean(authService?.valid(identity))
+					},
+					pausedJob
+				);
 			}).pipe(Effect.result)
 		);
 		if (result._tag === 'Failure') error(409, result.failure.message);

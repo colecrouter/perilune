@@ -40,9 +40,31 @@ export class LiveActionService extends Context.Service<
 			request: ActionRequest,
 			actor: CalibrationActor
 		) => Effect.Effect<ActionRecord, ActionRejected>;
-		recover: (id: string, actor: CalibrationActor) => Effect.Effect<void, ActionRejected>;
+		recover: (
+			id: string,
+			actor: CalibrationActor,
+			pausedJob?: { filename: string; runId: string }
+		) => Effect.Effect<void, ActionRejected>;
 	}
 >()('perilune/LiveActionService') {}
+// Old run IDs are process-local. Paused recovery therefore requires explicit owner
+// attestation plus a fresh view identity, rather than pretending an old ID proves continuity.
+function resumeFilename(payload: string | undefined): string | undefined {
+	try {
+		const command = JSON.parse(payload ?? 'null');
+		if (
+			command?.type === 'resume' &&
+			typeof command.expectedJob?.runId === 'string' &&
+			command.expectedJob.runId &&
+			typeof command.expectedJob.filename === 'string' &&
+			command.expectedJob.filename
+		)
+			return command.expectedJob.filename;
+	} catch {
+		/* A missing/corrupt command is never a paused-recovery candidate. */
+	}
+	return undefined;
+}
 export const LiveActionDisabled = Layer.succeed(LiveActionService, {
 	submit: () => Effect.fail(new ActionRejected({ message: 'No live printer is configured.' })),
 	recover: () => Effect.fail(new ActionRejected({ message: 'No live printer is configured.' }))
@@ -144,6 +166,7 @@ export const LiveActionServiceLive = Layer.effect(
 		const saved = yield* sql<{
 			action_id: string;
 		}>`SELECT action_id FROM live_action_reservation WHERE target=${target}`;
+		const restoredAction = saved[0] ? yield* store.find(saved[0].action_id) : undefined;
 		yield* update((s) => ({
 			...s,
 			liveControls: settings.enabled,
@@ -151,7 +174,13 @@ export const LiveActionServiceLive = Layer.effect(
 			liveFilament: settings.enabled && settings.filamentEnabled === true,
 			liveZEnabled: settings.enabled && settings.zEnabled === true,
 			actions: history,
-			liveRecovery: saved[0] ? { id: saved[0].action_id, message: recoveryMessage } : null
+			liveRecovery: saved[0]
+				? {
+						id: saved[0].action_id,
+						message: recoveryMessage,
+						resumeFilename: resumeFilename(restoredAction?.payload)
+					}
+				: null
 		}));
 		const persistedFilament = yield* sql<{
 			state: string;
@@ -212,6 +241,8 @@ export const LiveActionServiceLive = Layer.effect(
 			if (!supported.has(request.command.type))
 				throw reject('This live workflow is not enabled yet.');
 			if (s.liveRecovery) throw reject(recoveryMessage);
+			if (request.command.type === 'resume' && !request.command.expectedJob?.runId)
+				throw reject('Refresh the current print before resuming; its run identity is unavailable.');
 			if (liveZActive(s.liveZ) && !request.command.type.startsWith('zProbe'))
 				throw reject('Z calibration owns the printer.');
 			if (
@@ -330,6 +361,7 @@ export const LiveActionServiceLive = Layer.effect(
 		const run = (job: NonNullable<typeof work>) =>
 			Effect.gen(function* () {
 				let sent = false;
+				let remainsPaused = false;
 				let zResult: LiveZState | undefined,
 					zBefore: LiveZState | undefined,
 					zExpected: number | undefined;
@@ -427,7 +459,9 @@ export const LiveActionServiceLive = Layer.effect(
 						sent = true;
 					}
 					// Ack is insufficient: observe the intended state through a fresh query.
-					const deadline = Date.now() + (settings.observationMs ?? 10000);
+					const deadline =
+						Date.now() +
+						(settings.observationMs ?? (job.request.command.type === 'resume' ? 120000 : 10000));
 					while (true) {
 						if (!interlock.allows(job.epoch))
 							return yield* Effect.fail(reject('Emergency stop interrupted action verification.'));
@@ -534,7 +568,10 @@ export const LiveActionServiceLive = Layer.effect(
 													: c.type === 'pause'
 														? observed.job.state === 'paused'
 														: c.type === 'resume'
-															? observed.job.state === 'printing'
+															? observed.job.state === 'printing' &&
+																Boolean(c.expectedJob?.runId) &&
+																observed.job.runId === c.expectedJob?.runId &&
+																observed.job.filename === c.expectedJob?.filename
 															: c.type === 'cancel'
 																? ['cancelled', 'standby', 'complete'].includes(
 																		observed.job.state
@@ -550,6 +587,23 @@ export const LiveActionServiceLive = Layer.effect(
 																				.filename
 																	: false;
 						if (matches) return;
+						// A staged RESUME can acknowledge a purge and intentionally remain paused.
+						// Only accept fresh same-run idle telemetry after acknowledgement; never resend.
+						if (
+							c.type === 'resume' &&
+							c.expectedJob?.runId &&
+							observed.connection === 'connected' &&
+							observed.klippy === 'ready' &&
+							observed.telemetryReady &&
+							observed.job.state === 'paused' &&
+							observed.job.runId === c.expectedJob.runId &&
+							observed.job.filename === c.expectedJob.filename &&
+							observed.motion.busy === false &&
+							!observed.motion.calibration
+						) {
+							remainsPaused = true;
+							return;
+						}
 						if (Date.now() >= deadline)
 							return yield* Effect.fail(
 								reject('The acknowledged action could not be verified from printer state.')
@@ -565,9 +619,11 @@ export const LiveActionServiceLive = Layer.effect(
 							? result.failure instanceof ActionRejected
 								? result.failure.message
 								: 'Action was not dispatched. Review readiness and submit a new action if needed.'
-							: job.request.command.type === 'console'
-								? 'Klipper acknowledged the script and motion barrier; fresh ready state observed. Verify macro-specific effects in telemetry.'
-								: null;
+							: remainsPaused
+								? 'Resume macro completed; the print remains paused. Check the printer messages and remove any purged material, then press Resume again when ready.'
+								: job.request.command.type === 'console'
+									? 'Klipper acknowledged the script and motion barrier; fresh ready state observed. Verify macro-specific effects in telemetry.'
+									: null;
 				const finalZ = zResult
 					? result._tag === 'Success'
 						? zResult
@@ -611,7 +667,11 @@ export const LiveActionServiceLive = Layer.effect(
 					storage: persisted._tag === 'Failure' ? 'degraded' : s.storage,
 					liveRecovery:
 						status === 'unknown' || persisted._tag === 'Failure'
-							? { id: job.action.id, message: recoveryMessage }
+							? {
+									id: job.action.id,
+									message: recoveryMessage,
+									resumeFilename: resumeFilename(JSON.stringify(job.request.command))
+								}
 							: null,
 					actions: s.actions.map((a) =>
 						a.id === job.action.id
@@ -733,7 +793,11 @@ export const LiveActionServiceLive = Layer.effect(
 						yield* update((s) => ({
 							...s,
 							storage: persisted._tag === 'Failure' ? 'degraded' : s.storage,
-							liveRecovery: { id: job.action.id, message: recoveryMessage },
+							liveRecovery: {
+								id: job.action.id,
+								message: recoveryMessage,
+								resumeFilename: resumeFilename(JSON.stringify(job.request.command))
+							},
 							actions: s.actions.map((a) =>
 								a.id === job.action.id ? { ...a, status: 'unknown', message: recoveryMessage } : a
 							)
@@ -801,7 +865,7 @@ export const LiveActionServiceLive = Layer.effect(
 						)
 					)
 				),
-			recover: (id, actor) =>
+			recover: (id, actor, pausedJob) =>
 				gate.withPermits(1)(
 					Effect.gen(function* () {
 						if (actor.role !== 'owner' || !authorized(actor))
@@ -815,6 +879,15 @@ export const LiveActionServiceLive = Layer.effect(
 							return yield* Effect.fail(reject('The recovery state changed. Review it again.'));
 						const telemetry = yield* SubscriptionRef.get(transport.state);
 						const fresh = yield* transport.refresh(telemetry.generation);
+						const original = yield* store.find(id);
+						const pausedResumeReviewed = Boolean(
+							pausedJob &&
+							fresh.job.state === 'paused' &&
+							resumeFilename(original?.payload) === fresh.job.filename &&
+							pausedJob.filename === fresh.job.filename &&
+							pausedJob.runId &&
+							pausedJob.runId === fresh.job.runId
+						);
 						if (
 							fresh.connection !== 'connected' ||
 							fresh.klippy !== 'ready' ||
@@ -822,7 +895,8 @@ export const LiveActionServiceLive = Layer.effect(
 							fresh.job.state === 'unknown' ||
 							fresh.motion.busy !== false ||
 							fresh.motion.calibration ||
-							['printing', 'paused'].includes(fresh.job.state)
+							fresh.job.state === 'printing' ||
+							(fresh.job.state === 'paused' && !pausedResumeReviewed)
 						)
 							return yield* Effect.fail(
 								reject('Verify that the printer is stopped and idle before clearing recovery.')

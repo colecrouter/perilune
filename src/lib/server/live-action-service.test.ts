@@ -78,6 +78,8 @@ async function fixture(filename = ':memory:', filamentEnabled = true, consoleEna
 		| 'normal'
 		| 'drop'
 		| 'unobserved'
+		| 'stagedResume'
+		| 'resumeNewRun'
 		| 'dropAfterCancel'
 		| 'newJobAfterCancel'
 		| 'cancelStillPrinting'
@@ -106,7 +108,11 @@ async function fixture(filename = ':memory:', filamentEnabled = true, consoleEna
 				if (behavior === 'defect') return yield* Effect.die('fixture defect');
 				if (behavior === 'drop' || (behavior === 'dropAfterCancel' && op.type === 'controlScript'))
 					return yield* Effect.fail(new MoonrakerCommandError({ sent: true }));
-				if (behavior === 'unobserved') return;
+				if (
+					behavior === 'unobserved' ||
+					(behavior === 'stagedResume' && op.type === 'job' && op.method === 'resume')
+				)
+					return;
 				if (op.type === 'controlScript')
 					yield* SubscriptionRef.update(state, (s): MoonrakerSnapshot => {
 						const heaters = structuredClone(s.heaters);
@@ -199,6 +205,11 @@ async function fixture(filename = ':memory:', filamentEnabled = true, consoleEna
 									: s.heaters
 						};
 					});
+				if (behavior === 'resumeNewRun' && op.type === 'job' && op.method === 'resume')
+					yield* SubscriptionRef.update(state, (s) => ({
+						...s,
+						job: { ...s.job, runId: crypto.randomUUID() }
+					}));
 				if (afterControl) yield* Effect.promise(afterControl);
 			})
 	});
@@ -1030,4 +1041,194 @@ it('native slicer keys are rechecked between admission and live dispatch', async
 	});
 	await expect(f.start()).rejects.toThrow(/failed/);
 	expect(f.operations.filter((op) => op.type === 'job' && op.method === 'start')).toHaveLength(0);
+});
+
+async function pausedFixture() {
+	const f = await fixture();
+	const expectedJob = { filename: 'paused.gcode', runId: crypto.randomUUID() };
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			job: { ...s.job, ...expectedJob, state: 'paused' as const }
+		}))
+	);
+	await expect.poll(async () => (await f.snapshot()).job.state).toBe('paused');
+	return { ...f, expectedJob };
+}
+it('completes an acknowledged staged resume without replaying or claiming printing', async () => {
+	const f = await pausedFixture();
+	f.setBehavior('stagedResume');
+	await f.submit({ type: 'resume', expectedJob: f.expectedJob });
+	await f.finished();
+	expect((await f.snapshot()).actions[0]).toMatchObject({
+		status: 'completed',
+		message: expect.stringContaining('print remains paused')
+	});
+	expect((await f.snapshot()).liveRecovery).toBeNull();
+	expect((await f.snapshot()).job.state).toBe('paused');
+	expect(f.operations).toHaveLength(1);
+	f.setBehavior('normal');
+	await f.submit({ type: 'resume', expectedJob: f.expectedJob });
+	await f.finished();
+	expect((await f.snapshot()).job.state).toBe('printing');
+	expect(f.operations).toHaveLength(2);
+});
+it('does not infer staged-resume success from a lost acknowledgement or a different run', async () => {
+	for (const behavior of ['drop', 'resumeNewRun'] as const) {
+		const f = await pausedFixture();
+		f.setBehavior(behavior);
+		await f.submit({ type: 'resume', expectedJob: f.expectedJob });
+		await f.finished();
+		expect((await f.snapshot()).actions[0].status).toBe('unknown');
+		expect((await f.snapshot()).liveRecovery).toBeTruthy();
+	}
+});
+it('waits for staged-resume motion to stop before accepting the paused outcome', async () => {
+	const f = await pausedFixture();
+	f.setBehavior('stagedResume');
+	let queries = 0;
+	f.setRefresh(async () => {
+		queries++;
+		await f.runtime.runPromise(
+			SubscriptionRef.update(f.state, (s) => ({
+				...s,
+				motion: { ...s.motion, busy: queries === 2 }
+			}))
+		);
+	});
+	await f.submit({ type: 'resume', expectedJob: f.expectedJob });
+	await f.finished();
+	expect(queries).toBeGreaterThanOrEqual(3);
+	expect((await f.snapshot()).actions[0].status).toBe('completed');
+	expect(f.operations).toHaveLength(1);
+});
+it('keeps recovery for a still-moving or changed-file paused resume', async () => {
+	for (const variant of ['busy', 'filename'] as const) {
+		const f = await pausedFixture();
+		f.setBehavior('stagedResume');
+
+		let queries = 0;
+		f.setRefresh(async () => {
+			if (++queries < 2) return;
+			await f.runtime.runPromise(
+				SubscriptionRef.update(f.state, (s) => ({
+					...s,
+					motion: { ...s.motion, busy: variant === 'busy' },
+					job: { ...s.job, filename: variant === 'filename' ? 'different.gcode' : s.job.filename }
+				}))
+			);
+		});
+		await f.submit({
+			type: 'resume',
+			expectedJob: f.expectedJob
+		});
+		await f.finished();
+		expect((await f.snapshot()).actions[0].status).toBe('unknown');
+		expect((await f.snapshot()).liveRecovery).toBeTruthy();
+		expect(f.operations).toHaveLength(1);
+	}
+});
+
+it('rejects missing resume run identity before physical dispatch', async () => {
+	for (const runId of [null, '']) {
+		const f = await pausedFixture();
+		await expect(
+			f.submit({ type: 'resume', expectedJob: { ...f.expectedJob, runId } })
+		).rejects.toThrow(/run identity/);
+		expect(f.operations).toHaveLength(0);
+	}
+});
+it('allows only an explicitly owner-reviewed same-file paused Resume to clear recovery without replay', async () => {
+	const f = await pausedFixture();
+	f.setBehavior('drop');
+	await f.submit({ type: 'resume', expectedJob: f.expectedJob });
+	await f.finished();
+	const id = (await f.snapshot()).liveRecovery!.id;
+	await expect(f.runtime.runPromise(f.service.recover(id, owner))).rejects.toThrow(
+		/stopped and idle/
+	);
+	const review = { filename: f.expectedJob.filename, runId: f.expectedJob.runId };
+	await expect(
+		f.runtime.runPromise(f.service.recover(id, { ...owner, role: 'operator' }, review))
+	).rejects.toThrow(/owner/);
+	await expect(
+		f.runtime.runPromise(f.service.recover(id, owner, { ...review, runId: crypto.randomUUID() }))
+	).rejects.toThrow(/stopped and idle/);
+	await f.runtime.runPromise(f.service.recover(id, owner, review));
+	expect((await f.snapshot()).liveRecovery).toBeNull();
+	expect((await f.snapshot()).actions[0].status).toBe('unknown');
+	expect(f.operations).toHaveLength(1);
+});
+it('keeps other unknown commands locked while paused and fences a reviewed changed file or expired owner', async () => {
+	const f = await fixture();
+	f.setBehavior('drop');
+	await f.submit({ type: 'releaseMotors', axes: 'all', confirmed: true });
+	await f.finished();
+	const id = (await f.snapshot()).liveRecovery!.id;
+	const review = { filename: 'paused.gcode', runId: crypto.randomUUID() };
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			job: { ...s.job, ...review, state: 'paused' as const }
+		}))
+	);
+	await expect(f.runtime.runPromise(f.service.recover(id, owner, review))).rejects.toThrow(
+		/stopped and idle/
+	);
+	const resumed = await pausedFixture();
+	resumed.setBehavior('drop');
+	await resumed.submit({ type: 'resume', expectedJob: resumed.expectedJob });
+	await resumed.finished();
+	const rid = (await resumed.snapshot()).liveRecovery!.id;
+	await resumed.runtime.runPromise(
+		SubscriptionRef.update(resumed.state, (s) => ({
+			...s,
+			job: { ...s.job, filename: 'different.gcode' }
+		}))
+	);
+	await expect(
+		resumed.runtime.runPromise(
+			resumed.service.recover(rid, owner, { ...resumed.expectedJob, filename: 'different.gcode' })
+		)
+	).rejects.toThrow(/stopped and idle/);
+	await expect(
+		resumed.runtime.runPromise(
+			resumed.service.recover(rid, { ...owner, authorized: () => false }, resumed.expectedJob)
+		)
+	).rejects.toThrow(/owner/);
+});
+it('restores the durable resume filename and requires owner attestation against the new process view after restart', async () => {
+	const dir = await mkdtemp(join(tmpdir(), 'perilune-paused-recovery-'));
+	cleanup.push(() => rm(dir, { recursive: true, force: true }));
+	const filename = join(dir, 'state.sqlite');
+	const first = await fixture(filename);
+	const original = { filename: 'paused.gcode', runId: crypto.randomUUID() };
+	await first.runtime.runPromise(
+		SubscriptionRef.update(first.state, (s) => ({
+			...s,
+			job: { ...s.job, ...original, state: 'paused' as const }
+		}))
+	);
+	await expect.poll(async () => (await first.snapshot()).job.state).toBe('paused');
+	first.setBehavior('drop');
+	await first.submit({ type: 'resume', expectedJob: original });
+	await first.finished();
+	const id = (await first.snapshot()).liveRecovery!.id;
+	await first.runtime.dispose();
+	const next = await fixture(filename);
+	const current = { filename: original.filename, runId: crypto.randomUUID() };
+	await next.runtime.runPromise(
+		SubscriptionRef.update(next.state, (s) => ({
+			...s,
+			job: { ...s.job, ...current, state: 'paused' as const }
+		}))
+	);
+	expect((await next.snapshot()).liveRecovery?.resumeFilename).toBe(original.filename);
+	await expect(next.runtime.runPromise(next.service.recover(id, owner))).rejects.toThrow(
+		/stopped and idle/
+	);
+	await next.runtime.runPromise(next.service.recover(id, owner, current));
+	expect((await next.snapshot()).liveRecovery).toBeNull();
+	expect((await next.snapshot()).actions[0].status).toBe('unknown');
+	expect(next.operations).toHaveLength(0);
 });
