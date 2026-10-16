@@ -121,3 +121,39 @@ test('abort is available with a changed heater target and resolved results expos
 	});
 	await expect.element(screen.getByRole('button', { name: 'Begin paper test' })).toBeVisible();
 });
+
+test('unchanged telemetry preserves paper confirmation while new observations invalidate it', async () => {
+	let snapshot = state();
+	const screen = await render(LiveZCalibration, {
+		snapshot,
+		userId: 'owner',
+		role: 'owner',
+		connected: true,
+		onSubmit: vi.fn().mockResolvedValue({ id: crypto.randomUUID() })
+	});
+	const checkbox = screen.getByRole('checkbox', { name: /I checked the paper drag/ });
+	const accept = screen.getByRole('button', { name: 'Accept height · stage result' });
+	await checkbox.click();
+	for (let i = 0; i < 3; i++) {
+		snapshot = structuredClone(snapshot);
+		snapshot.revision++;
+		snapshot.updatedAt = Date.now();
+		await screen.rerender({ snapshot });
+		await expect.element(checkbox).toBeChecked();
+		await expect.element(accept).toBeEnabled();
+	}
+	snapshot = structuredClone(snapshot);
+	snapshot.zProbe!.z = 5.01;
+	await screen.rerender({ snapshot });
+	await expect.element(checkbox).not.toBeChecked();
+	await checkbox.click();
+	snapshot = structuredClone(snapshot);
+	snapshot.liveZ!.session!.version++;
+	await screen.rerender({ snapshot });
+	await expect.element(checkbox).not.toBeChecked();
+	await checkbox.click();
+	snapshot = structuredClone(snapshot);
+	snapshot.liveZ!.session!.id = crypto.randomUUID();
+	await screen.rerender({ snapshot });
+	await expect.element(checkbox).not.toBeChecked();
+});

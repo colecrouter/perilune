@@ -71,10 +71,9 @@
 			failure = '';
 		}
 	});
+	const paperObservation = $derived(JSON.stringify([session?.id, session?.version, cap?.z]));
 	$effect(() => {
-		void session?.id;
-		void session?.version;
-		void cap?.z;
+		void paperObservation;
 		accepted = false;
 	});
 	async function send(command: PrinterCommand) {
