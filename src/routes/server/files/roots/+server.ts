@@ -11,7 +11,14 @@ export async function GET(event: RequestEvent) {
 	} else requireIdentity(event);
 	return json({
 		result: [
-			{ name: 'gcodes', permissions: process.env.PERILUNE_MOONRAKER_URL?.trim() ? 'r' : 'rw' }
+			{
+				name: 'gcodes',
+				permissions:
+					process.env.PERILUNE_MOONRAKER_URL?.trim() &&
+					process.env.PERILUNE_LIVE_CONTROLS !== 'true'
+						? 'r'
+						: 'rw'
+			}
 		]
 	});
 }

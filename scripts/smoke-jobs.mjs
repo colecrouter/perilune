@@ -202,22 +202,33 @@ try {
 		401,
 		'upload keys cannot read the library'
 	);
+	const deniedStart = await fetch(base + '/printer/print/start', {
+		method: 'POST',
+		headers: { ...headers, 'Content-Type': 'application/json' },
+		body: JSON.stringify({ filename: 'slicer-bracket.gcode' })
+	});
+	assert.equal(deniedStart.status, 403, 'valid upload key lacks print permission');
+	assert.match((await deniedStart.json()).error.message, /uploads only.*Upload only/);
+	assert.equal((await fetch(base + '/printer/print/start', { method: 'POST' })).status, 401);
 	assert.equal(
 		(
 			await fetch(base + '/printer/print/start', {
 				method: 'POST',
-				headers: { ...headers, 'Content-Type': 'application/json' },
-				body: '{}'
+				headers: { 'X-Api-Key': 'A'.repeat(43) }
 			})
 		).status,
-		401,
-		'upload keys cannot start a print'
+		401
 	);
+
 	await page.getByRole('button', { name: 'Revoke', exact: true }).click();
 	await page
 		.getByRole('textbox', { name: 'New upload key', exact: true })
 		.waitFor({ state: 'hidden' });
 	assert.equal((await fetch(base + '/server/info', { headers })).status, 401);
+	assert.equal(
+		(await fetch(base + '/printer/print/start', { method: 'POST', headers })).status,
+		401
+	);
 	await second.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();

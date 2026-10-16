@@ -59,7 +59,8 @@ export const handle: typeof integration.handle = async ({ event, resolve }) => {
 			'/health',
 			'/server/info',
 			'/server/files/upload',
-			'/server/files/roots'
+			'/server/files/roots',
+			'/printer/print/start'
 		].includes(event.url.pathname) &&
 		!event.locals.identity
 	) {
