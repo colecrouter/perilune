@@ -4,6 +4,7 @@ import {
 	LiveActionSettings,
 	LiveActionDisabled
 } from './live-action-service.js';
+import { SlicerServiceLive } from './slicer-service.js';
 import { ConsoleServiceLive } from './console-service.js';
 import { NotificationServiceLive, NotificationSettings } from './notification-service.js';
 import {
@@ -112,6 +113,14 @@ const jobsLayer = JobServiceLive.pipe(
 			moonrakerUrl: moonrakerUrl ?? '',
 			liveFiles: process.env.PERILUNE_LIVE_CONTROLS === 'true',
 			apiKey: process.env.PERILUNE_MOONRAKER_API_KEY,
+			checkPrintKey: (id, owner, epoch) => {
+				const key = authService?.db
+					.prepare(
+						`SELECT k.id FROM slicer_keys k JOIN user u ON u.id=k.owner WHERE k.id=? AND k.owner=? AND k.epoch=? AND k.expires>? AND k.can_print=1 AND u.authVersion=k.epoch AND u.role IN ('owner','operator')`
+					)
+					.get(id, owner, epoch, Date.now());
+				return Boolean(key);
+			},
 			checkUser: (id, epoch) => {
 				const user = authService?.db
 					.prepare('SELECT role, authVersion FROM user WHERE id=?')
@@ -186,7 +195,11 @@ const consoleLayer = ConsoleServiceLive.pipe(
 	Layer.provide(databaseLayer),
 	Layer.provideMerge(notificationLayer)
 );
-export const runtime = ManagedRuntime.make(Layer.merge(consoleLayer, configurationLayer));
+const slicerLayer = SlicerServiceLive.pipe(
+	Layer.provide(databaseLayer),
+	Layer.provideMerge(consoleLayer)
+);
+export const runtime = ManagedRuntime.make(Layer.merge(slicerLayer, configurationLayer));
 export const shutdownSignal = new AbortController();
 export const integration = createIntegration();
 export const requestEffect = integration.effect;

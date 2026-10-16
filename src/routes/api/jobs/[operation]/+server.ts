@@ -76,7 +76,10 @@ export async function POST(event: RequestEvent) {
 			.prepare('SELECT authVersion FROM user WHERE id=?')
 			.get(identity.user.id) as { authVersion: number };
 		return json(
-			await jobOperation(service.issueKey(identity.user.id, user.authVersion, body.name), event)
+			await jobOperation(
+				service.issueKey(identity.user.id, user.authVersion, body.name, body.canPrint === true),
+				event
+			)
 		);
 	}
 	if (event.params.operation === 'revoke-key' && typeof body.id === 'string') {

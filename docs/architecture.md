@@ -345,16 +345,16 @@ files are presented. Cached files remain visible during failure. Live uploads,
 deletes and physical starts remain prohibited. Real-device file-library validation
 and physical command testing remain outstanding; protocol fixtures cover this slice.
 
-Operators can issue upload-only slicer keys from Jobs. Keys are hashed at rest,
+Operators can issue upload-only or explicitly print-enabled slicer keys from Jobs. Keys are hashed at rest,
 expire after 90 days, are individually revocable, and are bound to an active
-operator/owner and its authentication recovery epoch. They authorize only the
+operator/owner and its authentication recovery epoch. They authorize the
 Moonraker-compatible `/server/info`, `/server/files/roots` and
-`/server/files/upload` subset. Print requests are rejected; unrelated APIs still
+`/server/files/upload` subset. Print-enabled keys additionally authorize `/printer/print/start`; unrelated APIs still
 require browser sessions. Native slicers omit Origin, so the Node entrypoint fills
 it only for the exact upload endpoint with a correctly shaped API-key header.
 The route then validates the actual key; foreign Origin is never rewritten and
 cookie-only mutations still require same-origin protection. No global CSRF
-exception is configured. Automatic upload-and-print, binary G-code/3MF, folders,
+exception is configured. Binary G-code/3MF, folders,
 file overwrite, G-code visualization and live writes remain future increments.
 
 The headless Jobs production smoke verifies uploads, inspection, shared controls,
@@ -1008,4 +1008,6 @@ Physical failed-startup acceptance surfaced stale pre-restart motion telemetry b
 
 Physical recovery acceptance subsequently passed without restarting Perilune: deliberately invalid Klipper section, complete startup diagnostic, confirmed snapshot revert, exact original bytes, and fresh ready startup. A separate external-writer check preserved a deliberately changed file by refusing revert dispatch; after explicit conflict resolution, retry restored the original bytes and verified startup. No test sections/comments remain. The printer ended unloaded, unhomed, ready and with both heater targets zero.
 
-Native slicer start requests now distinguish a valid upload-only key (403 with instructions to choose Upload only and start in Jobs) from missing/invalid/revoked keys (401). No start is dispatched by this compatibility endpoint. Storage-root discovery reports write permission when live uploads are enabled.
+Native slicer starts require an explicit upload-and-print key. Migration016 preserves all existing keys as upload-only. The process-scoped SlicerService resolves the exact catalog path and submits through LiveActionService (or the simulator worker); HTTP only waits for its durable receipt. Runtime key checks use the auth database synchronously at dispatch to catch revocation, expiry and account recovery. No separate physical execution path or retry worker exists.
+
+Both legacy separate upload/start and newer multipart print=true are supported. Upload responses expose bare fields plus result.item.path for older Orca clients, preserving Perilune's fingerprinted stored filename. Success requires a completed start receipt. Native requests lack IDs: a persistent per-key/file mapping coalesces starts for two minutes across reconnect/restart, and pending/unknown receipts remain held regardless of age. Confirmed pre-admission rejection releases its mapping. Native requests are bounded to eight concurrent waiters; receipt waiting ends after 20 seconds without cancelling physical execution. Deliberate immediate repeats use Jobs. Storage-root discovery reports write permission when live uploads are enabled.

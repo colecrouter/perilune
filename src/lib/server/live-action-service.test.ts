@@ -1,3 +1,4 @@
+import { SlicerService, SlicerServiceLive } from './slicer-service.js';
 import { LiveMeshService, LiveMeshServiceLive } from './live-mesh-service.js';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -31,6 +32,7 @@ afterEach(async () => {
 });
 const owner = { id: 'owner', name: 'Owner', role: 'owner', authorized: () => true };
 async function fixture(filename = ':memory:', filamentEnabled = true, consoleEnabled = false) {
+	let printKeyValid = true;
 	const state = await Effect.runPromise(
 		SubscriptionRef.make<MoonrakerSnapshot>({
 			...emptyMoonrakerSnapshot(),
@@ -211,7 +213,13 @@ async function fixture(filename = ':memory:', filamentEnabled = true, consoleEna
 		Layer.provideMerge(core)
 	);
 	const baseJobs = JobServiceLive.pipe(
-		Layer.provide(Layer.succeed(JobsConfig, { moonrakerUrl: '', checkUser: () => true })),
+		Layer.provide(
+			Layer.succeed(JobsConfig, {
+				moonrakerUrl: '',
+				checkUser: () => true,
+				checkPrintKey: () => printKeyValid
+			})
+		),
 		Layer.provide(db),
 		Layer.provideMerge(mesh)
 	);
@@ -219,24 +227,23 @@ async function fixture(filename = ':memory:', filamentEnabled = true, consoleEna
 		JobService,
 		Effect.map(JobService, (service) => ({ ...service, refresh: Effect.void }))
 	).pipe(Layer.provideMerge(baseJobs));
-	const runtime = ManagedRuntime.make(
-		LiveActionServiceLive.pipe(
-			Layer.provide(
-				Layer.succeed(LiveActionSettings, {
-					enabled: true,
-					zEnabled: true,
-					filamentEnabled,
-					consoleEnabled,
-					target: 'fixture',
-					observationMs: 10
-				})
-			),
-			Layer.provideMerge(jobs),
-			Layer.provideMerge(store),
-			Layer.provideMerge(transport),
-			Layer.provideMerge(db)
-		)
+	const actions = LiveActionServiceLive.pipe(
+		Layer.provide(
+			Layer.succeed(LiveActionSettings, {
+				enabled: true,
+				zEnabled: true,
+				filamentEnabled,
+				consoleEnabled,
+				target: 'fixture',
+				observationMs: 10
+			})
+		),
+		Layer.provideMerge(jobs),
+		Layer.provideMerge(store),
+		Layer.provideMerge(transport),
+		Layer.provideMerge(db)
 	);
+	const runtime = ManagedRuntime.make(SlicerServiceLive.pipe(Layer.provideMerge(actions)));
 	cleanup.push(() => runtime.dispose());
 	const service = await runtime.runPromise(LiveActionService),
 		p = await runtime.runPromise(PrinterService);
@@ -249,6 +256,10 @@ async function fixture(filename = ':memory:', filamentEnabled = true, consoleEna
 	return {
 		runtime,
 		service,
+		slicer: await runtime.runPromise(SlicerService),
+		revokePrintKey: () => {
+			printKeyValid = false;
+		},
 		state,
 		operations,
 		snapshot,
@@ -975,4 +986,48 @@ it('requires console opt-in and refuses lifecycle scripts before physical dispat
 		expect((await f.snapshot()).actions[0]?.status).toBe('failed');
 	}
 	expect(f.operations).toHaveLength(0);
+});
+
+async function slicerFixture() {
+	const f = await fixture();
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.jobs.state, (s) => ({
+			...s,
+			files: [
+				{
+					id: 'a'.repeat(64),
+					name: 'test.gcode',
+					source: 'moonraker' as const,
+					size: 42,
+					modified: 1,
+					metadata: null
+				}
+			]
+		}))
+	);
+	const key = await f.runtime.runPromise(f.jobs.issueKey('owner', 0, 'Print', true));
+	return { ...f, start: () => f.runtime.runPromise(f.slicer.start(key.token, 'test.gcode')) };
+}
+it('native slicer start uses the live worker once and waits for observed printing', async () => {
+	const f = await slicerFixture();
+	const [a, b] = await Promise.all([f.start(), f.start()]);
+	expect(a.id).toBe(b.id);
+	expect(a.status).toBe('completed');
+	expect(f.operations.filter((op) => op.type === 'job' && op.method === 'start')).toHaveLength(1);
+});
+it('native slicer start never replays a lost live acknowledgement', async () => {
+	const f = await slicerFixture();
+	f.setBehavior('drop');
+	await expect(f.start()).rejects.toThrow(/unknown/);
+	f.setBehavior('normal');
+	await expect(f.start()).rejects.toThrow(/unknown/);
+	expect(f.operations.filter((op) => op.type === 'job' && op.method === 'start')).toHaveLength(1);
+});
+it('native slicer keys are rechecked between admission and live dispatch', async () => {
+	const f = await slicerFixture();
+	f.setRefresh(async () => {
+		f.revokePrintKey();
+	});
+	await expect(f.start()).rejects.toThrow(/failed/);
+	expect(f.operations.filter((op) => op.type === 'job' && op.method === 'start')).toHaveLength(0);
 });

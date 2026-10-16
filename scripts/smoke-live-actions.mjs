@@ -476,6 +476,43 @@ try {
 		.waitFor();
 	assert.equal(operations.filter((op) => op.script === 'M105\nM114\nM400').length, 1);
 
+	const printKeyResponse = await context.request.post(base + '/api/jobs/key', {
+		headers: { Origin: base },
+		data: { name: 'Native slicer fixture', canPrint: true }
+	});
+	assert.equal(printKeyResponse.status(), 200);
+	const printKey = await printKeyResponse.json();
+	const startCount = operations.filter((op) => op.method === 'printer.print.start').length;
+	const slicerStart = () =>
+		fetch(base + '/printer/print/start', {
+			method: 'POST',
+			headers: { 'X-Api-Key': printKey.token, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ filename: 'fixture.gcode' })
+		});
+	const [nativeStart, nativeRetry] = await Promise.all([slicerStart(), slicerStart()]);
+	assert.equal(nativeStart.status, 200);
+	assert.equal(nativeRetry.status, 200);
+	assert.equal(
+		(await nativeStart.json()).perilune.receiptId,
+		(await nativeRetry.json()).perilune.receiptId
+	);
+	assert.equal(status.print_stats.state, 'printing');
+	assert.equal(
+		operations.filter((op) => op.method === 'printer.print.start').length,
+		startCount + 1
+	);
+	await context.request.post(base + '/api/jobs/revoke-key', {
+		headers: { Origin: base },
+		data: { id: printKey.key.id }
+	});
+	assert.equal((await slicerStart()).status, 401);
+	await page.goto(base + '/jobs');
+	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
+	await page.waitForFunction(
+		() => document.querySelector('.current-job .job-state').textContent === 'cancelled'
+	);
+
 	database.close();
 	await native.close();
 	await page.setViewportSize({ width: 320, height: 800 });
