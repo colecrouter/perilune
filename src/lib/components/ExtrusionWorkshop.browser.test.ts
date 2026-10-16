@@ -140,3 +140,36 @@ test('new workflows require fresh physical checks, while competing calibration d
 		.element(screen.getByRole('button', { name: 'Set target', exact: true }))
 		.toBeDisabled();
 });
+test('live workflow starts physical measurement and retains drafts across telemetry updates', async () => {
+	const snapshot = {
+		...ready(),
+		mode: 'moonraker' as const,
+		liveControls: true,
+		filament: { canExtrude: true, position: 100, active: 'extruder', maxDistance: 50, minTemp: 170 }
+	};
+	const onSubmit = vi.fn().mockResolvedValue(crypto.randomUUID());
+	const screen = await render(ExtrusionWorkshop, {
+		snapshot,
+		connected: true,
+		userId: actor.id,
+		role: actor.role,
+		onSubmit
+	});
+	await screen.getByRole('spinbutton', { name: 'Current rotation distance (mm)' }).fill('7.5');
+	await screen.getByRole('checkbox', { name: /Filament is loaded/ }).click();
+	await screen.getByRole('checkbox', { name: /nozzle has clearance/ }).click();
+	await screen.getByRole('button', { name: 'Extrude 50 mm · live printer' }).click();
+	expect(onSubmit).toHaveBeenCalledWith(
+		expect.objectContaining({ type: 'extrusionBegin', confirmed: true })
+	);
+	await screen.rerender({
+		snapshot: { ...snapshot, connection: 'disconnected' },
+		connected: false
+	});
+	await expect
+		.element(screen.getByRole('spinbutton', { name: 'Current rotation distance (mm)' }))
+		.toHaveValue(7.5);
+	await expect
+		.element(screen.getByRole('button', { name: 'Extrude 50 mm · live printer' }))
+		.toBeDisabled();
+});

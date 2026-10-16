@@ -26,6 +26,7 @@ export class MoonrakerConfig extends Context.Service<MoonrakerConfig, MoonrakerS
 ) {}
 export type KlippyState = 'unknown' | 'ready' | 'startup' | 'shutdown' | 'error' | 'disconnected';
 export interface MoonrakerSnapshot {
+	filament?: import('#lib/domain/printer.js').PrinterSnapshot['filament'];
 	/** Operator-only data; never forwarded into PrinterSnapshot/dashboard. */
 	heaterLimits?: Partial<Record<'bed' | 'nozzle', { min: number; max: number }>>;
 	console?: { macros: PrinterMacro[]; responses: ConsoleLine[] };
@@ -110,12 +111,12 @@ const wanted: Record<string, string[]> = {
 	configfile: ['config', 'save_config_pending'],
 	bed_mesh: ['profile_name', 'mesh_min', 'mesh_max', 'probed_matrix', 'profiles'],
 	webhooks: ['state'],
-	toolhead: ['position', 'axis_minimum', 'axis_maximum', 'homed_axes'],
+	toolhead: ['position', 'axis_minimum', 'axis_maximum', 'homed_axes', 'extruder'],
 	idle_timeout: ['state'],
 	manual_probe: ['is_active'],
 	print_stats: ['filename', 'state', 'print_duration', 'info'],
 	virtual_sdcard: ['progress'],
-	extruder: ['temperature', 'target'],
+	extruder: ['temperature', 'target', 'can_extrude'],
 	heater_bed: ['temperature', 'target']
 };
 const record = (value: unknown): Record<string, unknown> =>
@@ -178,6 +179,20 @@ export function normalizeMoonrakerStatus(
 					: [];
 			})
 		),
+		filament: {
+			canExtrude: status.extruder?.can_extrude === true,
+			position: Array.isArray(status.toolhead?.position)
+				? number(status.toolhead.position[3])
+				: null,
+			active: typeof status.toolhead?.extruder === 'string' ? status.toolhead.extruder : null,
+			maxDistance: number(
+				Number(record(record(status.configfile?.config).extruder).max_extrude_only_distance ?? 50)
+			),
+			minTemp: number(
+				Number(record(record(status.configfile?.config).extruder).min_extrude_temp ?? 170)
+			)
+		},
+
 		liveMesh: {
 			enabled: previous.liveMesh.enabled,
 			plan: liveMeshPlan(status.configfile?.config),

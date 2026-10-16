@@ -929,3 +929,23 @@ Recovery cooldown and stop were acknowledged and observed; the original reservat
 remained, targets ended at zero and the temporary file was removed. Physical
 emergency shutdown remains pending until gantry support is coordinated; shutdown
 can release the Z motors. Fault and shutdown cases currently use synthetic fixtures.
+
+## Live filament handling and measured extrusion
+
+The basic live action worker also owns bounded primary-extruder feed/retract and
+50 mm measured extrusion. Fresh execution checks require an idle printer, known
+commanded E position, the primary active extruder, settled 170–280°C application
+range, Klipper's `can_extrude` permission and configured single-move limit.
+The generated script saves/restores G-code state, uses relative E, neutralizes
+speed/flow overrides for the measurement, runs at 1 mm/s and waits with `M400`.
+Completion requires acknowledgement plus the expected commanded E delta; it does
+not claim an encoder measured real filament. The operator measures the mark.
+
+Measured sessions and proposals are durable per target, owned by their operator,
+and block incompatible workflows while awaiting measurement/review. Restart,
+revocation, expiry or connection loss interrupts a session without replay.
+Uncertain physical actions retain the existing recovery reservation. Checkpoint
+failures degrade storage and retry only persistence without killing the worker.
+In-flight movement cannot be cancelled through the ordinary queue; emergency
+shutdown remains independently available. Proposals remain unapplied until the
+owner reviews configuration. Simulator and read-only manual calculator remain.

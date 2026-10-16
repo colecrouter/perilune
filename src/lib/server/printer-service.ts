@@ -64,7 +64,12 @@ export class PrinterService extends Context.Service<
 				Partial<
 					Pick<
 						PrinterSnapshot,
-						'motion' | 'additionalTemperatures' | 'bedMesh' | 'telemetryReady' | 'liveMesh'
+						| 'filament'
+						| 'motion'
+						| 'additionalTemperatures'
+						| 'bedMesh'
+						| 'telemetryReady'
+						| 'liveMesh'
 					>
 				>
 		) => Effect.Effect<void>;

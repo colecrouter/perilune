@@ -18,6 +18,7 @@ export const MoonrakerBridgeLive = Layer.effectDiscard(
 					job:
 						telemetry.updatedAt === null ? { ...telemetry.job, state: 'unknown' } : telemetry.job,
 					heaters: telemetry.heaters,
+					filament: telemetry.filament,
 					motion: telemetry.motion,
 					bedMesh: telemetry.bedMesh,
 					liveMesh: telemetry.liveMesh,

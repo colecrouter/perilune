@@ -35,6 +35,7 @@
 	let lastAction = $state('');
 	let manualResult = $state<ExtrusionProposal | null>(null);
 	const live = $derived(snapshot.mode === 'moonraker');
+	const interactive = $derived(!live || snapshot.liveControls === true);
 	const session = $derived(snapshot.extrusion.session);
 	const active = $derived(extrusionActive(snapshot.extrusion));
 	const owns = $derived(session?.ownerId === userId);
@@ -77,7 +78,7 @@
 		manualResult = null;
 	});
 	const receipt = $derived(snapshot.actions.find((a) => a.id === lastAction));
-	const proposal = $derived(live ? manualResult : (session?.proposal ?? null));
+	const proposal = $derived(interactive ? (session?.proposal ?? null) : manualResult);
 	const running = $derived(session?.stage === 'extruding' || session?.stage === 'feeding');
 	const validStart = $derived(
 		rotationDistance !== undefined &&
@@ -160,12 +161,12 @@
 		>
 			{failure || receipt?.message || 'The action outcome is unknown. It will not be retried.'}
 		</p>{/if}
-	{#if live}<p class="notice">
+	{#if !interactive}<p class="notice">
 			Live filament movement is not enabled yet. You can calculate a proposal from a manually
 			performed 50 mm test below. No heating, movement, or configuration changes are sent to your
 			printer.
 		</p>{/if}
-	{#if !live}
+	{#if interactive}
 		<section class="panel">
 			<p class="eyebrow">01 · Prepare</p>
 			<h2>Ready the filament</h2>
@@ -239,13 +240,13 @@
 	<section class="panel">
 		<p class="eyebrow">02 · Measure</p>
 		<h2>
-			{live
+			{!interactive
 				? 'Enter your test measurements'
 				: active
 					? 'Your filament test'
 					: 'Mark, measure, then feed'}
 		</h2>
-		{#if !live && active}
+		{#if interactive && active}
 			<p>
 				Started by <strong>{session!.ownerName}</strong>. {owns
 					? 'You own this workflow.'
@@ -256,17 +257,24 @@
 						? session!.distance < 0
 							? 'Retracting filament'
 							: 'Feeding filament'
-						: 'Feeding the measured 50 mm'} · simulator
+						: 'Feeding the measured 50 mm'} · {live ? 'live printer' : 'simulator'}
 				</p>
-				<progress max={Math.abs(session!.distance)} value={session!.completed}></progress>
+				<progress
+					max={Math.abs(session!.distance)}
+					value={live && running ? undefined : session!.completed}
+				></progress>
 				<p class="muted">
-					{session!.completed} / {Math.abs(session!.distance)} mm · 1 mm/s. Closing this page does not
-					stop the workflow.
+					{live
+						? 'Waiting for movement acknowledgement and commanded position verification'
+						: `${session!.completed} / ${Math.abs(session!.distance)} mm`} · 1 mm/s. Closing this page
+					does not stop the workflow.
 				</p>
 			{:else if session!.stage === 'measure'}<p>
 					Measure from the same fixed intake point to your mark. The initial distance was <strong
 						>{session!.before} mm</strong
-					>. Enter an example measurement for this simulator; no real filament moved.
+					>. {live
+						? 'Measure the actual filament travel; the printer has no filament-distance encoder.'
+						: 'Enter an example measurement for this simulator; no real filament moved.'}
 				</p>
 				<form
 					onsubmit={(event) => {
@@ -297,7 +305,7 @@
 			<form
 				onsubmit={(event) => {
 					event.preventDefault();
-					if (live) calculate();
+					if (!interactive) calculate();
 					else
 						void send({
 							type: 'extrusionBegin',
@@ -328,7 +336,7 @@
 							bind:value={before}
 							required
 						/></label
-					>{#if live}<label
+					>{#if !interactive}<label
 							>Remaining after 50 mm (mm)<input
 								type="number"
 								min="0"
@@ -339,22 +347,25 @@
 							/></label
 						>{/if}
 				</div>
-				{#if live}<p>
+				{#if !interactive}<p>
 						Perform your manual test slowly at 1 mm/s using a suitable filament temperature, then
 						enter the remaining distance. These inputs stay editable while disconnected.
 					</p>{/if}
 				<button
 					class="primary"
-					disabled={!validStart || (!live && (Boolean(reason) || pending || !loaded || !clear))}
-					>{live
+					disabled={!validStart ||
+						(interactive && (Boolean(reason) || pending || !loaded || !clear))}
+					>{!interactive
 						? 'Calculate proposal'
 						: pending
 							? 'Submitting…'
-							: 'Extrude 50 mm · simulator'}</button
+							: live
+								? 'Extrude 50 mm · live printer'
+								: 'Extrude 50 mm · simulator'}</button
 				>
 			</form>
 		{/if}
-		{#if !live && session?.message}<p class="notice" role="status">{session.message}</p>{/if}
+		{#if interactive && session?.message}<p class="notice" role="status">{session.message}</p>{/if}
 		{#if proposal}
 			<div class="result">
 				<p class="eyebrow">
@@ -385,7 +396,7 @@
 				</p>
 			</div>
 		{/if}
-		{#if !live && active}
+		{#if interactive && active}
 			<div class="finish">
 				<label class="check"
 					><input type="checkbox" bind:checked={coolNozzle} />Cool down the nozzle when finishing or
@@ -398,14 +409,14 @@
 							onclick={() => send({ type: 'extrusionFinish', runId: session!.id, coolNozzle })}
 							>Finish measurement</button
 						>{/if}<button
-						disabled={(!owns && role !== 'owner') || !ready || pending}
+						disabled={(!owns && role !== 'owner') || !ready || pending || (live && running)}
 						onclick={() =>
 							send({ type: 'extrusionCancel', runId: session!.id, coolNozzle, force: !owns })}
 						>{owns ? 'Cancel workflow' : 'End operator’s workflow'}</button
 					>
 				</div>
 			</div>
-		{:else if !live && session?.stage === 'finished'}<p class="muted" role="status">
+		{:else if interactive && session?.stage === 'finished'}<p class="muted" role="status">
 				{session.proposal
 					? 'Measurement finished. The proposal remains unapplied.'
 					: 'Filament movement finished.'}
