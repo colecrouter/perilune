@@ -1,13 +1,17 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
+	import { enhance, applyAction } from '$app/forms';
 	import { onMount, type Snippet } from 'svelte';
 	import type { ActionRecord } from '#lib/domain/printer.js';
 	let {
 		fields,
+		action = '/actions',
+		receiptBase = '/actions',
 		children,
 		onAccepted = () => {}
 	}: {
 		fields: Record<string, string>;
+		action?: string;
+		receiptBase?: string;
 		children: Snippet<[{ pending: boolean; uncertain: boolean }]>;
 		onAccepted?: (receipt: ActionRecord, submitted: FormData) => void;
 	} = $props();
@@ -26,7 +30,7 @@
 <form
 	data-enhanced={enhanced}
 	method="POST"
-	action="/actions"
+	{action}
 	use:enhance={({ formData, cancel }) => {
 		if (pending || uncertain) {
 			cancel();
@@ -43,6 +47,8 @@
 				message = `${receipt.label}: ${receipt.status}.`;
 				id = crypto.randomUUID();
 				onAccepted(receipt, formData);
+			} else if (result.type === 'redirect') {
+				await applyAction(result);
 			} else if (result.type === 'failure') {
 				message =
 					typeof result.data?.message === 'string'
@@ -61,7 +67,8 @@
 	{@render children({ pending, uncertain })}
 	{#if message}<p role="status" class="action-message">
 			{message}
-			{#if receipt || uncertain}<a href={`/actions/${receipt?.id ?? submittedId}`}>Check receipt</a
+			{#if receipt || uncertain}<a href={`${receiptBase}/${receipt?.id ?? submittedId}`}
+					>Check receipt</a
 				>{/if}
 		</p>{/if}
 </form>

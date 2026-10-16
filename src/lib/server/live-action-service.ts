@@ -1,3 +1,4 @@
+import { safetyReason } from '#lib/domain/safety.js';
 import { createHash } from 'node:crypto';
 import { Context, Effect, Layer, Schedule, SubscriptionRef } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
@@ -14,7 +15,7 @@ import { ActionStore } from './action-store.js';
 import { ActionRejected, PrinterService } from './printer-service.js';
 import { MoonrakerService, type ControlOperation, type MoonrakerSnapshot } from './moonraker.js';
 import { JobService } from './job-service.js';
-import { printerAdmission } from './printer-admission.js';
+import { printerAdmission, printerInterlock } from './printer-admission.js';
 
 export class LiveActionSettings extends Context.Service<
 	LiveActionSettings,
@@ -91,6 +92,7 @@ export const LiveActionServiceLive = Layer.effect(
 			sql = yield* SqlClient,
 			settings = yield* LiveActionSettings;
 		const gate = printerAdmission(printer.state);
+		const interlock = printerInterlock(printer.state);
 		const target = createHash('sha256').update(settings.target).digest('hex');
 		const update = (f: (s: PrinterSnapshot) => PrinterSnapshot) =>
 			SubscriptionRef.update(printer.state, (s) => ({
@@ -114,10 +116,13 @@ export const LiveActionServiceLive = Layer.effect(
 					actor: CalibrationActor;
 					action: ActionRecord;
 					generation: number;
+					epoch: number;
 			  }
 			| undefined;
 		let working = false;
 		const validate = (s: PrinterSnapshot, request: ActionRequest, actor: CalibrationActor) => {
+			if (interlock.halted || safetyReason(s.safety))
+				throw reject(safetyReason(s.safety) ?? 'Emergency stop interlock is active.');
 			if (!settings.enabled) throw reject('Live controls are disabled on this server.');
 			if (!authorized(actor)) throw reject('An authorized operator is required.');
 			if (!supported.has(request.command.type))
@@ -263,7 +268,13 @@ export const LiveActionServiceLive = Layer.effect(
 							return yield* Effect.fail(reject('The operator account is no longer authorized.'));
 						if (!transport.control)
 							return yield* Effect.fail(reject('Live transport controls are unavailable.'));
-						const dispatched = yield* transport.control(op, job.generation).pipe(Effect.result);
+						const dispatched = yield* transport
+							.control(
+								op,
+								job.generation,
+								() => interlock.allows(job.epoch) && authorized(job.actor)
+							)
+							.pipe(Effect.result);
 						if (dispatched._tag === 'Failure') {
 							sent ||= dispatched.failure.sent;
 							return yield* Effect.fail(
@@ -422,7 +433,13 @@ export const LiveActionServiceLive = Layer.effect(
 							})
 						);
 						yield* update((s) => ({ ...s, actions: [action, ...s.actions].slice(0, 20) }));
-						work = { request, actor, action, generation: telemetry.generation };
+						work = {
+							request,
+							actor,
+							action,
+							generation: telemetry.generation,
+							epoch: interlock.epoch
+						};
 						return action;
 					}).pipe(
 						Effect.uninterruptible,
@@ -439,6 +456,10 @@ export const LiveActionServiceLive = Layer.effect(
 						if (actor.role !== 'owner' || !authorized(actor))
 							return yield* Effect.fail(reject('An authorized owner must review recovery.'));
 						const s = yield* SubscriptionRef.get(printer.state);
+						if (interlock.halted || safetyReason(s.safety))
+							return yield* Effect.fail(
+								reject(safetyReason(s.safety) ?? 'Review the emergency stop interlock first.')
+							);
 						if (work || s.liveRecovery?.id !== id)
 							return yield* Effect.fail(reject('The recovery state changed. Review it again.'));
 						const telemetry = yield* SubscriptionRef.get(transport.state);

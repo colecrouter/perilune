@@ -1,3 +1,4 @@
+import { safetyReason, type SafetySnapshot } from './safety.js';
 import {
 	ExtrusionCommand,
 	emptyExtrusion,
@@ -97,6 +98,7 @@ export interface ActionRecord {
 	message: string | null;
 }
 export interface PrinterSnapshot {
+	safety?: SafetySnapshot;
 	configurationBusy?: boolean;
 	liveControls?: boolean;
 	liveRecovery?: { id: string; message: string } | null;
@@ -221,6 +223,8 @@ export function applyCommand(
 	file?: JobFile,
 	actor?: CalibrationActor
 ): PrinterSnapshot {
+	const safety = safetyReason(state.safety);
+	if (safety) throw new CommandRejected({ message: safety });
 	if (state.configurationBusy)
 		throw new CommandRejected({
 			message: 'Configuration recovery owns the printer. Finish it before sending commands.'

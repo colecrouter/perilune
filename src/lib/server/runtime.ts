@@ -1,3 +1,4 @@
+import { SafetyServiceLive, SafetySettings, SafetyDisabled } from './safety-service.js';
 import {
 	LiveActionServiceLive,
 	LiveActionSettings,
@@ -63,34 +64,48 @@ const actionStoreLayer = ActionStoreLive.pipe(Layer.provide(databaseLayer));
 const printerLayer = (moonrakerUrl ? makePrinterService('moonraker') : PrinterServiceLive).pipe(
 	Layer.provideMerge(actionStoreLayer)
 );
+const moonrakerConfigLayer = Layer.succeed(MoonrakerConfig, {
+	url: moonrakerUrl ?? '',
+	discoverWebcams: Boolean(cameraBaseUrl && !cameraSource),
+	liveMeshEnabled: process.env.PERILUNE_LIVE_MESH === 'true',
+	liveControlsEnabled: process.env.PERILUNE_LIVE_CONTROLS === 'true',
+	...(process.env.PERILUNE_MOONRAKER_API_KEY
+		? { apiKey: process.env.PERILUNE_MOONRAKER_API_KEY }
+		: {})
+});
 const liveServices = Layer.mergeAll(
 	printerLayer,
 	cameraLayer,
-	MoonrakerServiceLive.pipe(
-		Layer.provide(
-			Layer.succeed(MoonrakerConfig, {
-				url: moonrakerUrl ?? '',
-				discoverWebcams: Boolean(cameraBaseUrl && !cameraSource),
-				liveMeshEnabled: process.env.PERILUNE_LIVE_MESH === 'true',
-				liveControlsEnabled: process.env.PERILUNE_LIVE_CONTROLS === 'true',
-				...(process.env.PERILUNE_MOONRAKER_API_KEY
-					? { apiKey: process.env.PERILUNE_MOONRAKER_API_KEY }
-					: {})
-			})
-		)
-	)
+	MoonrakerServiceLive.pipe(Layer.provide(moonrakerConfigLayer))
 );
 const coreLayer = moonrakerUrl
 	? Layer.merge(MoonrakerBridgeLive, WebcamBridgeLive).pipe(Layer.provideMerge(liveServices))
 	: Layer.merge(printerLayer, cameraLayer);
+const safetyLayer = moonrakerUrl
+	? SafetyServiceLive.pipe(
+			Layer.provide(moonrakerConfigLayer),
+			Layer.provide(
+				Layer.succeed(SafetySettings, {
+					enabled: [
+						'PERILUNE_LIVE_CONTROLS',
+						'PERILUNE_LIVE_MESH',
+						'PERILUNE_LIVE_CONFIGURATION'
+					].some((name) => process.env[name] === 'true')
+				})
+			),
+			Layer.provide(databaseLayer),
+			Layer.provide(liveServices),
+			Layer.provideMerge(coreLayer)
+		)
+	: Layer.merge(coreLayer, SafetyDisabled);
 const commandsLayer = moonrakerUrl
 	? LiveMeshServiceLive.pipe(
 			Layer.provide(actionStoreLayer),
 			Layer.provide(databaseLayer),
-			Layer.provideMerge(coreLayer),
+			Layer.provideMerge(safetyLayer),
 			Layer.provide(liveServices)
 		)
-	: Layer.merge(coreLayer, LiveMeshDisabled);
+	: Layer.merge(safetyLayer, LiveMeshDisabled);
 const jobsLayer = JobServiceLive.pipe(
 	Layer.provide(
 		Layer.succeed(JobsConfig, {

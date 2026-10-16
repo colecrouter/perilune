@@ -23,7 +23,7 @@ import {
 	LiveActionSettings,
 	movementScript
 } from './live-action-service.js';
-import { printerAdmission } from './printer-admission.js';
+import { printerAdmission, printerInterlock } from './printer-admission.js';
 import type { ActionRequest } from '#lib/domain/printer.js';
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -73,6 +73,7 @@ async function fixture(filename = ':memory:') {
 		| 'newJobAfterCancel'
 		| 'cancelStillPrinting'
 		| 'defect' = 'normal';
+	let afterControl: (() => Promise<void>) | undefined;
 	let beforeRefresh: (() => Promise<void>) | undefined;
 	const transport = Layer.succeed(MoonrakerService, {
 		state,
@@ -85,10 +86,12 @@ async function fixture(filename = ':memory:') {
 				return s;
 			}),
 		command: () => Effect.void,
-		control: (op, generation) =>
+		control: (op, generation, permit) =>
 			Effect.gen(function* () {
 				const s = yield* SubscriptionRef.get(state);
 				if (generation !== s.generation)
+					return yield* Effect.fail(new MoonrakerCommandError({ sent: false }));
+				if (permit && !permit())
 					return yield* Effect.fail(new MoonrakerCommandError({ sent: false }));
 				operations.push(op);
 				if (behavior === 'defect') return yield* Effect.die('fixture defect');
@@ -138,6 +141,7 @@ async function fixture(filename = ':memory:') {
 									: s.heaters
 						};
 					});
+				if (afterControl) yield* Effect.promise(afterControl);
 			})
 	});
 	const db = SqliteClient.layer({ filename });
@@ -190,6 +194,9 @@ async function fixture(filename = ':memory:') {
 		printer: p,
 		jobs: await runtime.runPromise(JobService),
 		mesh: await runtime.runPromise(LiveMeshService),
+		setAfterControl: (fn: () => Promise<void>) => {
+			afterControl = fn;
+		},
 		setBehavior: (v: typeof behavior) => {
 			behavior = v;
 		},
@@ -460,4 +467,37 @@ it('serializes concurrent basic and mesh admission through the same reservation 
 	if (b.status === 'rejected') expect(b.reason.message).toMatch(/pending/);
 	await f.finished();
 	expect(f.operations).toHaveLength(1);
+});
+
+it('emergency epoch prevents heater restoration after a delayed cancel acknowledgement', async () => {
+	const f = await fixture();
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => (release = resolve));
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			job: {
+				...s.job,
+				state: 'printing' as const,
+				filename: 'test.gcode',
+				runId: crypto.randomUUID()
+			},
+			heaters: { bed: { current: 25, target: 40 }, nozzle: { current: 25, target: 50 } }
+		}))
+	);
+	await expect.poll(async () => (await f.snapshot()).job.state).toBe('printing');
+	const job = (await f.snapshot()).job;
+	f.setAfterControl(() => held);
+	await f.submit({
+		type: 'cancel',
+		expectedJob: { filename: job.filename!, runId: job.runId! },
+		coolBed: false,
+		coolNozzle: false
+	});
+	await expect.poll(() => f.operations.length).toBe(1);
+	printerInterlock(f.printer.state).interrupt();
+	release();
+	await f.finished();
+	expect(f.operations).toHaveLength(1);
+	expect((await f.snapshot()).actions[0].status).toBe('unknown');
 });

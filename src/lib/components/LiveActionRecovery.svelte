@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { safetyReason } from '#lib/domain/safety.js';
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
 	import { page } from '$app/state';
 	import { Dialog } from 'bits-ui';
@@ -6,7 +7,8 @@
 	let { snapshot }: { snapshot?: PrinterSnapshot } = $props();
 	const recovery = $derived(snapshot?.liveRecovery);
 	const ready = $derived(
-		snapshot?.connection === 'connected' &&
+		!safetyReason(snapshot?.safety) &&
+			snapshot?.connection === 'connected' &&
 			snapshot.klippy === 'ready' &&
 			snapshot.telemetryReady &&
 			snapshot.motion.busy === false &&
@@ -61,8 +63,8 @@
 						>
 						{#if !ready}<p>
 								Recovery needs a connected, idle printer. If a print is running or paused, stop it
-								using the printer or another trusted Moonraker client, then return here. Unlocking
-								does not stop a job or turn heaters off.
+								using the recovery controls above, then return here. Unlocking does not stop a job
+								or turn heaters off.
 							</p>{/if}
 						{#if failure}<p role="alert">{failure}</p>{/if}
 						<div class="recovery-actions">

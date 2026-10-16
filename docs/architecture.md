@@ -885,3 +885,47 @@ Camera playback tracks primitive source URLs, configured state and source genera
 so equivalent camera descriptors delivered with frequent printer updates do not
 restart the stream. A headless browser regression covers descriptor churn,
 orientation-only updates and real source-generation replacement.
+
+## Recovery stop, cooldown and emergency shutdown
+
+`SafetyService` owns separate process-scoped ordinary-safety and emergency lanes.
+An owner can deliberately stop the freshly identified current job or turn off all
+heaters during basic live-action recovery. Each operation has its own durable
+account/payload-bound receipt, expiry and execution checks; it never replaces or
+clears the original unknown action/reservation. Stop runs the configured cancel
+macro and never restores heater targets. Cooldown alone does not stop a job.
+Acknowledgement and observed result are recorded separately; partial results or
+lost replies remain unknown and are never replayed, including after restart.
+
+Operator/owner emergency shutdown uses Moonraker's dedicated HTTP endpoint and an
+independent admission/worker lane, so it does not wait for ordinary admission,
+WebSocket readiness, pending RPC acknowledgements, or workflow locks. Admission
+immediately advances a per-printer epoch and latches normal writes. Last-moment
+permits fence later basic-command stages, mesh stages, configuration uploads and
+restarts; a late cancel acknowledgement cannot restore heat. The latch and safety
+receipt are persisted before dispatch. Storage failure dispatches nothing and
+keeps the memory interlock; use the physical stop if the server cannot dispatch.
+This is a network control, not a substitute for a physical emergency switch.
+
+Safety review needs an authorized owner, fresh ready/idle telemetry and all known
+heater targets off. Resolve hazards and restart Klipper externally after emergency
+shutdown before reviewing. Epoch/token checks prevent a concurrent newer emergency
+from being cleared by an older review. Reviewing safety leaves the original basic
+recovery lock intact for its own explicit review. Other Moonraker clients remain
+outside Perilune's admission/interlock and may change printer state.
+
+The shared UI exposes explicit confirmation dialogs and SSR safety forms/receipts;
+forms enhance without unnecessary navigation and receipt refresh is read-only.
+Emergency remains reachable inside the pending motor dialog. Headless production
+coverage exercises recovery stop, native cooldown, retained original reservation,
+emergency shutdown and enhanced review. Domain/protocol tests cover duplicate and
+cross-account IDs, partial/dropped replies, revocation, expiry, generation changes,
+restart/no replay, storage failure, emergency during review and delayed-ack fences.
+Independent lifecycle review approved after fixing enhanced review redirects.
+
+Owner-authorized physical acceptance used a temporary bounded dwell-only job and
+an explicitly seeded recovery reservation, avoiding physical lost-ack injection.
+Recovery cooldown and stop were acknowledged and observed; the original reservation
+remained, targets ended at zero and the temporary file was removed. Physical
+emergency shutdown remains pending until gantry support is coordinated; shutdown
+can release the Z motors. Fault and shutdown cases currently use synthetic fixtures.

@@ -1,3 +1,4 @@
+import { safetyReason } from './safety.js';
 import type { PrinterSnapshot } from './printer.js';
 import type { BedMesh } from './bed-mesh.js';
 export interface LiveMeshPlan {
@@ -53,6 +54,8 @@ export function liveMeshPlan(config: unknown): LiveMeshPlan | null {
 	return { min, max, offset, columns: count[0], rows: count[1], samples };
 }
 export function liveMeshReason(state: PrinterSnapshot, allowReservation = false): string | null {
+	const safety = safetyReason(state.safety);
+	if (safety) return safety;
 	if (state.liveRecovery) return state.liveRecovery.message;
 	if (state.configurationBusy) return 'Configuration recovery owns the printer.';
 	if (!state.liveMesh.enabled) return 'Live bed mesh commands are disabled on this server.';

@@ -1,3 +1,4 @@
+import { printerInterlock } from './printer-admission.js';
 import { afterEach, expect, it } from 'vite-plus/test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -63,11 +64,12 @@ async function fixture(handler?: (op: MeshOperation) => Promise<void>, filename 
 	const transport = Layer.succeed(MoonrakerService, {
 		state,
 		refresh: () => SubscriptionRef.get(state),
-		command: (operation, generation) =>
+		command: (operation, generation, permit) =>
 			Effect.tryPromise({
 				try: async () => {
 					if ((await Effect.runPromise(SubscriptionRef.get(state))).generation !== generation)
 						throw new MoonrakerCommandError({ sent: false });
+					if (permit && !permit()) throw new MoonrakerCommandError({ sent: false });
 					operations.push(operation);
 					await handler?.(operation);
 					await Effect.runPromise(
@@ -463,6 +465,20 @@ it('does not hide an external manual-probe session started during homing', async
 	await Effect.runPromise(
 		SubscriptionRef.update(f.state, (s) => ({ ...s, motion: { ...s.motion, calibration: true } }))
 	);
+	release();
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('uncertain');
+	expect(f.operations.map((o) => o.type)).toEqual(['home']);
+});
+
+it('emergency epoch prevents probing after a delayed home acknowledgement', async () => {
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => (release = resolve));
+	const f = await fixture(async (op) => {
+		if (op.type === 'home') await held;
+	});
+	await f.submit(f.begin());
+	await expect.poll(() => f.operations.map((o) => o.type)).toEqual(['home']);
+	printerInterlock(f.printer.state).interrupt();
 	release();
 	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('uncertain');
 	expect(f.operations.map((o) => o.type)).toEqual(['home']);

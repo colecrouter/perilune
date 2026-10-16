@@ -3,7 +3,7 @@
 	import { DropdownMenu } from 'bits-ui';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import LiveActionRecovery from './LiveActionRecovery.svelte';
+	import PrinterSafetyRegion from './PrinterSafetyRegion.svelte';
 	import ConfigurationRecovery from './ConfigurationRecovery.svelte';
 	import MoonMark from './MoonMark.svelte';
 	import type { Snippet } from 'svelte';
@@ -96,7 +96,7 @@
 		>
 	</aside>
 	<main>
-		<LiveActionRecovery snapshot={snapshot ?? page.data.initial?.printer} />
+		<PrinterSafetyRegion {snapshot} initial={page.data.initial?.printer} />
 		{#if page.data.user?.role === 'owner' && active !== 'Configuration'}<ConfigurationRecovery
 				compact
 			/>{/if}

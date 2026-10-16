@@ -93,11 +93,13 @@ export class MoonrakerService extends Context.Service<
 		state: SubscriptionRef.SubscriptionRef<MoonrakerSnapshot>;
 		command: (
 			operation: MeshOperation,
-			generation: number
+			generation: number,
+			permit?: () => boolean
 		) => Effect.Effect<void, MoonrakerCommandError>;
 		control?: (
 			operation: ControlOperation,
-			generation: number
+			generation: number,
+			permit?: () => boolean
 		) => Effect.Effect<void, MoonrakerCommandError>;
 		refresh: (generation: number) => Effect.Effect<MoonrakerSnapshot, MoonrakerCommandError>;
 	}
@@ -244,7 +246,11 @@ export const MoonrakerServiceLive = Layer.effect(
 		const reconnectMin = config.reconnectMinMs ?? 500;
 		const reconnectMax = config.reconnectMaxMs ?? 30_000;
 		let dispatch:
-			| ((operation: MeshOperation | ControlOperation, generation: number) => Promise<void>)
+			| ((
+					operation: MeshOperation | ControlOperation,
+					generation: number,
+					permit?: () => boolean
+			  ) => Promise<void>)
 			| undefined;
 		let refresh: ((generation: number) => Promise<MoonrakerSnapshot>) | undefined;
 		let responseSequence = 0;
@@ -555,7 +561,7 @@ export const MoonrakerServiceLive = Layer.effect(
 							)
 								throw new MoonrakerCommandError({ sent: false });
 						};
-						dispatch = async (operation, generation) => {
+						dispatch = async (operation, generation, permit) => {
 							fence(generation);
 							const basic = operation.type === 'controlScript' || operation.type === 'job';
 							if (basic ? !config.liveControlsEnabled : !config.liveMeshEnabled)
@@ -575,6 +581,7 @@ export const MoonrakerServiceLive = Layer.effect(
 													? operation.script
 													: meshScript(operation)
 										};
+							if (permit && !permit()) throw new MoonrakerCommandError({ sent: false });
 							try {
 								await request(
 									method,
@@ -656,22 +663,22 @@ export const MoonrakerServiceLive = Layer.effect(
 		yield* worker.pipe(Effect.forkScoped);
 		return {
 			state,
-			control: (operation, generation) =>
+			control: (operation, generation, permit) =>
 				Effect.tryPromise({
 					try: () =>
 						dispatch
-							? dispatch(operation, generation)
+							? dispatch(operation, generation, permit)
 							: Promise.reject(new MoonrakerCommandError({ sent: false })),
 					catch: (cause) =>
 						cause instanceof MoonrakerCommandError
 							? cause
 							: new MoonrakerCommandError({ sent: false })
 				}),
-			command: (operation, generation) =>
+			command: (operation, generation, permit) =>
 				Effect.tryPromise({
 					try: () =>
 						dispatch
-							? dispatch(operation, generation)
+							? dispatch(operation, generation, permit)
 							: Promise.reject(new MoonrakerCommandError({ sent: false })),
 					catch: (cause) =>
 						cause instanceof MoonrakerCommandError

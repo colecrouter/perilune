@@ -1,4 +1,4 @@
-import { printerAdmission } from './printer-admission.js';
+import { printerAdmission, printerInterlock } from './printer-admission.js';
 import { Context, Effect, Layer, Schedule, SubscriptionRef } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
 import { ActionStore } from './action-store.js';
@@ -45,6 +45,7 @@ export const LiveMeshServiceLive = Layer.effect(
 			store = yield* ActionStore,
 			sql = yield* SqlClient;
 		const lock = printerAdmission(printer.state);
+		const interlock = printerInterlock(printer.state);
 		const write = (mesh: MeshProbeState) =>
 			sql`INSERT INTO live_mesh_workflow(id,state) VALUES(1,${JSON.stringify(mesh)}) ON CONFLICT(id) DO UPDATE SET state=excluded.state`.pipe(
 				Effect.asVoid
@@ -77,6 +78,7 @@ export const LiveMeshServiceLive = Layer.effect(
 			actor: CalibrationActor;
 			action: ActionRecord;
 			generation: number;
+			epoch: number;
 		}> = [];
 		let working = false;
 		const unwritten = new Map<string, { status: ActionStatus; message: string | null }>();
@@ -126,7 +128,13 @@ export const LiveMeshServiceLive = Layer.effect(
 					Effect.gen(function* () {
 						if (!authorized(actor))
 							return yield* fail('The operator account is no longer authorized.');
-						const outcome = yield* transport.command(operation, generation).pipe(Effect.result);
+						const outcome = yield* transport
+							.command(
+								operation,
+								generation,
+								() => interlock.allows(job.epoch) && authorized(actor)
+							)
+							.pipe(Effect.result);
 						if (outcome._tag === 'Failure') {
 							sent ||= outcome.failure.sent;
 							return yield* fail('Printer command failed or its acknowledgement was lost.');
@@ -585,6 +593,7 @@ export const LiveMeshServiceLive = Layer.effect(
 							command = request.command;
 						const reject = (message: string) => Effect.fail(new ActionRejected({ message }));
 						if (!authorized(actor)) return yield* reject('An authorized operator is required.');
+						if (interlock.halted) return yield* reject('Emergency stop interlock is active.');
 						if (!command.type.startsWith('meshProbe'))
 							return yield* reject(
 								'Only the reviewed bed mesh workflow is enabled for live commands.'
@@ -707,7 +716,13 @@ export const LiveMeshServiceLive = Layer.effect(
 							motion: { ...s.motion, calibration: true },
 							actions: [action, ...s.actions].slice(0, 20)
 						}));
-						queue.push({ request, actor, action, generation: telemetry.generation });
+						queue.push({
+							request,
+							actor,
+							action,
+							generation: telemetry.generation,
+							epoch: interlock.epoch
+						});
 						return action;
 					}).pipe(
 						Effect.mapError((cause) =>

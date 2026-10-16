@@ -1,4 +1,5 @@
-import { printerAdmission } from './printer-admission.js';
+import { safetyReason } from '#lib/domain/safety.js';
+import { printerAdmission, printerInterlock } from './printer-admission.js';
 import { extrusionActive } from '#lib/domain/extrusion.js';
 import { calibrationActive } from '#lib/domain/calibration.js';
 import { meshProbeActive } from '#lib/domain/mesh-probe.js';
@@ -71,6 +72,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 			printer = yield* PrinterService;
 		yield* migrate;
 		const gate = printerAdmission(printer.state);
+		const interlock = printerInterlock(printer.state);
 		const enabled = options.enabled && Boolean(settings.moonrakerUrl);
 		const base = settings.moonrakerUrl ? new URL(settings.moonrakerUrl) : null;
 		if (base) {
@@ -94,10 +96,17 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 					updatedAt: Date.now()
 				}))
 			);
-		const call = async (path: string, signal: AbortSignal, init?: RequestInit) => {
+		const call = async (
+			path: string,
+			signal: AbortSignal,
+			init?: RequestInit,
+			permit?: () => boolean
+		) => {
 			if (!base) throw failure('No live printer is configured.');
 			const headers = new Headers(init?.headers);
 			if (settings.apiKey) headers.set('X-Api-Key', settings.apiKey);
+			if (init?.method && init.method !== 'GET' && !permit?.())
+				throw failure('Safety interruption prevented this configuration write or restart.');
 			const response = await fetch(new URL(path, base), {
 				...init,
 				redirect: 'error',
@@ -175,7 +184,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 			(pending(recordOf(starting[0])) || recordOf(starting[0]).phase === 'unknown')
 		)
 			yield* Effect.tryPromise({ try: () => busy(true), catch: convert });
-		let work: { row: Row; actor: ConfigActor } | null = null;
+		let work: { row: Row; actor: ConfigActor; epoch: number } | null = null;
 		const execute = (job: NonNullable<typeof work>, signal: AbortSignal) =>
 			(async () => {
 				const record = recordOf(job.row);
@@ -209,7 +218,12 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 					form.set('file', new Blob([job.row.after_text], { type: 'text/plain' }), name);
 					if (job.row.before_text !== job.row.after_text) {
 						attempted = true;
-						await call('/server/files/upload', signal, { method: 'POST', body: form });
+						await call(
+							'/server/files/upload',
+							signal,
+							{ method: 'POST', body: form },
+							() => interlock.allows(job.epoch) && job.actor.authorized()
+						);
 					}
 					const saved = await Effect.runPromise(files.read(record.path, job.actor));
 					if (saved.text !== job.row.after_text)
@@ -222,7 +236,12 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 					authorize(job.actor);
 					await idle(signal, record.mode === 'revert');
 					attempted = true;
-					await call('/printer/restart', signal, { method: 'POST' });
+					await call(
+						'/printer/restart',
+						signal,
+						{ method: 'POST' },
+						() => interlock.allows(job.epoch) && job.actor.authorized()
+					);
 					let transitioned = false;
 					const deadline = Date.now() + (options.verifyMs ?? 45000);
 					while (Date.now() < deadline && !signal.aborted) {
@@ -390,6 +409,8 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 							const reserved = await Effect.runPromise(
 								SubscriptionRef.modify(printer.state, (state) => {
 									const blocked =
+										interlock.halted ||
+										Boolean(safetyReason(state.safety)) ||
 										state.configurationBusy ||
 										state.liveRecovery != null ||
 										state.motion.calibration ||
@@ -452,7 +473,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 										})
 									)
 								);
-								work = { row, actor };
+								work = { row, actor, epoch: interlock.epoch };
 							} catch (cause) {
 								await busy(false);
 								throw cause;

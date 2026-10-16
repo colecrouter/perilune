@@ -3,6 +3,7 @@
 	import { Dialog } from 'bits-ui';
 	import { isHttpError } from '@sveltejs/kit';
 	import ActionForm from './ActionForm.svelte';
+	import SafetyButton from './SafetyButton.svelte';
 	import type { PrinterSnapshot, PrinterCommand } from '#lib/domain/printer.js';
 	import {
 		motionReason,
@@ -464,6 +465,7 @@
 				>All motors will stop holding position. Position will become unknown; home the printer again
 				before moving.</Dialog.Description
 			>
+			{#if snapshot.safety?.enabled && canOperate}<SafetyButton {snapshot} />{/if}
 			<p class="motor-consequence">Support the gantry: releasing Z can let it fall.</p>
 			{#if releaseReason}<p role="status" class="warning">{releaseReason}</p>{/if}
 			{#if error}<p role="alert" class="warning">{error}</p>{/if}

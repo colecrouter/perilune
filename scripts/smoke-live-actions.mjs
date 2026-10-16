@@ -31,9 +31,26 @@ const status = {
 		save_config_pending: false
 	}
 };
+let safetyShutdown = false;
+const safetyRequests = [];
 const upstream = createServer((req, res) => {
 	res.setHeader('Content-Type', 'application/json');
-	if (req.url.startsWith('/server/files/list'))
+	if (
+		req.method === 'POST' &&
+		['/printer/emergency_stop', '/printer/print/cancel', '/printer/gcode/script'].includes(req.url)
+	) {
+		safetyRequests.push(req.url);
+		if (req.url === '/printer/emergency_stop') safetyShutdown = true;
+		if (req.url === '/printer/print/cancel') status.print_stats.state = 'cancelled';
+		if (req.url === '/printer/gcode/script') {
+			status.extruder.target = 0;
+			status.heater_bed.target = 0;
+		}
+		publish();
+		res.end(JSON.stringify({ result: 'ok' }));
+	} else if (req.url === '/printer/info')
+		res.end(JSON.stringify({ result: { state: safetyShutdown ? 'shutdown' : 'ready' } }));
+	else if (req.url.startsWith('/server/files/list'))
 		res.end(JSON.stringify({ result: [{ path: 'fixture.gcode', size: 42, modified: 1 }] }));
 	else if (req.url.startsWith('/server/files/metadata'))
 		res.end(JSON.stringify({ result: { size: 42, modified: 1 } }));
@@ -247,8 +264,7 @@ try {
 	await idle();
 	assert.equal(status.print_stats.state, 'cancelled');
 	assert.equal(status.heater_bed.target, 0);
-	database.close();
-	await native.close();
+	// Keep the authenticated no-JS context for the recovery safety forms below.
 	await page.goto(base + '/controls');
 	await page.getByRole('button', { name: 'Disengage motors', exact: true }).click();
 	await page
@@ -269,7 +285,44 @@ try {
 		.getByRole('button', { name: 'Disengage motors', exact: true })
 		.click();
 	await page.getByText('Check the printer before continuing', { exact: true }).waitFor();
+
 	drop = false;
+	// Recovery safety is a separate workflow, never a replay of the lost motor command.
+	const recoveryBefore = database
+		.prepare('SELECT action_id FROM live_action_reservation LIMIT 1')
+		.get();
+	status.print_stats.state = 'printing';
+	status.print_stats.print_duration = 1;
+	status.heater_bed.target = 40;
+	status.extruder.target = 50;
+	publish();
+	await page.getByRole('link', { name: 'Stop current job', exact: true }).waitFor();
+	await page.getByRole('link', { name: 'Stop current job', exact: true }).click();
+	const safetyDialog = page.getByRole('dialog');
+	await safetyDialog.getByRole('checkbox', { name: 'Confirm stopping this job' }).check();
+	await safetyDialog.getByRole('button', { name: 'Stop job', exact: true }).click();
+	await page
+		.getByText('Stop current job during recovery: completed', { exact: false })
+		.first()
+		.waitFor();
+	await safetyDialog.getByRole('button', { name: 'Back', exact: true }).click();
+	assert.equal(status.print_stats.state, 'cancelled');
+	await nativePage.goto(base);
+	await nativePage.getByRole('link', { name: 'Turn off heaters', exact: true }).click();
+	await nativePage.getByRole('checkbox', { name: 'Confirm turning off all heaters' }).check();
+	await nativePage.getByRole('button', { name: 'Turn off heaters', exact: true }).click();
+	await nativePage
+		.getByRole('heading', { name: 'Turn off heaters during recovery', exact: true })
+		.waitFor();
+	for (let i = 0; i < 100 && status.extruder.target !== 0; i++)
+		await new Promise((r) => setTimeout(r, 50));
+	assert.equal(status.extruder.target, 0);
+	assert.equal(status.heater_bed.target, 0);
+	assert.deepEqual(
+		database.prepare('SELECT action_id FROM live_action_reservation LIMIT 1').get(),
+		recoveryBefore
+	);
+	assert.deepEqual(safetyRequests, ['/printer/print/cancel', '/printer/gcode/script']);
 	await page.getByRole('button', { name: 'Review recovery', exact: true }).click();
 	await page
 		.getByRole('dialog')
@@ -284,13 +337,34 @@ try {
 		2,
 		'Dropped command was not replayed'
 	);
+
+	await page.getByRole('link', { name: 'Emergency stop', exact: true }).click();
+	const emergency = page.getByRole('dialog');
+	await emergency.getByRole('checkbox', { name: 'Confirm emergency shutdown' }).check();
+	await emergency.getByRole('button', { name: 'Emergency stop', exact: true }).click();
+	await page.getByText('Emergency stop: completed', { exact: false }).first().waitFor();
+	await emergency.getByRole('button', { name: 'Back', exact: true }).click();
+	assert.equal(safetyRequests.filter((p) => p === '/printer/emergency_stop').length, 1);
+	safetyShutdown = false; // Represents an explicit external restart after resolving the hazard.
+	await page.getByRole('link', { name: 'Review safety', exact: true }).click();
+	const reviewSafety = page.getByRole('dialog');
+	await reviewSafety
+		.getByRole('checkbox', { name: 'I have inspected the printer and resolved the hazard' })
+		.check();
+	await reviewSafety.getByRole('button', { name: 'Review safety', exact: true }).click();
+	await page.waitForURL(base + '/');
+	await page
+		.getByText('Emergency interlock active.', { exact: false })
+		.waitFor({ state: 'hidden' });
+	database.close();
+	await native.close();
 	await page.setViewportSize({ width: 320, height: 800 });
 	await mkdir('test-results', { recursive: true });
 	await page.screenshot({ path: 'test-results/live-actions-mobile.png', fullPage: true });
 	await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
 	assert.deepEqual(errors, []);
 	console.log(
-		'Live actions smoke passed: enhanced heaters, live catalog/start, pause/resume/cancel, preserved targets, motor release/home, dropped acknowledgement/recovery, no replay and 320px layout.'
+		'Live actions smoke passed: enhanced heaters, live catalog/start, pause/resume/cancel, preserved targets, motor release/home, dropped acknowledgement/recovery, enhanced safety stop, no-JS cooldown, preserved reservation, emergency shutdown/review, no replay and 320px layout.'
 	);
 } catch (cause) {
 	console.error(logs);

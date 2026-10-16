@@ -1,3 +1,4 @@
+import { safetyReason } from './safety.js';
 import type { PrinterSnapshot } from './printer.js';
 export const MAX_GCODE_BYTES = 20 * 1024 * 1024;
 export interface JobMetadata {
@@ -62,6 +63,8 @@ export function safeRelativePath(value: string): boolean {
 	);
 }
 export function startReason(snapshot: PrinterSnapshot, checkPending = true): string | null {
+	const safety = safetyReason(snapshot.safety);
+	if (safety) return safety;
 	if (snapshot.liveRecovery) return snapshot.liveRecovery.message;
 	if (snapshot.mode !== 'simulator' && !snapshot.liveControls)
 		return 'Live printing is read-only until coordinated printer testing.';
