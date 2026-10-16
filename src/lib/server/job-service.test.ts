@@ -25,7 +25,8 @@ const bytes = new TextEncoder().encode(
 async function create(
 	filename = ':memory:',
 	url = '',
-	checkUser: (id: string, epoch: number) => boolean = (_id: string, epoch: number) => epoch === 0
+	checkUser: (id: string, epoch: number) => boolean = (_id: string, epoch: number) => epoch === 0,
+	liveFiles = false
 ) {
 	const printer = makePrinterService(url ? 'moonraker' : 'simulator').pipe(
 		Layer.provideMerge(ActionStoreLive)
@@ -33,7 +34,7 @@ async function create(
 	const layer = JobServiceLive.pipe(
 		Layer.provideMerge(printer),
 		Layer.provide(SqliteClient.layer({ filename })),
-		Layer.provide(Layer.succeed(JobsConfig, { moonrakerUrl: url, checkUser }))
+		Layer.provide(Layer.succeed(JobsConfig, { moonrakerUrl: url, checkUser, liveFiles }))
 	);
 	const runtime = ManagedRuntime.make(layer);
 	cleanup.push(() => runtime.dispose());
@@ -344,4 +345,173 @@ it('bounds queued live inspections, cancels abandoned upstream reads, and splits
 	);
 	await expect.poll(async () => (await catalog()).runs.length).toBe(2);
 	expect((await catalog()).runs.filter((run) => run.ended === null)).toHaveLength(1);
+});
+
+it('uploads live content once, verifies bytes, blocks active jobs and removes only a fresh file identity', async () => {
+	const files = new Map<string, { bytes: Buffer; modified: number }>();
+	let uploads = 0,
+		deletes = 0;
+	let dropUpload = false,
+		dropDelete = false;
+	let onList: (() => Promise<void>) | undefined;
+	const server = createServer(async (request, response) => {
+		response.setHeader('Content-Type', 'application/json');
+		if (request.url?.startsWith('/server/files/list')) {
+			await onList?.();
+			response.end(
+				JSON.stringify({
+					result: [...files].map(([path, file]) => ({
+						path,
+						size: file.bytes.length,
+						modified: file.modified
+					}))
+				})
+			);
+		} else if (request.url === '/server/files/upload') {
+			const chunks: Buffer[] = [];
+			for await (const chunk of request) chunks.push(chunk);
+			const form = await new Response(Buffer.concat(chunks), {
+				headers: { 'Content-Type': request.headers['content-type']! }
+			}).formData();
+			expect(form.get('print')).toBe('false');
+			expect(form.get('root')).toBe('gcodes');
+			const file = form.get('file') as File;
+			files.set(file.name, {
+				bytes: Buffer.from(await file.arrayBuffer()),
+				modified: Date.now() / 1000
+			});
+			uploads++;
+			if (dropUpload) {
+				request.socket.destroy();
+				return;
+			}
+			response.end('{}');
+		} else {
+			const name = decodeURIComponent(request.url!.replace('/server/files/gcodes/', ''));
+			if (request.method === 'DELETE') {
+				if (!dropDelete) files.delete(name);
+				deletes++;
+				if (dropDelete) {
+					request.socket.destroy();
+					return;
+				}
+				response.end('{}');
+			} else if (files.has(name)) response.end(files.get(name)!.bytes);
+			else {
+				response.statusCode = 404;
+				response.end('{}');
+			}
+		}
+	});
+	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+	cleanup.push(async () => {
+		server.closeAllConnections();
+		await new Promise<void>((resolve) => server.close(() => resolve()));
+	});
+	const directory = await mkdtemp(join(tmpdir(), 'perilune-live-files-'));
+	cleanup.push(() => rm(directory, { recursive: true, force: true }));
+	const database = join(directory, 'files.sqlite');
+	const url = `ws://127.0.0.1:${(server.address() as { port: number }).port}/websocket`;
+	const { runtime, jobs, printer, catalog } = await create(
+		database,
+		`ws://127.0.0.1:${(server.address() as { port: number }).port}/websocket`,
+		() => true,
+		true
+	);
+	await expect.poll(async () => (await catalog()).available).toBe(true);
+	await runtime.runPromise(
+		SubscriptionRef.update(printer.state, (s) => ({
+			...s,
+			liveControls: true,
+			connection: 'connected' as const,
+			klippy: 'ready' as const,
+			storage: 'healthy' as const,
+			telemetryReady: true,
+			job: { ...s.job, state: 'standby' as const },
+			motion: { ...s.motion, busy: false, calibration: false }
+		}))
+	);
+	const file = await runtime.runPromise(jobs.upload('part.gcode', bytes));
+	expect(file.name).toMatch(/^part--[a-f0-9]{64}\.gcode$/);
+	expect((await runtime.runPromise(jobs.upload('part.gcode', bytes))).id).toBe(file.id);
+	expect(uploads).toBe(1);
+	await expect(
+		runtime.runPromise(jobs.upload('blocked.gcode', bytes, Effect.succeed(false)))
+	).rejects.toThrow('authorization');
+	await runtime.runPromise(
+		SubscriptionRef.update(printer.state, (s) => ({
+			...s,
+			job: { ...s.job, state: 'printing' as const }
+		}))
+	);
+	await expect(runtime.runPromise(jobs.remove(file.id))).rejects.toThrow('current print');
+	expect(deletes).toBe(0);
+	await runtime.runPromise(
+		SubscriptionRef.update(printer.state, (s) => ({
+			...s,
+			job: { ...s.job, state: 'standby' as const }
+		}))
+	);
+	await runtime.runPromise(jobs.remove(file.id));
+	expect(deletes).toBe(1);
+	expect((await catalog()).files).toHaveLength(0);
+	await expect(runtime.runPromise(jobs.upload('part.gcode', bytes))).rejects.toThrow(
+		'not replayed'
+	);
+	expect(uploads).toBe(1);
+	for (const name of ['part?.gcode', 'part%.gcode', 'part#.gcode']) {
+		await expect(runtime.runPromise(jobs.upload(name, bytes))).rejects.toThrow('filename');
+	}
+	const ready = () =>
+		runtime.runPromise(
+			SubscriptionRef.update(printer.state, (s) => ({
+				...s,
+				job: { ...s.job, state: 'standby' as const }
+			}))
+		);
+	onList = async () => {
+		onList = undefined;
+		await runtime.runPromise(
+			SubscriptionRef.update(printer.state, (s) => ({
+				...s,
+				job: { ...s.job, state: 'printing' as const }
+			}))
+		);
+	};
+	await expect(runtime.runPromise(jobs.upload('state-change.gcode', bytes))).rejects.toThrow(
+		'current print'
+	);
+	expect(uploads).toBe(1);
+	await ready();
+	dropUpload = true;
+	await expect(runtime.runPromise(jobs.upload('lost-ack.gcode', bytes))).rejects.toThrow(
+		'uncertain'
+	);
+	expect(uploads).toBe(2);
+	dropUpload = false;
+	const recovered = await runtime.runPromise(jobs.upload('lost-ack.gcode', bytes));
+	expect(uploads).toBe(2);
+	dropDelete = true;
+	await expect(runtime.runPromise(jobs.remove(recovered.id))).rejects.toThrow('uncertain');
+	expect(deletes).toBe(2);
+	await expect(runtime.runPromise(jobs.remove(recovered.id))).rejects.toThrow('not be replayed');
+	expect(deletes).toBe(2);
+	await runtime.dispose();
+	const restarted = await create(database, url, () => true, true);
+	await expect.poll(async () => (await restarted.catalog()).available).toBe(true);
+	await restarted.runtime.runPromise(
+		SubscriptionRef.update(restarted.printer.state, (s) => ({
+			...s,
+			liveControls: true,
+			connection: 'connected' as const,
+			klippy: 'ready' as const,
+			telemetryReady: true,
+			job: { ...s.job, state: 'standby' as const },
+			motion: { ...s.motion, busy: false, calibration: false }
+		}))
+	);
+	await expect(restarted.runtime.runPromise(restarted.jobs.remove(recovered.id))).rejects.toThrow(
+		'not be replayed'
+	);
+	expect(deletes).toBe(2);
 });

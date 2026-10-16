@@ -8,8 +8,7 @@ Keep private endpoints and API keys in installation settings, outside Git.
 Enabled actions are homing, bounded manual movement, releasing all motors, primary
 bed/nozzle targets, cooldown, and starting/pausing/resuming/stopping jobs already in
 the live file library, bounded primary-extruder feed/retract and measured extrusion.
-Uploading/deleting live files, arbitrary console/macros and Z-offset workflows are
-not enabled by this flag. Filament additionally requires `PERILUNE_LIVE_FILAMENT=true` (default disabled)
+Live file upload/deletion also use this flag. Arbitrary console/macros remain disabled; Z-offset workflows require their separate opt-in. Filament additionally requires `PERILUNE_LIVE_FILAMENT=true` (default disabled)
 and settled temperature and the
 printer’s extrusion permission. Actual filament measurement remains manual.
 

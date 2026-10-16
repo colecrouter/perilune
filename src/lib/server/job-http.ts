@@ -24,8 +24,8 @@ export async function jobUpload(event: RequestEvent, slicer = false) {
 	]);
 	try {
 		const state = await runtime.runPromise(SubscriptionRef.get(service.state));
-		// Validate deployment mode before reading any upload body.
-		if (process.env.PERILUNE_MOONRAKER_URL?.trim()) error(409, 'Live uploads are not enabled yet.');
+		if (process.env.PERILUNE_MOONRAKER_URL?.trim() && process.env.PERILUNE_LIVE_CONTROLS !== 'true')
+			error(409, 'Live files are read-only on this server.');
 		if (!state.available) error(503, 'File library is unavailable.');
 		const bytes = await runtime.runPromise(service.readBody(event.request, signal), { signal });
 		const contentType = event.request.headers.get('content-type') ?? '';
@@ -88,7 +88,7 @@ export async function jobUpload(event: RequestEvent, slicer = false) {
 			400,
 			cause instanceof Error && cause.name === 'JobError'
 				? cause.message
-				: 'Upload failed. Retry if needed.'
+				: 'Upload outcome is uncertain. Refresh the library before taking another action.'
 		);
 	} finally {
 		lease?.release();

@@ -45,7 +45,7 @@ A removed file shows a friendly unavailable state; reconnects retain cached data
 These settings implement the Moonraker connection/upload contract, verified with
 protocol requests matching Orca's client. Actual Orca desktop/device testing is
 still outstanding. An additional proxy login layer may need its own native-client
-access configuration. Live-mode uploads remain blocked in this milestone.
+access configuration. With `PERILUNE_LIVE_CONTROLS=true`, live uploads go directly to Moonraker and are read back for SHA-256 verification. Live deletion requires an idle printer and a freshly matching file identity.
 
 Upload keys do not grant browser login, file browsing, commands or automatic
 printing. They expire in 90 days, and account deletion, role changes or recovery
@@ -59,3 +59,9 @@ same bounded storage flow with their existing authenticated session.
 
 References: [Moonraker file API](https://moonraker.readthedocs.io/en/latest/external_api/file_manager/),
 [OrcaSlicer Moonraker client](https://github.com/OrcaSlicer/OrcaSlicer/blob/main/src/slic3r/Utils/Moonraker.cpp).
+
+## Live file changes
+
+Live uploads and deletion require the basic live-controls opt-in and an idle, ready printer with no pending action or recovery. Uploads remain limited to 20 MiB of UTF-8 text G-code. Perilune adds a SHA-256 fingerprint to the uploaded filename, so different content uses a separate destination rather than replacing the original. Repeating an identical upload verifies existing bytes without sending another upload. A persistent mutation journal prevents replay after uncertain dispatch or restart; if an uncertain upload is absent, use a deliberately new filename after inspecting the library. Uploaded files remain on Moonraker's G-code filesystem, not in Perilune's SQLite database.
+
+Deletion checks the displayed file identity again before sending one DELETE. A lost reply is never automatically retried. Refresh the library to inspect the result. Keep other printer clients idle during file changes: Moonraker offers no atomic conditional create/delete, so an external writer can still change a path between checking and dispatch. Perilune serializes its own file mutations against ordinary command admission; emergency shutdown remains independent.
