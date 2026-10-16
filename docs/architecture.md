@@ -855,3 +855,10 @@ coordination. It does not enable live motion/heaters/jobs or arbitrary scripts.
 A shared physical-operation reservation across all live workflows and coordinated
 printer acceptance remain pending under #10; existing live mesh/config flags and
 their approval/testing requirements remain unchanged.
+
+Motor disengagement uses a Bits UI modal rather than an expanding inline block.
+The dialog explains lost position and the Z/gantry consequence, focuses the safe
+cancel action, traps/restores focus, and retains server rejection text. Pending
+submission disables duplicate actions and dismissal; acknowledgement closes the
+dialog while execution status remains in shared activity. Backend dispatch and
+live-execution gates are unchanged.

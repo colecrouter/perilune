@@ -1,3 +1,5 @@
+import { userEvent } from 'vite-plus/test/browser';
+import { error as reject } from '@sveltejs/kit';
 import { expect, test, vi } from 'vite-plus/test';
 import { page } from 'vite-plus/test/browser';
 import { render } from 'vitest-browser-svelte';
@@ -98,7 +100,10 @@ test('Home All and confirmed motor release have explicit commands', async () => 
 	await page.getByRole('button', { name: 'Disengage motors', exact: true }).click();
 	expect(onSubmit).not.toHaveBeenCalled();
 	await expect.element(page.getByText('Support the gantry:', { exact: false })).toBeVisible();
-	await page.getByRole('button', { name: 'Confirm release', exact: true }).click();
+	await page
+		.getByRole('dialog')
+		.getByRole('button', { name: 'Disengage motors', exact: true })
+		.click();
 	expect(onSubmit).toHaveBeenCalledWith({ type: 'releaseMotors', axes: 'all', confirmed: true });
 });
 
@@ -121,4 +126,42 @@ test('already homed axes disable homing, and motor release makes homing availabl
 	await component.rerender({ snapshot: { ...state, motion: { ...state.motion, homed: [] } } });
 	await expect.element(page.getByRole('button', { name: 'Home All', exact: true })).toBeEnabled();
 	expect(onSubmit).not.toHaveBeenCalled();
+});
+
+test('motor dialog focuses the safe action, traps focus and restores it on Escape without sending', async () => {
+	const onSubmit = vi.fn();
+	await render(MotionControls, { snapshot: idle(), onSubmit });
+	const trigger = page.getByRole('button', { name: 'Disengage motors', exact: true });
+	await trigger.click();
+	const dialog = page.getByRole('dialog');
+	await expect.element(dialog).toBeVisible();
+	await expect.element(dialog.getByRole('button', { name: 'Keep motors engaged' })).toHaveFocus();
+	await userEvent.keyboard('{Shift>}{Tab}{/Shift}');
+	await expect
+		.element(dialog.getByRole('button', { name: 'Disengage motors', exact: true }))
+		.toHaveFocus();
+	await userEvent.keyboard('{Escape}');
+	await expect.element(dialog).not.toBeInTheDocument();
+	await expect.element(trigger).toHaveFocus();
+	expect(onSubmit).not.toHaveBeenCalled();
+});
+test('motor dialog retains rejections and prevents dismissal or duplicate submission while pending', async () => {
+	let finish!: () => void;
+	const onSubmit = vi
+		.fn()
+		.mockImplementationOnce(async () => reject(409, 'Printer became busy.'))
+		.mockImplementationOnce(() => new Promise<void>((resolve) => (finish = resolve)));
+	await render(MotionControls, { snapshot: idle(), onSubmit });
+	await page.getByRole('button', { name: 'Disengage motors', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByRole('button', { name: 'Disengage motors', exact: true }).click();
+	await expect.element(dialog.getByRole('alert')).toHaveTextContent('Printer became busy.');
+	await dialog.getByRole('button', { name: 'Disengage motors', exact: true }).click();
+	await expect.element(dialog.getByRole('button', { name: 'Disengaging…' })).toBeDisabled();
+	await expect.element(dialog.getByRole('button', { name: 'Keep motors engaged' })).toBeDisabled();
+	await userEvent.keyboard('{Escape}');
+	await expect.element(dialog).toBeVisible();
+	finish();
+	await expect.element(dialog).not.toBeInTheDocument();
+	expect(onSubmit).toHaveBeenCalledTimes(2);
 });
