@@ -228,6 +228,11 @@ try {
 			feedbackPosts++;
 	});
 	await feedbackPage.goto(base + '/');
+	await feedbackPage.waitForFunction(
+		() =>
+			document.querySelector('input[aria-label="Bed target"]')?.closest('form')?.dataset
+				.enhanced === 'true'
+	);
 	const feedbackForm = feedbackPage
 		.locator('form')
 		.filter({ has: feedbackPage.getByRole('spinbutton', { name: 'Bed target', exact: true }) });
