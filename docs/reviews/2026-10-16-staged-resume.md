@@ -5,3 +5,5 @@ A live sliced file requested M600 filament changes. Its first RESUME purges and 
 The fix recognizes acknowledged, same-run, idle paused completion with an explicit message. It does not infer success from missing acknowledgement, movement in progress, unknown identity or a different run/file. An independent reviewer requested rejecting missing run IDs before dispatch and allowing a bounded longer observation period for purge motion; both are implemented.
 
 Paused recovery is a separate explicit owner attestation. It fences the current reviewed view and original durable Resume filename, preserves the unknown receipt and sends no physical command. Process-local old run IDs are not claimed as durable proof. Full validation and final independent review results are recorded in the PR.
+
+Final and incremental independent reviews approved with no remaining correctness or safety findings. Completed safety receipts move to collapsed history while pending/unresolved actions and emergency interlocks remain visible. The paused attestation waits for fresh idle telemetry; a regression test checks identity reset rather than accepting an earlier connection view.

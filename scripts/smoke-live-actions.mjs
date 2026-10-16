@@ -425,8 +425,15 @@ try {
 	await page
 		.getByText('Stop current job during recovery: completed', { exact: false })
 		.first()
-		.waitFor();
+		.waitFor({ state: 'attached' });
 	await safetyDialog.getByRole('button', { name: 'Back', exact: true }).click();
+	const safetyHistory = page.locator('[aria-label="Printer safety"] details');
+	assert.equal(await safetyHistory.evaluate((element) => element.open), false);
+	await safetyHistory.getByText('Recent safety actions', { exact: true }).click();
+	await safetyHistory
+		.getByText('Stop current job during recovery: completed', { exact: true })
+		.waitFor();
+	await safetyHistory.getByText('Recent safety actions', { exact: true }).click();
 	assert.equal(status.print_stats.state, 'cancelled');
 	await nativePage.goto(base);
 	await nativePage.getByRole('link', { name: 'Turn off heaters', exact: true }).click();
@@ -463,7 +470,10 @@ try {
 	const emergency = page.getByRole('dialog');
 	await emergency.getByRole('checkbox', { name: 'Confirm emergency shutdown' }).check();
 	await emergency.getByRole('button', { name: 'Emergency stop', exact: true }).click();
-	await page.getByText('Emergency stop: completed', { exact: false }).first().waitFor();
+	await page
+		.getByText('Emergency stop: completed', { exact: false })
+		.first()
+		.waitFor({ state: 'attached' });
 	await emergency.getByRole('button', { name: 'Back', exact: true }).click();
 	assert.equal(safetyRequests.filter((p) => p === '/printer/emergency_stop').length, 1);
 	safetyShutdown = false; // Represents an explicit external restart after resolving the hazard.

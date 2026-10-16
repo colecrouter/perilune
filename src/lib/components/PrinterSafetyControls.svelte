@@ -6,6 +6,16 @@
 	const owner = $derived(page.data.user?.role === 'owner');
 	const operator = $derived(owner || page.data.user?.role === 'operator');
 	const safety = $derived(snapshot?.safety);
+	const active = $derived(
+		safety?.actions.filter(
+			(action) =>
+				['queued', 'sending'].includes(action.status) ||
+				(action.status === 'unknown' && !action.reviewedAt)
+		) ?? []
+	);
+	const history = $derived(
+		safety?.actions.filter((action) => !active.some((current) => current.id === action.id)) ?? []
+	);
 </script>
 
 {#if snapshot && safety?.enabled && operator}
@@ -36,12 +46,21 @@
 				Emergency interlock active. Resolve the hazard, restart Klipper, then review safety.
 				Ordinary controls remain locked.
 			</p>{/if}
-		{#each safety.actions.slice(0, 3) as action (action.id)}<p role="status">
+		{#each active as action (action.id)}<p role="status">
 				<a href={`/safety/${action.id}`}>{action.label}: {action.status}</a>{action.acknowledged &&
 				!action.observed
 					? ' · acknowledged; result not yet verified'
 					: ''}{action.reviewedAt ? ' · reviewed' : ''}
 			</p>{/each}
+		{#if history.length}<details>
+				<summary>Recent safety actions</summary>
+				{#each history as action (action.id)}<p>
+						<a href={`/safety/${action.id}`}>{action.label}: {action.status}</a
+						>{action.acknowledged && !action.observed
+							? ' · acknowledged; result not yet verified'
+							: ''}{action.reviewedAt ? ' · reviewed' : ''}
+					</p>{/each}
+			</details>{/if}
 	</aside>
 {/if}
 

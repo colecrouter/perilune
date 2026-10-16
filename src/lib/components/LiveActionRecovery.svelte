@@ -20,16 +20,20 @@
 		void open;
 		pausedConfirmed = false;
 	});
-	const ready = $derived(
+	const printerReady = $derived(
 		!safetyReason(snapshot?.safety) &&
 			snapshot?.connection === 'connected' &&
 			snapshot.klippy === 'ready' &&
 			snapshot.telemetryReady &&
 			snapshot.motion.busy === false &&
-			!snapshot.motion.calibration &&
-			(['standby', 'complete', 'cancelled', 'error'].includes(snapshot.job.state) ||
+			!snapshot.motion.calibration
+	);
+	const ready = $derived(
+		printerReady &&
+			(['standby', 'complete', 'cancelled', 'error'].includes(snapshot?.job.state ?? '') ||
 				(pausedCandidate && pausedConfirmed))
 	);
+
 	let open = $state(false),
 		busy = $state(false),
 		failure = $state('');
@@ -83,13 +87,20 @@
 							the previous action.</Dialog.Description
 						>
 						{#if pausedCandidate}<label class="paused-review"
-								><input type="checkbox" bind:checked={pausedConfirmed} /> I have verified this is the
-								same paused print and movement has stopped.</label
+								><input
+									type="checkbox"
+									bind:checked={pausedConfirmed}
+									disabled={!printerReady || busy}
+								/> I have verified this is the same paused print and movement has stopped.</label
 							>
 							<p>
 								The previous Resume outcome stays unknown. Unlocking leaves the print paused and
 								does not send another Resume. Check printer messages and any purged material before
 								continuing.
+							</p>{/if}
+						{#if pausedCandidate && !printerReady}<p>
+								Waiting for a connected, idle printer before you can confirm this paused print.
+								Current print data is retained.
 							</p>{/if}
 						{#if !ready && !pausedCandidate}<p>
 								Recovery needs a connected, idle printer. If a print is running or paused, stop it
@@ -162,15 +173,6 @@
 		margin-top: 1.5rem;
 	}
 	@media (max-width: 540px) {
-		.paused-review {
-			display: flex;
-			align-items: flex-start;
-			gap: 0.6rem;
-			margin: 1rem 0;
-		}
-		.paused-review input {
-			margin-top: 0.2rem;
-		}
 		.live-recovery {
 			align-items: stretch;
 			flex-direction: column;
