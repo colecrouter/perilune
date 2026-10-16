@@ -422,14 +422,17 @@ try {
 	const safetyDialog = page.getByRole('dialog');
 	await safetyDialog.getByRole('checkbox', { name: 'Confirm stopping this job' }).check();
 	await safetyDialog.getByRole('button', { name: 'Stop job', exact: true }).click();
-	await page
-		.getByText('Stop current job during recovery: completed', { exact: false })
-		.first()
-		.waitFor({ state: 'attached' });
+	await safetyDialog.getByRole('link', { name: 'Check receipt', exact: true }).waitFor();
 	await safetyDialog.getByRole('button', { name: 'Back', exact: true }).click();
 	await page.getByRole('link', { name: 'Safety activity', exact: true }).click();
 	await page.getByRole('heading', { name: 'Safety activity', exact: true }).waitFor();
-	await page.getByRole('link', { name: 'Stop current job during recovery', exact: true }).waitFor();
+	await page
+		.locator('article')
+		.filter({
+			has: page.getByRole('link', { name: 'Stop current job during recovery', exact: true })
+		})
+		.getByText('completed', { exact: true })
+		.waitFor();
 	await page.getByRole('link', { name: '← Return to overview', exact: true }).click();
 	assert.equal(status.print_stats.state, 'cancelled');
 	await nativePage.goto(base);
@@ -467,11 +470,15 @@ try {
 	const emergency = page.getByRole('dialog');
 	await emergency.getByRole('checkbox', { name: 'Confirm emergency shutdown' }).check();
 	await emergency.getByRole('button', { name: 'Emergency stop', exact: true }).click();
-	await page
-		.getByText('Emergency stop: completed', { exact: false })
-		.first()
-		.waitFor({ state: 'attached' });
+	await emergency.getByRole('link', { name: 'Check receipt', exact: true }).waitFor();
 	await emergency.getByRole('button', { name: 'Back', exact: true }).click();
+	await page.getByRole('link', { name: 'Safety activity', exact: true }).click();
+	await page
+		.locator('article')
+		.filter({ has: page.getByRole('link', { name: 'Emergency stop', exact: true }) })
+		.getByText('completed', { exact: true })
+		.waitFor();
+	await page.getByRole('link', { name: '← Return to overview', exact: true }).click();
 	assert.equal(safetyRequests.filter((p) => p === '/printer/emergency_stop').length, 1);
 	safetyShutdown = false; // Represents an explicit external restart after resolving the hazard.
 	await page.getByRole('link', { name: 'Review safety', exact: true }).click();
