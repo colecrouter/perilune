@@ -34,6 +34,7 @@
 		}
 		pending = true;
 		message = '';
+		receipt = null;
 		submittedId = String(formData.get('id'));
 		return async ({ result }) => {
 			pending = false;
@@ -59,7 +60,9 @@
 	{#each Object.entries(fields) as [name, value]}<input type="hidden" {name} {value} />{/each}
 	{@render children({ pending, uncertain })}
 	{#if message}<p role="status" class="action-message">
-			{message} <a href={`/actions/${receipt?.id ?? submittedId}`}>Check receipt</a>
+			{message}
+			{#if receipt || uncertain}<a href={`/actions/${receipt?.id ?? submittedId}`}>Check receipt</a
+				>{/if}
 		</p>{/if}
 </form>
 

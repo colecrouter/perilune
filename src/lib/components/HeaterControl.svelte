@@ -109,7 +109,13 @@
 								uncertain ||
 								(enhanced && unchanged)}
 						>
-							{submitting ? 'Submitting…' : 'Set'}</button
+							{readOnly
+								? 'Read-only'
+								: submitting
+									? 'Submitting…'
+									: pending
+										? 'Pending…'
+										: 'Set'}</button
 						>
 					</div>
 				{/snippet}</ActionForm
