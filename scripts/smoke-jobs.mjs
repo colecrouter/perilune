@@ -129,7 +129,10 @@ try {
 		.getByRole('dialog')
 		.getByRole('button', { name: 'Start simulated print', exact: true })
 		.click();
-	await second.getByRole('heading', { name: 'fixture-bracket.gcode', exact: true }).waitFor();
+	await second
+		.getByRole('region', { name: 'Current job', exact: true })
+		.getByText('fixture-bracket.gcode', { exact: true })
+		.waitFor();
 	await page.getByRole('button', { name: 'Pause print', exact: true }).click();
 	await second.getByRole('button', { name: 'Resume print', exact: true }).waitFor();
 	await page.getByRole('button', { name: 'Remove file…', exact: true }).click();
