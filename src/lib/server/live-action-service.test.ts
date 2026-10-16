@@ -30,7 +30,7 @@ afterEach(async () => {
 	for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 const owner = { id: 'owner', name: 'Owner', role: 'owner', authorized: () => true };
-async function fixture(filename = ':memory:') {
+async function fixture(filename = ':memory:', filamentEnabled = true) {
 	const state = await Effect.runPromise(
 		SubscriptionRef.make<MoonrakerSnapshot>({
 			...emptyMoonrakerSnapshot(),
@@ -187,7 +187,12 @@ async function fixture(filename = ':memory:') {
 	const runtime = ManagedRuntime.make(
 		LiveActionServiceLive.pipe(
 			Layer.provide(
-				Layer.succeed(LiveActionSettings, { enabled: true, target: 'fixture', observationMs: 10 })
+				Layer.succeed(LiveActionSettings, {
+					enabled: true,
+					filamentEnabled,
+					target: 'fixture',
+					observationMs: 10
+				})
 			),
 			Layer.provideMerge(jobs),
 			Layer.provideMerge(store),
@@ -691,4 +696,13 @@ it('idle session checkpoint failure retains worker liveness and only retries sto
 	await f.finished();
 	expect((await f.snapshot()).actions[0].status).toBe('completed');
 	expect(f.operations).toHaveLength(2);
+});
+
+it('live filament requires its own explicit enablement', async () => {
+	const f = await fixture(':memory:', false);
+	await hotFilament(f);
+	await expect(
+		f.submit({ type: 'extrusionFeed', runId: crypto.randomUUID(), distance: 5, confirmed: true })
+	).rejects.toThrow(/disabled/);
+	expect(f.operations).toHaveLength(0);
 });

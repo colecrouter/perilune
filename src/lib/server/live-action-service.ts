@@ -21,7 +21,7 @@ import { printerAdmission, printerInterlock } from './printer-admission.js';
 
 export class LiveActionSettings extends Context.Service<
 	LiveActionSettings,
-	{ enabled: boolean; target: string; observationMs?: number }
+	{ enabled: boolean; filamentEnabled?: boolean; target: string; observationMs?: number }
 >()('perilune/LiveActionSettings') {}
 export class LiveActionService extends Context.Service<
 	LiveActionService,
@@ -130,6 +130,7 @@ export const LiveActionServiceLive = Layer.effect(
 		yield* update((s) => ({
 			...s,
 			liveControls: settings.enabled,
+			liveFilament: settings.enabled && settings.filamentEnabled === true,
 			actions: history,
 			liveRecovery: saved[0] ? { id: saved[0].action_id, message: recoveryMessage } : null
 		}));
@@ -165,6 +166,8 @@ export const LiveActionServiceLive = Layer.effect(
 			if (interlock.halted || safetyReason(s.safety))
 				throw reject(safetyReason(s.safety) ?? 'Emergency stop interlock is active.');
 			if (!settings.enabled) throw reject('Live controls are disabled on this server.');
+			if (request.command.type.startsWith('extrusion') && !settings.filamentEnabled)
+				throw reject('Live filament controls are disabled on this server.');
 			if (!authorized(actor)) throw reject('An authorized operator is required.');
 			if (!supported.has(request.command.type))
 				throw reject('This live workflow is not enabled yet.');

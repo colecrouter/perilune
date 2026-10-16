@@ -35,7 +35,7 @@
 	let lastAction = $state('');
 	let manualResult = $state<ExtrusionProposal | null>(null);
 	const live = $derived(snapshot.mode === 'moonraker');
-	const interactive = $derived(!live || snapshot.liveControls === true);
+	const interactive = $derived(!live || snapshot.liveFilament === true);
 	const session = $derived(snapshot.extrusion.session);
 	const active = $derived(extrusionActive(snapshot.extrusion));
 	const owns = $derived(session?.ownerId === userId);

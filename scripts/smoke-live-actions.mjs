@@ -152,6 +152,7 @@ const app = spawn(process.execPath, ['scripts/server.mjs'], {
 		PERILUNE_DATABASE: filename,
 		PERILUNE_MOONRAKER_URL: `ws://127.0.0.1:${upstream.address().port}/websocket`,
 		PERILUNE_LIVE_CONTROLS: 'true',
+		PERILUNE_LIVE_FILAMENT: 'true',
 		PERILUNE_LIVE_MESH: 'false',
 		PERILUNE_LIVE_CONFIGURATION: 'false',
 		PERILUNE_MOONRAKER_API_KEY: '',

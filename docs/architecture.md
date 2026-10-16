@@ -932,7 +932,8 @@ can release the Z motors. Fault and shutdown cases currently use synthetic fixtu
 
 ## Live filament handling and measured extrusion
 
-The basic live action worker also owns bounded primary-extruder feed/retract and
+With the separate default-disabled `PERILUNE_LIVE_FILAMENT=true` opt-in, the basic
+live action worker also owns bounded primary-extruder feed/retract and
 50 mm measured extrusion. Fresh execution checks require an idle printer, known
 commanded E position, the primary active extruder, settled 170–280°C application
 range, Klipper's `can_extrude` permission and configured single-move limit.

@@ -145,6 +145,7 @@ test('live workflow starts physical measurement and retains drafts across teleme
 		...ready(),
 		mode: 'moonraker' as const,
 		liveControls: true,
+		liveFilament: true,
 		filament: { canExtrude: true, position: 100, active: 'extruder', maxDistance: 50, minTemp: 170 }
 	};
 	const onSubmit = vi.fn().mockResolvedValue(crypto.randomUUID());

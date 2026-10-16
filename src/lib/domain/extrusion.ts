@@ -98,7 +98,7 @@ export function extrusionReason(state: PrinterSnapshot, pending = true): string 
 	if (safety) return safety;
 	if (state.liveRecovery) return state.liveRecovery.message;
 	if (state.configurationBusy) return 'Configuration recovery owns the printer.';
-	if (state.mode !== 'simulator' && !state.liveControls)
+	if (state.mode !== 'simulator' && !state.liveFilament)
 		return 'Live filament movement requires coordinated testing. The measurement calculator is available below.';
 	if (state.connection !== 'connected' || state.klippy !== 'ready' || !state.telemetryReady)
 		return 'Wait for a ready printer connection.';

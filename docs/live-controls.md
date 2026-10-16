@@ -9,7 +9,8 @@ Enabled actions are homing, bounded manual movement, releasing all motors, prima
 bed/nozzle targets, cooldown, and starting/pausing/resuming/stopping jobs already in
 the live file library, bounded primary-extruder feed/retract and measured extrusion.
 Uploading/deleting live files, arbitrary console/macros and Z-offset workflows are
-not enabled by this flag. Filament movement requires settled temperature and the
+not enabled by this flag. Filament additionally requires `PERILUNE_LIVE_FILAMENT=true` (default disabled)
+and settled temperature and the
 printer’s extrusion permission. Actual filament measurement remains manual.
 
 ## Operation lifecycle
