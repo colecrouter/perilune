@@ -427,13 +427,10 @@ try {
 		.first()
 		.waitFor({ state: 'attached' });
 	await safetyDialog.getByRole('button', { name: 'Back', exact: true }).click();
-	const safetyHistory = page.locator('[aria-label="Printer safety"] details');
-	assert.equal(await safetyHistory.evaluate((element) => element.open), false);
-	await safetyHistory.getByText('Recent safety actions', { exact: true }).click();
-	await safetyHistory
-		.getByText('Stop current job during recovery: completed', { exact: true })
-		.waitFor();
-	await safetyHistory.getByText('Recent safety actions', { exact: true }).click();
+	await page.getByRole('link', { name: 'Safety activity', exact: true }).click();
+	await page.getByRole('heading', { name: 'Safety activity', exact: true }).waitFor();
+	await page.getByRole('link', { name: 'Stop current job during recovery', exact: true }).waitFor();
+	await page.getByRole('link', { name: '← Return to overview', exact: true }).click();
 	assert.equal(status.print_stats.state, 'cancelled');
 	await nativePage.goto(base);
 	await nativePage.getByRole('link', { name: 'Turn off heaters', exact: true }).click();

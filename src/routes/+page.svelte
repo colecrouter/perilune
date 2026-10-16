@@ -27,6 +27,7 @@
 	} from '#lib/domain/temperature.js';
 	import HeaterControl from '#lib/components/HeaterControl.svelte';
 	import CancelDialog from '#lib/components/CancelDialog.svelte';
+	import CurrentJob from '#lib/components/CurrentJob.svelte';
 	import CameraPanel from '#lib/components/CameraPanel.svelte';
 	import type { PrinterCommand } from '#lib/domain/printer.js';
 	import {
@@ -221,96 +222,16 @@
 		{#if errorMessage}<p class="error-text" role="alert">{errorMessage}</p>{/if}
 		<div class="dashboard-grid">
 			<div class="primary-column">
+				<CurrentJob
+					{snapshot}
+					available={transportConnected}
+					operator={data.user?.role !== 'viewer'}
+					onStop={() => {
+						stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
+						cancelOpen = true;
+					}}
+				/>
 				<CameraPanel camera={cameraSnapshot} />
-				<section class="panel job-panel">
-					<div class="section-header">
-						<h2>Current job</h2>
-						<span class="job-state">{snapshot.job.state}</span>
-					</div>
-					<div class="job-file">
-						<Icon name="jobs" size={30} />
-						<div>
-							<strong
-								>{snapshot.job.filename ||
-									(snapshot.telemetryAt === null
-										? 'Waiting for printer status'
-										: 'No file selected')}</strong
-							><small>{live ? 'Live printer status' : 'Simulated print'}</small>
-						</div>
-					</div>
-					<div class="progress-row">
-						<progress max="100" value={snapshot.job.progress ?? 0} aria-label="Print progress"
-						></progress><strong
-							>{snapshot.job.progress === null
-								? '—'
-								: `${Math.round(snapshot.job.progress)}%`}</strong
-						>
-					</div>
-					<div class="job-metrics">
-						<div>
-							<span>{live ? 'Remaining (estimate)' : 'Remaining'}</span><strong
-								>{snapshot.job.remainingMinutes === null
-									? '—'
-									: `${snapshot.job.remainingMinutes} min`}</strong
-							>
-						</div>
-						<div>
-							<span>Layer</span><strong
-								>{snapshot.job.layer ?? '—'} / {snapshot.job.totalLayers ?? '—'}</strong
-							>
-						</div>
-					</div>
-					<div class="job-actions">
-						<ActionForm
-							fields={{
-								intent: snapshot.job.state === 'paused' ? 'resume' : 'pause',
-								filename: snapshot.job.filename,
-								runId: snapshot.job.runId ?? ''
-							}}
-							>{#snippet children({ pending, uncertain })}<button
-									class="button primary"
-									disabled={readOnly ||
-										busy ||
-										pending ||
-										uncertain ||
-										!connected ||
-										!transportConnected ||
-										!['printing', 'paused'].includes(snapshot.job.state)}
-									><Icon
-										name={snapshot.job.state === 'paused' ? 'play' : 'pause'}
-										size={18}
-									/>{pending
-										? 'Submitting…'
-										: snapshot.job.state === 'paused'
-											? 'Resume print'
-											: 'Pause print'}</button
-								>{/snippet}</ActionForm
-						>
-						<a
-							role="button"
-							href={`/actions?intent=cancel&filename=${encodeURIComponent(snapshot.job.filename)}&runId=${encodeURIComponent(snapshot.job.runId ?? '')}`}
-							class="button danger-outline"
-							aria-disabled={readOnly ||
-								busy ||
-								!connected ||
-								!transportConnected ||
-								(snapshot.job.state !== 'printing' && snapshot.job.state !== 'paused')}
-							onclick={(event) => {
-								event.preventDefault();
-								if (
-									readOnly ||
-									busy ||
-									!connected ||
-									!transportConnected ||
-									!['printing', 'paused'].includes(snapshot.job.state)
-								)
-									return;
-								stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
-								cancelOpen = true;
-							}}><Icon name="stop" size={16} />Stop print</a
-						>
-					</div>
-				</section>
 			</div>
 			<div class="secondary-column">
 				<section class="panel temperature-panel">
@@ -370,6 +291,7 @@
 							<p class="muted">Additional heaters are monitored read-only.</p>
 						</details>{/if}
 					{#if TemperatureHistory}<TemperatureHistory
+							combined
 							{samples}
 							{sensors}
 							connected={thermalReady}
@@ -429,9 +351,9 @@
 									class:failed={action.status === 'failed' || action.status === 'unknown'}
 									>{action.status}</span
 								>
-							</div>{:else}{#if live}<p class="muted">
-									No Perilune actions. This printer connection is read-only.
-								</p>{:else}<div class="activity-row">
+							</div>{:else}{#if live}<p class="muted">No recent Perilune actions.</p>{:else}<div
+									class="activity-row"
+								>
 									<Icon name="play" />
 									<div><strong>Print started</strong><small>Simulator demonstration</small></div>
 								</div>

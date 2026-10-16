@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import {
 		Chart,
 		Layer,
@@ -18,19 +19,29 @@
 		samples,
 		sensors,
 		connected = true,
-		unavailable = false
+		unavailable = false,
+		combined = false
 	}: {
 		samples: TemperatureSample[];
 		sensors: TemperatureSensor[];
 		connected?: boolean;
 		unavailable?: boolean;
+		combined?: boolean;
 	} = $props();
-	type Point = { at: Date; current: number | null; target: number | null };
+	type Point = {
+		at: Date;
+		current: number | null;
+		target: number | null;
+		readings: TemperatureSample['readings'];
+	};
 	const xScale = scaleTime();
 	const yScale = scaleLinear();
 	let chart = $state<ChartState<Point, typeof xScale, typeof yScale>>();
 	const gradientId = $props.id();
-	let selected = $state('extruder');
+	let selected = $state(untrack(() => (combined ? '*' : 'extruder')));
+	const all = $derived(selected === '*');
+	const palette = ['var(--accent)', '#a47740', '#8a78bd', '#548ba9', '#b36980', '#6b8750'];
+	const color = (index: number) => palette[index % palette.length];
 	let minutes = $state(15);
 	let inspectedAt = $state<number | null>(null);
 	let pinned = $state(false);
@@ -42,7 +53,8 @@
 			.map((sample) => ({
 				at: new Date(sample.at),
 				current: sensor ? (sample.readings[sensor.id]?.current ?? null) : null,
-				target: sensor ? (sample.readings[sensor.id]?.target ?? null) : null
+				target: sensor ? (sample.readings[sensor.id]?.target ?? null) : null,
+				readings: sample.readings
 			}))
 	);
 	const start = $derived(
@@ -50,7 +62,14 @@
 	);
 	const values = $derived(
 		points
-			.flatMap((point) => [point.current, point.target])
+			.flatMap((point) =>
+				all
+					? sensors.flatMap((item) => [
+							point.readings[item.id]?.current ?? null,
+							point.readings[item.id]?.target ?? null
+						])
+					: [point.current, point.target]
+			)
 			.filter((value): value is number => value !== null)
 	);
 	const domain = $derived([
@@ -135,7 +154,9 @@
 					inspectedAt = null;
 					pinned = false;
 				}}
-				>{#each sensors as item}<option value={item.id}>{item.label}</option>{/each}</select
+				>{#if combined}<option value="*">All sensors</option>{/if}{#each sensors as item}<option
+						value={item.id}>{item.label}</option
+					>{/each}</select
 			></label
 		>
 		<label
@@ -152,10 +173,13 @@
 		>
 	</div>
 	<p class="chart-key">
-		<span class="actual-key">━ Actual</span>{#if sensor?.heater}<span class="target-key"
+		<span class="actual-key">━ Actual</span>{#if all || sensor?.heater}<span class="target-key"
 				>┄ Target</span
 			>{/if}<span>°C</span>
 	</p>
+	{#if all}<div class="sensor-key">
+			{#each sensors as item, i}<span style:--sensor-color={color(i)}>{item.label}</span>{/each}
+		</div>{/if}
 	{#if sensor && points.length > 1 && values.length}
 		<div
 			class="temperature-chart"
@@ -165,7 +189,7 @@
 			aria-valuemax={points.length - 1}
 			aria-valuenow={index}
 			aria-valuetext={inspected
-				? `${time(inspected.at, true)}, actual ${reading(inspected.current)}${sensor.heater ? `, target ${reading(inspected.target)}` : ''}`
+				? `${time(inspected.at, true)}, ${all ? sensors.map((item) => `${item.label}: actual ${reading(inspected.readings[item.id]?.current)}${item.heater ? `, target ${reading(inspected.readings[item.id]?.target)}` : ''}`).join('; ') : `actual ${reading(inspected.current)}${sensor.heater ? `, target ${reading(inspected.target)}` : ''}`}`
 				: 'Unavailable'}
 			aria-describedby="history-interaction-help"
 			onkeydown={inspectKey}
@@ -182,7 +206,7 @@
 			onpointerleave={() => {
 				if (!pinned) inspectedAt = null;
 			}}
-			aria-label={`${sensor.label} temperatures over the last ${minutes} minutes. Actual ${reading(sensor.current)}${sensor.heater ? `, target ${reading(sensor.target)}` : ''}. Gaps indicate unavailable readings.`}
+			aria-label={`${all ? 'All sensor' : sensor.label} temperatures over the last ${minutes} minutes.${all ? '' : ` Actual ${reading(sensor.current)}${sensor.heater ? `, target ${reading(sensor.target)}` : ''}.`} Gaps indicate unavailable readings.`}
 		>
 			<div aria-hidden="true">
 				<Chart
@@ -217,35 +241,75 @@
 								/></linearGradient
 							></defs
 						>
+						{#if all}<defs
+								>{#each sensors as item, i}<linearGradient
+										id={`${gradientId}-${i}`}
+										x1="0"
+										y1="0"
+										x2="0"
+										y2="1"
+										><stop offset="0%" stop-color={color(i)} stop-opacity=".2" /><stop
+											offset="100%"
+											stop-color={color(i)}
+											stop-opacity=".01"
+										/></linearGradient
+									>{/each}</defs
+							>{/if}
 						<ChartClipPath>
-							<Area
-								y1="current"
-								y0={() => 0}
-								defined={(point: Point) => point.current !== null}
-								fill={`url(#${gradientId})`}
-								stroke="none"
-							/>
+							{#if all}
+								{#each sensors as item, i}
+									<Area
+										y1={(point: Point) => point.readings[item.id]?.current ?? null}
+										y0={() => 0}
+										defined={(point: Point) => point.readings[item.id]?.current != null}
+										fill={`url(#${gradientId}-${i})`}
+										stroke="none"
+									/>
+									<Spline
+										y={(point: Point) => point.readings[item.id]?.current ?? null}
+										defined={(point: Point) => point.readings[item.id]?.current != null}
+										stroke={color(i)}
+										strokeWidth={2}
+									/>
+									{#if item.heater}<Spline
+											y={(point: Point) => point.readings[item.id]?.target ?? null}
+											curve={curveStepAfter}
+											defined={(point: Point) => point.readings[item.id]?.target != null}
+											stroke={color(i)}
+											strokeWidth={1.25}
+											stroke-dasharray="5 4"
+										/>{/if}
+								{/each}
+							{:else}
+								<Area
+									y1="current"
+									y0={() => 0}
+									defined={(point: Point) => point.current !== null}
+									fill={`url(#${gradientId})`}
+									stroke="none"
+								/>
 
-							<Spline
-								y="current"
-								defined={(point: { current: number | null }) => point.current !== null}
-								stroke="var(--accent)"
-								strokeWidth={2}
-							/>
-							{#if sensor.heater}<Spline
-									y="target"
-									curve={curveStepAfter}
-									defined={(point: { target: number | null }) => point.target !== null}
-									stroke="var(--chart-target)"
-									strokeWidth={1.5}
-									stroke-dasharray="5 4"
-								/>{/if}
+								<Spline
+									y="current"
+									defined={(point: { current: number | null }) => point.current !== null}
+									stroke="var(--accent)"
+									strokeWidth={2}
+								/>
+								{#if sensor.heater}<Spline
+										y="target"
+										curve={curveStepAfter}
+										defined={(point: { target: number | null }) => point.target !== null}
+										stroke="var(--chart-target)"
+										strokeWidth={1.5}
+										stroke-dasharray="5 4"
+									/>{/if}
+							{/if}
 							{#if inspectedAt !== null && inspected}<Rule
 									x={inspected.at}
 									stroke="var(--muted)"
 									stroke-dasharray="3 3"
 									class="inspection-marker"
-								/>{#if inspected.current !== null}<Circle
+								/>{#if !all && inspected.current !== null}<Circle
 										data={[inspected]}
 										cx="at"
 										cy="current"
@@ -265,9 +329,14 @@
 		</div>{/if}
 	{#if inspected}<div class="sample-reading">
 			<strong>{inspectedAt === null ? 'Latest' : 'Selected'} · {time(inspected.at, true)}</strong
-			><span>Actual {reading(inspected.current)}</span>{#if sensor?.heater}<span
-					>Target {reading(inspected.target)}</span
-				>{/if}
+			>{#if all}{#each sensors as item, i}<span style:color={color(i)}
+						>{item.label}
+						{reading(inspected.readings[item.id]?.current)}{item.heater
+							? ` / ${reading(inspected.readings[item.id]?.target)} target`
+							: ''}</span
+					>{/each}{:else}<span>Actual {reading(inspected.current)}</span>{#if sensor?.heater}<span
+						>Target {reading(inspected.target)}</span
+					>{/if}{/if}
 		</div>{/if}
 	{#if points.length > 1}<p id="history-interaction-help" class="history-help">
 			Hover or tap the chart to inspect a reading. Use arrow keys when focused.
@@ -287,6 +356,22 @@
 </section>
 
 <style>
+	.sensor-key {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 1rem;
+		margin: 0.75rem 0;
+		font-size: 0.75rem;
+	}
+	.sensor-key span::before {
+		content: '';
+		display: inline-block;
+		width: 0.6rem;
+		height: 0.6rem;
+		border-radius: 50%;
+		margin-right: 0.4rem;
+		background: var(--sensor-color);
+	}
 	.thermal-history {
 		--chart-target: #6965a2;
 		border-top: 1px solid var(--border);

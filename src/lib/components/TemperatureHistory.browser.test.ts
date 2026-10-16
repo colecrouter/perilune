@@ -65,3 +65,19 @@ test('inspection selects a point on the plot with a marker and supports keyboard
 	await screen.getByRole('button', { name: 'Return to latest', exact: true }).click();
 	expect(document.querySelector('.inspection-marker')).toBeNull();
 });
+
+test('combined history plots all sensors with shared inspection and optional focused view', async () => {
+	const screen = await render(TemperatureHistory, { samples, sensors, combined: true });
+	await expect
+		.element(screen.getByRole('slider', { name: /All sensor temperatures/ }))
+		.toBeVisible();
+	await expect
+		.element(screen.getByText('Nozzle 203.0°C / 215.0°C target', { exact: true }))
+		.toBeVisible();
+	await expect.element(screen.getByText('Host 53.0°C', { exact: true })).toBeVisible();
+	await screen
+		.getByRole('combobox', { name: 'Sensor', exact: true })
+		.selectOptions('temperature_sensor host');
+	await expect.element(screen.getByRole('slider', { name: /Host temperatures/ })).toBeVisible();
+	await expect.element(screen.getByText('Actual 53.0°C', { exact: true })).toBeVisible();
+});
