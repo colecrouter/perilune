@@ -208,11 +208,12 @@ try {
 		await second.getByRole('combobox', { name: 'Compare with' }).inputValue(),
 		'profile:cold'
 	);
+	// Prepare the next handshake before reconnect can race the browser's banner observation.
+	temperature = 41;
+	klippy = 'ready';
 	for (const socket of protocol.clients) socket.terminate();
 	await first.getByText('Reconnecting to Moonraker', { exact: true }).waitFor();
 	assert.equal(await first.getByRole('spinbutton', { name: 'Bed target' }).inputValue(), '85');
-	temperature = 41;
-	klippy = 'ready';
 	await first.waitForFunction(() =>
 		Array.from(document.querySelectorAll('.heater')).at(-1)?.textContent?.includes('41')
 	);

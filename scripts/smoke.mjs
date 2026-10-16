@@ -297,7 +297,10 @@ try {
 		.first()
 		.waitFor();
 	await first.getByRole('button', { name: 'Disengage motors', exact: true }).click();
-	await first.getByRole('button', { name: 'Confirm release', exact: true }).click();
+	await first
+		.getByRole('dialog')
+		.getByRole('button', { name: 'Disengage motors', exact: true })
+		.click();
 	await first.locator('.position-strip').getByText('Unknown mm', { exact: true }).first().waitFor();
 	assert.equal(
 		await first.getByRole('button', { name: 'Move here', exact: true }).isDisabled(),

@@ -222,8 +222,10 @@ try {
 	await mkdir('test-results', { recursive: true });
 	await app.screenshot({ path: 'test-results/progressive-desktop.png', fullPage: true });
 	await app.setViewportSize({ width: 320, height: 800 });
-	assert.equal(await app.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+	// ResizeObserver-driven charts settle after the viewport resize event.
 	await app.screenshot({ path: 'test-results/progressive-mobile.png', fullPage: true });
+	await app.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
+	assert.equal(await app.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 	assert.deepEqual(errors, []);
 
 	db.prepare('UPDATE user SET authVersion=authVersion+1').run();
