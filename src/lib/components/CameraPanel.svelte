@@ -43,12 +43,17 @@
 			captureAbort?.abort();
 		};
 	});
+	// Remote snapshots replace descriptor objects on every printer update. Playback
+	// depends only on primitive source identity, not the descriptor object reference.
+	const streamUrl = $derived(camera.streamUrl);
+	const mseUrl = $derived(camera.mseUrl);
+	const configured = $derived(camera.configured);
+	const generation = $derived(camera.generation);
 	$effect(() => {
-		const source = camera.streamUrl;
-		const generation = camera.generation;
+		const source = streamUrl;
 		void generation;
 		void retry;
-		if (!mounted || !visible || pausedByUser || !camera.configured || !source || !video) return;
+		if (!mounted || !visible || pausedByUser || !configured || !source || !video) return;
 		const element = video;
 		let closed = false;
 		const controller = new AbortController();
@@ -75,8 +80,8 @@
 		};
 		element.addEventListener('playing', playing);
 		element.addEventListener('error', failed);
-		if (typeof MediaSource !== 'undefined' && camera.mseUrl) {
-			void playCamera(element, camera.mseUrl, controller.signal, () => {
+		if (typeof MediaSource !== 'undefined' && mseUrl) {
+			void playCamera(element, mseUrl, controller.signal, () => {
 				if (!closed) message = 'Tap play to start the camera.';
 			}).catch(() => {
 				if (!closed) failed();

@@ -880,3 +880,8 @@ and uses relative physical deltas with `M400`; configured heater limits are chec
 Basic forms also support live job review/start without JavaScript. See
 [live controls](live-controls.md) for scope, acceptance and external-client limits.
 Arbitrary console/macros and the live Z-offset/extrusion workflows remain follow-ups.
+
+Camera playback tracks primitive source URLs, configured state and source generation,
+so equivalent camera descriptors delivered with frequent printer updates do not
+restart the stream. A headless browser regression covers descriptor churn,
+orientation-only updates and real source-generation replacement.
