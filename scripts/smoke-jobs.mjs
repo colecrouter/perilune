@@ -211,12 +211,20 @@ try {
 	});
 	assert.equal(deniedStart.status, 403, 'valid upload key lacks print permission');
 	assert.match((await deniedStart.json()).error.message, /uploads only.*Upload only/);
-	assert.equal((await fetch(base + '/printer/print/start', { method: 'POST' })).status, 401);
 	assert.equal(
 		(
 			await fetch(base + '/printer/print/start', {
 				method: 'POST',
-				headers: { 'X-Api-Key': 'A'.repeat(43) }
+				headers: { 'Content-Type': 'application/json' }
+			})
+		).status,
+		401
+	);
+	assert.equal(
+		(
+			await fetch(base + '/printer/print/start', {
+				method: 'POST',
+				headers: { 'X-Api-Key': 'A'.repeat(43), 'Content-Type': 'application/json' }
 			})
 		).status,
 		401
@@ -228,7 +236,12 @@ try {
 		.waitFor({ state: 'hidden' });
 	assert.equal((await fetch(base + '/server/info', { headers })).status, 401);
 	assert.equal(
-		(await fetch(base + '/printer/print/start', { method: 'POST', headers })).status,
+		(
+			await fetch(base + '/printer/print/start', {
+				method: 'POST',
+				headers: { ...headers, 'Content-Type': 'application/json' }
+			})
+		).status,
 		401
 	);
 	await second.getByRole('button', { name: 'Stop print', exact: true }).click();
@@ -354,6 +367,9 @@ try {
 	await page.screenshot({ path: 'test-results/jobs-table-mobile.png', fullPage: true });
 	await page.getByText('Send files from your slicer', { exact: true }).click();
 	await page.getByRole('checkbox', { name: 'Allow starting prints', exact: true }).check();
+	await page
+		.locator('.slicer')
+		.screenshot({ path: 'test-results/jobs-slicer-permissions-mobile.png' });
 	await page.getByRole('button', { name: 'Create upload-and-print key', exact: true }).click();
 	const printToken = await page
 		.getByRole('textbox', { name: 'New upload key', exact: true })
