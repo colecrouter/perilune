@@ -1045,3 +1045,15 @@ physical command, permission, retry, or acknowledgement policy was relaxed.
 Remaining overview work includes identifying planned filament changes from file
 contents (#78), customizable layouts if the default proves insufficient, and
 owner acceptance of the revised layout during an actual print.
+
+The everyday-overview follow-up shares the job card with the Jobs workspace,
+including its control-readiness reasons and finished-job summary. Enhanced job,
+overview heater/cooldown, and safety-dialog forms follow live receipts rather
+than leaving a submission permanently labelled queued. Queue/execution prevents
+implicit duplicate submission as well as disabling buttons. Routine completed
+feedback clears after six seconds; failures and uncertain outcomes remain
+visible, and durable receipts remain available through activity links. Receipt
+state survives eviction from bounded recent-action lists. Repeated telemetry
+snapshots do not extend the success timer. Connection diagnostics are collapsed
+by default, without hiding the reconnect banners or changing initial SSR
+connection behavior. Simulator activity no longer invents unrecorded events.

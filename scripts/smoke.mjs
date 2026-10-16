@@ -128,8 +128,8 @@ try {
 	);
 	assert.equal(await first.locator('link[rel="icon"]').count(), 1);
 	const printingIcon = await first.locator('link[rel="icon"]').getAttribute('href');
-	await first.waitForFunction(
-		() => document.body.innerText.includes('Updates') && document.body.innerText.includes('Live')
+	await first.waitForFunction(() =>
+		document.querySelector('.connection-status')?.textContent.includes('Connected')
 	);
 	await first.evaluate(() => document.fonts.ready);
 	await first

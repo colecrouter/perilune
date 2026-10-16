@@ -7,12 +7,14 @@
 		snapshot,
 		available = true,
 		operator = true,
+		compact = false,
 		onStop
 	}: {
 		snapshot: PrinterSnapshot;
 		available?: boolean;
 		operator?: boolean;
 		onStop: () => void;
+		compact?: boolean;
 	} = $props();
 	const job = $derived(snapshot.job);
 	const active = $derived(job.state === 'printing' || job.state === 'paused');
@@ -22,7 +24,7 @@
 	const copy = $derived(jobDescriptions[job.state]);
 </script>
 
-<section class="panel job-panel" aria-label="Current job">
+<section class="panel job-panel" class:compact data-job-state={job.state} aria-label="Current job">
 	<div class="section-header">
 		<h2>{active ? 'Current job' : finished ? 'Last job' : 'Printer'}</h2>
 		<a href="/jobs">Job library →</a>
@@ -51,12 +53,16 @@
 		</div>
 		{#if reason}<p class="control-reason" role="status">{reason}</p>{/if}
 		<div class="job-actions">
-			<ActionForm fields={{ intent: job.state === 'paused' ? 'resume' : 'pause', ...identity }}
-				>{#snippet children({ pending, uncertain })}<button
+			<ActionForm
+				receipts={snapshot.actions}
+				fields={{ intent: job.state === 'paused' ? 'resume' : 'pause', ...identity }}
+				>{#snippet children({ pending, uncertain, executing })}<button
 						class="button primary"
 						disabled={!!reason || pending || uncertain}
 						><Icon name={job.state === 'paused' ? 'play' : 'pause'} size={18} />{pending
-							? 'Submitting…'
+							? executing
+								? 'Waiting for printer…'
+								: 'Submitting…'
 							: job.state === 'paused'
 								? 'Resume print'
 								: 'Pause print'}</button
@@ -87,6 +93,36 @@
 </section>
 
 <style>
+	.compact {
+		margin-bottom: 1.2rem;
+	}
+	@media (min-width: 1000px) {
+		.compact {
+			display: grid;
+			grid-template-columns: minmax(0, 1.5fr) minmax(200px, 1fr);
+			gap: 0.5rem 2rem;
+		}
+		.compact .section-header {
+			grid-column: 1 / -1;
+		}
+		.compact .job-description {
+			grid-column: 1;
+			margin: 0;
+		}
+		.compact .progress-row {
+			grid-column: 2;
+			grid-row: 2;
+		}
+		.compact .job-metrics {
+			grid-column: 2;
+			grid-row: 3;
+			margin: 0;
+		}
+		.compact .control-reason,
+		.compact .job-actions {
+			grid-column: 1 / -1;
+		}
+	}
 	.job-panel {
 		padding: 1.3rem;
 	}

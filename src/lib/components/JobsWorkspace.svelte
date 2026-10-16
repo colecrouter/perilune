@@ -2,7 +2,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page, navigating } from '$app/state';
-	import ActionForm from './ActionForm.svelte';
+	import CurrentJob from './CurrentJob.svelte';
 	import { liveConnection } from '#lib/client/live-connection.svelte.js';
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
 	import JobTable from './JobTable.svelte';
@@ -86,21 +86,6 @@
 
 	let thumbnailFailed = $state(false);
 	const missing = false;
-	const currentActive = $derived(
-		snapshot.job.state === 'printing' || snapshot.job.state === 'paused'
-	);
-	const currentReady = $derived(
-		canOperate &&
-			(!live || snapshot.liveControls) &&
-			!snapshot.liveRecovery &&
-			!snapshot.configurationBusy &&
-			!snapshot.motion.calibration &&
-			updates.available &&
-			snapshot.connection === 'connected' &&
-			snapshot.klippy === 'ready' &&
-			!pending &&
-			!submitting
-	);
 	const thumbnail = $derived(
 		selected?.metadata?.thumbnail?.startsWith('/api/')
 			? resolve('/api/jobs/[operation]', { operation: 'thumbnail' }) + '?id=' + selected.id
@@ -318,63 +303,16 @@
 		{#if stale || !catalog.available}<p class="notice">
 				Library connection unavailable. Showing the last known files; your selection is retained.
 			</p>{/if}
-		<section class="panel current-job">
-			<div class="job-identity">
-				<div class="job-kicker">
-					<span class="eyebrow">{currentActive ? 'Current job' : 'Last job'}</span><span
-						class="job-state">{snapshot.job.state}</span
-					>
-				</div>
-				<h2 title={snapshot.job.filename}>{snapshot.job.filename || 'No active job'}</h2>
-			</div>
-			<div class="job-progress">
-				<div class="job-progress-label">
-					<span class="muted"
-						>{snapshot.job.layer !== null && snapshot.job.totalLayers !== null
-							? `Layer ${snapshot.job.layer} / ${snapshot.job.totalLayers}`
-							: 'Print progress'}</span
-					><strong
-						>{snapshot.job.progress === null
-							? 'Not reported'
-							: `${Math.round(snapshot.job.progress)}%`}</strong
-					>
-				</div>
-				{#if snapshot.job.progress !== null}<progress
-						max="100"
-						value={snapshot.job.progress}
-						aria-label="Current job progress"
-					></progress>{/if}
-			</div>
-			<div class="job-actions">
-				{#if currentActive}<ActionForm
-						fields={{
-							intent: snapshot.job.state === 'paused' ? 'resume' : 'pause',
-							filename: snapshot.job.filename,
-							runId: snapshot.job.runId ?? ''
-						}}
-						>{#snippet children({ pending, uncertain })}<button
-								class="button secondary"
-								disabled={!currentReady || pending || uncertain}
-								>{pending
-									? 'Submitting…'
-									: snapshot.job.state === 'paused'
-										? 'Resume print'
-										: 'Pause print'}</button
-							>{/snippet}</ActionForm
-					><a
-						role="button"
-						href={`/actions?intent=cancel&filename=${encodeURIComponent(snapshot.job.filename)}&runId=${encodeURIComponent(snapshot.job.runId ?? '')}`}
-						class="button danger"
-						aria-disabled={!currentReady}
-						onclick={(event) => {
-							event.preventDefault();
-							if (!currentReady) return;
-							stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
-							cancelOpen = true;
-						}}>Stop print</a
-					>{:else}<a class="button secondary" href={resolve('/')}>View overview</a>{/if}
-			</div>
-		</section>
+		<CurrentJob
+			compact
+			{snapshot}
+			available={updates.available}
+			operator={canOperate}
+			onStop={() => {
+				stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
+				cancelOpen = true;
+			}}
+		/>
 		<div
 			class="library-grid"
 			class:detail={Boolean(page.params.id)}
@@ -736,53 +674,6 @@
 		border: 1px solid var(--border);
 		border-radius: 12px;
 	}
-	.current-job {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) minmax(180px, 0.6fr) auto;
-		align-items: center;
-		gap: 1.5rem;
-		padding: 0.85rem 1.15rem;
-	}
-	.job-identity {
-		min-width: 0;
-	}
-	.job-kicker {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		margin-bottom: 0.35rem;
-	}
-	.job-state {
-		font-size: 0.72rem;
-		color: var(--accent);
-		text-transform: capitalize;
-	}
-	.current-job h2 {
-		font-size: 1.15rem;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.job-progress {
-		min-width: 0;
-	}
-	.job-progress-label {
-		display: flex;
-		justify-content: space-between;
-		gap: 0.5rem;
-		font-size: 0.75rem;
-		margin-bottom: 0.5rem;
-	}
-	.job-progress progress {
-		width: 100%;
-		height: 6px;
-		display: block;
-	}
-	.job-actions {
-		display: flex;
-		gap: 0.6rem;
-		flex-wrap: wrap;
-	}
 	.library-grid {
 		display: grid;
 		grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
@@ -1041,10 +932,6 @@
 		.library-grid {
 			grid-template-columns: 1fr;
 		}
-		.current-job {
-			grid-template-columns: 1fr;
-			gap: 0.9rem;
-		}
 		header {
 			align-items: flex-start;
 			flex-direction: column;
@@ -1061,12 +948,6 @@
 		}
 		.jobs-page {
 			padding: 1rem;
-		}
-		.job-actions {
-			width: 100%;
-		}
-		.job-actions .button {
-			flex: 1;
 		}
 	}
 </style>

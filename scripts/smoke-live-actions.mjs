@@ -227,8 +227,8 @@ try {
 	const start = page.getByRole('dialog');
 	await start.getByRole('heading', { name: 'Start this print?', exact: true }).waitFor();
 	await start.getByRole('button', { name: /Start/ }).click();
-	await page.waitForFunction(() =>
-		document.querySelector('.current-job')?.textContent?.includes('printing')
+	await page.waitForFunction(
+		() => document.querySelector('[aria-label="Current job"]')?.dataset.jobState === 'printing'
 	);
 	assert.equal(status.print_stats.state, 'printing');
 	await page.goto(base);
@@ -537,7 +537,7 @@ try {
 	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.waitForFunction(
-		() => document.querySelector('.current-job .job-state').textContent === 'cancelled'
+		() => document.querySelector('[aria-label="Current job"]').dataset.jobState === 'cancelled'
 	);
 
 	// A genuine lost acknowledgement stays unknown; paused unlock needs owner attestation.

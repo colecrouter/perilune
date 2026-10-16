@@ -237,7 +237,7 @@
 				<section class="panel temperature-panel">
 					<div class="section-header">
 						<h2>Temperature</h2>
-						<ActionForm fields={{ intent: 'cooldown' }}
+						<ActionForm receipts={snapshot.actions} fields={{ intent: 'cooldown' }}
 							>{#snippet children({ pending, uncertain })}<button
 									class="button secondary"
 									disabled={busy ||
@@ -254,6 +254,7 @@
 							Both heater targets are already off. The heaters may still be cooling.
 						</p>{/if}
 					{#if sensors.some((sensor) => sensor.id === 'extruder')}<HeaterControl
+							receipts={snapshot.actions}
 							heater="nozzle"
 							progressive
 							current={snapshot.heaters.nozzle.current}
@@ -265,6 +266,7 @@
 							pending={busy || !transportConnected || !!thermalReason}
 							onSet={(target) => send({ type: 'temperature', heater: 'nozzle', target })}
 						/>{/if}{#if sensors.some((sensor) => sensor.id === 'heater_bed')}<HeaterControl
+							receipts={snapshot.actions}
 							heater="bed"
 							progressive
 							current={snapshot.heaters.bed.current}
@@ -298,8 +300,14 @@
 							unavailable={historyUnavailable}
 						/>{:else}<p class="muted">Temperature history loads separately from controls.</p>{/if}
 				</section>
-				<section class="panel">
-					<div class="section-header"><h2>Connection</h2></div>
+				<details class="panel connection-details">
+					<summary
+						>Connection details <span class="muted"
+							>{connected && transportConnected && snapshot.klippy === 'ready'
+								? 'All systems connected'
+								: 'Check connection'}</span
+						></summary
+					>
 					<dl class="connection-list">
 						<div>
 							<dt>Moonraker</dt>
@@ -328,7 +336,7 @@
 								: `Last telemetry ${new Date(snapshot.telemetryAt).toLocaleTimeString()}`} · {snapshot
 								.availableObjects.length} available objects{/if}</small
 					>
-				</section>
+				</details>
 				<section class="panel activity-panel">
 					<div class="section-header">
 						<h2>Activity</h2>
@@ -338,7 +346,7 @@
 						{#each snapshot.actions.slice(0, 5) as action (action.id)}<div class="activity-row">
 								<Icon name="jobs" />
 								<div>
-									<strong>{action.label}</strong><small
+									<strong><a href={`/actions/${action.id}`}>{action.label}</a></strong><small
 										>{action.message ??
 											new Date(action.createdAt).toLocaleTimeString([], {
 												hour: '2-digit',
@@ -351,20 +359,9 @@
 									class:failed={action.status === 'failed' || action.status === 'unknown'}
 									>{action.status}</span
 								>
-							</div>{:else}{#if live}<p class="muted">No recent Perilune actions.</p>{:else}<div
-									class="activity-row"
-								>
-									<Icon name="play" />
-									<div><strong>Print started</strong><small>Simulator demonstration</small></div>
-								</div>
-								<div class="activity-row">
-									<Icon name="bed" />
-									<div><strong>Bed reached target</strong><small>60°C · simulated</small></div>
-								</div>
-								<div class="activity-row">
-									<Icon name="jobs" />
-									<div><strong>File uploaded</strong><small>orbital-bracket.gcode</small></div>
-								</div>{/if}{/each}
+							</div>{:else}<p class="muted">
+								No recent actions. Commands from all operators appear here.
+							</p>{/each}
 					</div>
 				</section>
 			</div>
@@ -380,3 +377,28 @@
 			send({ type: 'cancel', coolBed, coolNozzle, expectedJob: stopJob })}
 	/>
 </AppShell>
+
+<style>
+	.connection-details {
+		padding: 1rem 1.3rem;
+	}
+	.connection-details summary {
+		cursor: pointer;
+		font-size: 0.85rem;
+		font-weight: 550;
+	}
+	.connection-details summary span {
+		display: block;
+		font-size: 0.75rem;
+		font-weight: normal;
+		margin-top: 0.35rem;
+	}
+	.activity-row a {
+		color: inherit;
+		text-decoration-color: var(--border);
+		text-underline-offset: 0.2rem;
+	}
+	.activity-row a:hover {
+		color: var(--accent);
+	}
+</style>

@@ -1,7 +1,11 @@
 <script lang="ts">
 	import ActionForm from './ActionForm.svelte';
-	import type { PrinterSnapshot } from '#lib/domain/printer.js';
-	let { intent, snapshot }: { intent: string; snapshot: PrinterSnapshot } = $props();
+	import type { ActionRecord, PrinterSnapshot } from '#lib/domain/printer.js';
+	let {
+		intent,
+		snapshot,
+		receipts
+	}: { intent: string; snapshot: PrinterSnapshot; receipts?: ActionRecord[] } = $props();
 	const title = $derived(
 		intent === 'abortProbe'
 			? 'Abort the current manual probe?'
@@ -35,6 +39,7 @@
 		original uncertain action.
 	</p>
 	<ActionForm
+		{receipts}
 		action="/safety"
 		receiptBase="/safety"
 		fields={{ intent: 'review', actionId: snapshot.safety?.actions[0]?.id ?? '' }}
@@ -58,7 +63,7 @@
 	{#if intent !== 'emergency'}<p>
 			The original uncertain action stays locked and will never be replayed.
 		</p>{/if}
-	<ActionForm action="/safety" receiptBase="/safety" {fields}>
+	<ActionForm {receipts} action="/safety" receiptBase="/safety" {fields}>
 		{#snippet children({ pending, uncertain })}
 			<label
 				><input type="checkbox" name="confirmed" value="true" required /> Confirm {intent ===
