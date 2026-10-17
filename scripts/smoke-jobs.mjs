@@ -369,6 +369,7 @@ try {
 	await page.getByRole('link', { name: 'Back to library' }).click();
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 	await page.screenshot({ path: 'test-results/jobs-table-mobile.png', fullPage: true });
+	const printReturnHref = page.url();
 	await page.getByRole('link', { name: 'Connect your slicer in Account → Integrations' }).click();
 	await page.getByLabel('Access', { exact: true }).selectOption('print');
 	await page
@@ -377,6 +378,7 @@ try {
 	await page.getByRole('button', { name: 'Create key', exact: true }).click();
 	const printToken = await page.getByLabel('New slicer key', { exact: true }).inputValue();
 	const printHeaders = { 'X-Api-Key': printToken };
+	await page.goto(printReturnHref);
 	const legacy = () =>
 		fetch(base + '/printer/print/start', {
 			method: 'POST',
