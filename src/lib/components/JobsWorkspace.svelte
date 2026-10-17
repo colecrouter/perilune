@@ -76,12 +76,6 @@
 	let uploading = $state(false);
 	let uploadRequest: XMLHttpRequest | undefined;
 	let fileInput = $state<HTMLInputElement>();
-	let keyCanPrint = $state(false);
-	let keyName = $state('OrcaSlicer');
-	let newToken = $state('');
-	let keys = $state<
-		Array<{ id: string; name: string; suffix: string; expires: number; canPrint: boolean }>
-	>([]);
 	const requests = new AbortController();
 
 	let thumbnailFailed = $state(false);
@@ -128,12 +122,6 @@
 				refreshing = false;
 			}
 		}, 5000);
-		if (canOperate)
-			void api<{ keys: typeof keys }>('keys')
-				.then((result) => {
-					keys = result.keys;
-				})
-				.catch(() => {});
 		return () => {
 			clearInterval(timer);
 			requests.abort();
@@ -241,31 +229,6 @@
 			failure = cause instanceof Error ? cause.message : 'Could not remove this file.';
 		} finally {
 			submitting = false;
-		}
-	}
-	async function createKey() {
-		submitting = true;
-		failure = '';
-		try {
-			const result = await api<{ token: string; key: (typeof keys)[number] }>('key', {
-				name: keyName,
-				canPrint: keyCanPrint
-			});
-			newToken = result.token;
-			keys = [result.key, ...keys];
-		} catch (cause) {
-			failure = cause instanceof Error ? cause.message : 'Could not create a key.';
-		} finally {
-			submitting = false;
-		}
-	}
-	async function revokeKey(id: string) {
-		try {
-			await api('revoke-key', { id });
-			keys = keys.filter((k) => k.id !== id);
-			newToken = '';
-		} catch (cause) {
-			failure = cause instanceof Error ? cause.message : 'Could not revoke the key.';
 		}
 	}
 	const sizeLabel = (bytes: number) =>
@@ -525,52 +488,9 @@
 					</div>{:else}<p>No recorded prints yet.</p>{/each}
 			</div>
 		</section>
-		{#if canOperate}<details class="panel slicer">
-				<summary>Send files from your slicer</summary>
-				<p>
-					Choose <strong>Klipper / Moonraker</strong> in OrcaSlicer or another compatible slicer.
-					Use this app’s address as the host and a key below. Enable print permission to use
-					<strong>Upload and print</strong> directly from your slicer.
-				</p>
-				{#if live}<p class="notice">
-						Files are stored on the printer. Uploaded names include a content fingerprint to keep
-						different versions separate.
-					</p>{/if}<label>Key name<input bind:value={keyName} maxlength="80" /></label><label
-					class="print-permission"
-					><input type="checkbox" bind:checked={keyCanPrint} /> Allow starting prints</label
-				><button class="button secondary" disabled={submitting} onclick={() => void createKey()}
-					>{keyCanPrint ? 'Create upload-and-print key' : 'Create upload-only key'}</button
-				>{#if newToken}<div class="new-key">
-						<strong>Copy this key now—it is shown once.</strong><input
-							readonly
-							value={newToken}
-							aria-label="New upload key"
-							autocomplete="off"
-							spellcheck="false"
-						/><button
-							class="button secondary"
-							onclick={() => {
-								newToken = '';
-							}}>Hide key</button
-						>
-					</div>{/if}
-				<p class="muted">
-					Keys expire after 90 days and stop working if their account is removed or recovered.
-					Revoking a key does not sign you out.
-				</p>
-				{#each keys as key}<div class="key-row">
-						<span
-							>{key.name} · …{key.suffix} · {key.canPrint
-								? 'Upload and print'
-								: 'Upload only'}<small>Expires {new Date(key.expires).toLocaleDateString()}</small
-							></span
-						><button class="button secondary" onclick={() => void revokeKey(key.id)}>Revoke</button>
-					</div>{/each}<a
-					href="https://github.com/OrcaSlicer/OrcaSlicer/wiki"
-					target="_blank"
-					rel="noreferrer">OrcaSlicer setup documentation ↗</a
-				>
-			</details>{/if}
+		{#if canOperate}<p class="panel">
+				<a href="/account#integrations">Connect your slicer in Account → Integrations</a>
+			</p>{/if}
 		<section class="panel action-history">
 			<h2>Actions</h2>
 			{#each snapshot.actions.slice(0, 8) as action (action.id)}<div class="run">
@@ -764,8 +684,7 @@
 		margin-bottom: 1rem;
 		font-size: 0.85rem;
 	}
-	.run small,
-	.key-row small {
+	.run small {
 		display: block;
 		color: var(--muted);
 		margin-top: 0.4rem;
@@ -869,59 +788,6 @@
 	}
 	.history > p {
 		font-size: 0.8rem;
-	}
-	.slicer summary {
-		cursor: pointer;
-		font-weight: 600;
-		font-size: 1.1rem;
-	}
-	.slicer > p {
-		line-height: 1.7;
-		font-size: 0.85rem;
-	}
-	.slicer label {
-		display: grid;
-		gap: 0.5rem;
-		max-width: 320px;
-		margin: 1rem 0;
-	}
-	.slicer .print-permission {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-	}
-	.print-permission input {
-		width: 1.1rem;
-		height: 1.1rem;
-		padding: 0;
-		accent-color: var(--accent);
-	}
-	.new-key {
-		border: 1px solid var(--border);
-		padding: 1rem;
-		margin: 1rem 0;
-		border-radius: 10px;
-	}
-	.new-key strong {
-		display: block;
-		font-size: 0.8rem;
-		margin-bottom: 0.7rem;
-	}
-	.new-key input {
-		font-family: monospace;
-		margin-bottom: 0.7rem;
-	}
-	.key-row {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 1rem;
-		padding: 0.8rem 0;
-	}
-	.slicer > a {
-		display: inline-block;
-		margin-top: 1rem;
-		font-size: 0.85rem;
 	}
 	@media (max-width: 700px) {
 		.library-grid.detail .library {

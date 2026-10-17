@@ -21,11 +21,16 @@ function fixture(verifier?: (data: { hash: string; password: string }) => Promis
 	};
 	return { service, setup, close, filename: join(directory, 'auth.sqlite') };
 }
+let loginClient = 1;
 async function login(service: ReturnType<typeof createAuthService>, email: string) {
 	const response = await service.auth.handler(
 		new Request(`${origin}/api/auth/sign-in/email`, {
 			method: 'POST',
-			headers: { Origin: origin, 'Content-Type': 'application/json' },
+			headers: {
+				Origin: origin,
+				'Content-Type': 'application/json',
+				'x-perilune-client-ip': `192.0.2.${loginClient++}`
+			},
 			body: JSON.stringify({ email, password })
 		})
 	);
@@ -272,4 +277,102 @@ describe('local authentication', () => {
 			f.close();
 		}
 	});
+});
+
+describe('browser pairing', () => {
+	it('requires explicit approval, issues a persistent normal session once, and revokes it independently', async () => {
+		const f = fixture();
+		try {
+			f.setup();
+			await f.service.enroll({
+				token: 'setup-fixture',
+				name: 'Owner',
+				email: 'pair@example.test',
+				password
+			});
+			const owner = await login(f.service, 'pair@example.test');
+			const grant = f.service.startPairing('Desktop slicer');
+			expect(await f.service.redeemPairing(grant.token)).toBeNull();
+			expect(f.service.pairingRequest(grant.code)?.name).toBe('Desktop slicer');
+			f.service.approvePairing(owner, grant.code, true);
+			expect(() => f.service.approvePairing(owner, grant.code, true)).toThrow();
+			const cookie = await f.service.redeemPairing(grant.token);
+			expect(cookie?.attributes.httpOnly).toBe(true);
+			expect(cookie?.attributes.maxAge).toBe(90 * 86400);
+			const headers = new Headers({
+				cookie: `${cookie!.name}=${encodeURIComponent(cookie!.value)}`
+			});
+			const paired = await f.service.identity(headers);
+			expect(paired?.user.id).toBe(owner.user.id);
+			expect(f.service.valid(paired!)).toBeTruthy();
+			expect(f.service.browsers(owner.user.id)).toHaveLength(1);
+			await expect(f.service.redeemPairing(grant.token)).rejects.toThrow();
+			f.service.revokeBrowser('another-user', paired!.session.id);
+			expect(f.service.valid(paired!)).toBeTruthy();
+			const watcher = f.service.watch(paired!);
+			f.service.revokeBrowser(owner.user.id, paired!.session.id);
+			expect(watcher.signal.aborted).toBe(true);
+			expect(f.service.valid(paired!)).toBeFalsy();
+			expect(f.service.valid(owner)).toBeTruthy();
+			watcher.release();
+		} finally {
+			f.close();
+		}
+	});
+	it('rejects denied, expired and recovery-invalidated grants', async () => {
+		const f = fixture();
+		try {
+			f.setup();
+			await f.service.enroll({
+				token: 'setup-fixture',
+				name: 'Owner',
+				email: 'pair@example.test',
+				password
+			});
+			const owner = await login(f.service, 'pair@example.test');
+			const denied = f.service.startPairing('Denied');
+			f.service.approvePairing(owner, denied.code, false);
+			await expect(f.service.redeemPairing(denied.token)).rejects.toThrow();
+			const expired = f.service.startPairing('Expired');
+			f.service.db.prepare('UPDATE browser_pairing SET expires=0 WHERE code=?').run(expired.code);
+			expect(() => f.service.approvePairing(owner, expired.code, true)).toThrow();
+			await expect(f.service.redeemPairing(expired.token)).rejects.toThrow();
+			const recovered = f.service.startPairing('Recovered');
+			f.service.approvePairing(owner, recovered.code, true);
+			f.service.db
+				.prepare('UPDATE user SET authVersion=authVersion+1 WHERE id=?')
+				.run(owner.user.id);
+			await expect(f.service.redeemPairing(recovered.token)).rejects.toThrow();
+			await expect(f.service.redeemPairing(recovered.token)).rejects.toThrow();
+		} finally {
+			f.close();
+		}
+	});
+});
+
+it('cancels an approved grant while session creation is in flight and revokes a redeemed grant', async () => {
+	const f = fixture();
+	try {
+		f.setup();
+		await f.service.enroll({
+			token: 'setup-fixture',
+			name: 'Owner',
+			email: 'cancel@example.test',
+			password
+		});
+		const owner = await login(f.service, 'cancel@example.test');
+		const grant = f.service.startPairing('Cancelled');
+		f.service.approvePairing(owner, grant.code, true);
+		const redemption = f.service.redeemPairing(grant.token);
+		f.service.cancelPairing(grant.token);
+		await expect(redemption).rejects.toThrow('cancelled');
+		expect(f.service.browsers(owner.user.id)).toHaveLength(0);
+		const second = f.service.startPairing('Redeemed');
+		f.service.approvePairing(owner, second.code, true);
+		await f.service.redeemPairing(second.token);
+		f.service.cancelPairing(second.token);
+		expect(f.service.browsers(owner.user.id)).toHaveLength(0);
+	} finally {
+		f.close();
+	}
 });

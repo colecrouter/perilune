@@ -25,6 +25,7 @@ export interface KeySummary {
 	suffix: string;
 	created: number;
 	expires: number;
+	lastUsed: number | null;
 	canPrint: boolean;
 }
 export class JobsConfig extends Context.Service<
@@ -64,7 +65,8 @@ export class JobService extends Context.Service<
 			owner: string,
 			epoch: number,
 			name: string,
-			canPrint?: boolean
+			canPrint?: boolean,
+			expiresDays?: number
 		) => Effect.Effect<{ token: string; key: KeySummary }, JobError>;
 		revokeKey: (owner: string, id: string) => Effect.Effect<void, JobError>;
 		printKey: (
@@ -715,20 +717,25 @@ export const JobServiceLive = Layer.effect(
 				),
 			keys: (owner) =>
 				mapErrors(
-					sql<KeySummary>`SELECT id,name,suffix,created,expires,can_print AS canPrint FROM slicer_keys WHERE owner=${owner} AND expires>${Date.now()} ORDER BY created DESC`.pipe(
+					sql<KeySummary>`SELECT id,name,suffix,created,expires,last_used AS lastUsed,can_print AS canPrint FROM slicer_keys WHERE owner=${owner} AND (expires=0 OR expires>${Date.now()}) ORDER BY created DESC`.pipe(
 						Effect.map((rows) => rows.map((row) => ({ ...row, canPrint: Boolean(row.canPrint) })))
 					)
 				),
-			issueKey: (owner, epoch, name, canPrint = false) =>
+			issueKey: (owner, epoch, name, canPrint = false, expiresDays) =>
 				mapErrors(
 					lock.withPermits(1)(
 						Effect.gen(function* () {
 							if (!config.checkUser(owner, epoch))
 								return yield* Effect.fail(failure('An active operator account is required.'));
 							const keys =
-								yield* sql`SELECT id FROM slicer_keys WHERE owner=${owner} AND expires>${Date.now()}`;
+								yield* sql`SELECT id FROM slicer_keys WHERE owner=${owner} AND (expires=0 OR expires>${Date.now()})`;
 							if (keys.length >= 10)
 								return yield* Effect.fail(failure('Revoke an unused key first (10-key limit).'));
+							if (
+								expiresDays !== undefined &&
+								(!Number.isInteger(expiresDays) || expiresDays < 1 || expiresDays > 3650)
+							)
+								return yield* Effect.fail(failure('Choose an expiry between 1 and 3650 days.'));
 							const token = randomBytes(32).toString('base64url');
 							const key = {
 								id: randomUUID(),
@@ -736,7 +743,8 @@ export const JobServiceLive = Layer.effect(
 								canPrint,
 								suffix: token.slice(-4),
 								created: Date.now(),
-								expires: Date.now() + 90 * 86400_000
+								expires: expiresDays === undefined ? 0 : Date.now() + expiresDays * 86400_000,
+								lastUsed: null
 							};
 							yield* sql`INSERT INTO slicer_keys (id,owner,epoch,hash,name,suffix,created,expires,can_print) VALUES (${key.id},${owner},${epoch},${digest(token)},${key.name},${key.suffix},${key.created},${key.expires},${canPrint ? 1 : 0})`;
 							return { token, key };
@@ -756,9 +764,10 @@ export const JobServiceLive = Layer.effect(
 							owner: string;
 							epoch: number;
 							can_print: number;
-						}>`SELECT id,owner,epoch,can_print FROM slicer_keys WHERE hash=${digest(token)} AND expires>${Date.now()}`;
+						}>`SELECT id,owner,epoch,can_print FROM slicer_keys WHERE hash=${digest(token)} AND (expires=0 OR expires>${Date.now()})`;
 						const key = rows[0];
 						if (!key || !config.checkUser(key.owner, key.epoch)) return null;
+						yield* sql`UPDATE slicer_keys SET last_used=${Date.now()} WHERE id=${key.id}`;
 						return {
 							id: key.id,
 							owner: key.owner,
@@ -774,8 +783,11 @@ export const JobServiceLive = Layer.effect(
 						const rows = yield* sql<{
 							owner: string;
 							epoch: number;
-						}>`SELECT owner,epoch FROM slicer_keys WHERE hash=${digest(token)} AND expires>${Date.now()}`;
-						return Boolean(rows[0] && config.checkUser(rows[0].owner, rows[0].epoch));
+						}>`SELECT owner,epoch FROM slicer_keys WHERE hash=${digest(token)} AND (expires=0 OR expires>${Date.now()})`;
+						const valid = Boolean(rows[0] && config.checkUser(rows[0].owner, rows[0].epoch));
+						if (valid)
+							yield* sql`UPDATE slicer_keys SET last_used=${Date.now()} WHERE hash=${digest(token)}`;
+						return valid;
 					})
 				)
 		};

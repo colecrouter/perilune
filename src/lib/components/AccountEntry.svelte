@@ -10,8 +10,10 @@
 	let pending = $state(false);
 	let message = $state('');
 	let reset = $state(false);
+	let destination = $state('/');
 	onMount(() => {
 		const hash = location.hash.slice(1);
+		if (new URLSearchParams(location.search).get('next') === 'pair') destination = '/pair';
 		if (mode === 'register') token = hash;
 		if (mode === 'login' && hash.startsWith('reset=')) {
 			token = hash.slice(6);
@@ -38,7 +40,7 @@
 							? 'Too many sign-in attempts. Wait a moment and try again.'
 							: 'Could not sign in. Check your email and password.'
 					);
-				location.assign('/');
+				location.assign(destination);
 			} else {
 				const response = await fetch('/api/account/enroll', {
 					method: 'POST',
@@ -63,7 +65,7 @@
 		try {
 			const result = await authClient.signIn.passkey();
 			if (result.error) throw new Error(result.error.message);
-			location.assign('/');
+			location.assign(destination);
 		} catch (cause) {
 			message = cause instanceof Error ? cause.message : 'Could not use this passkey.';
 		} finally {
@@ -108,6 +110,7 @@
 						spellcheck="false"
 					/></label
 				>
+				<p><a href="/pair/start">Sign in with another browser</a></p>
 				<p class="entry-help">
 					On the server, run <code>node scripts/auth.mjs setup</code> to generate a token. It expires
 					in 30 minutes.
@@ -128,9 +131,8 @@
 					autocomplete={mode === 'login' && !reset ? 'current-password' : 'new-password'}
 				/></label
 			>
-			{#if mode !== 'login' || reset}<p class="entry-help">
-					Use at least 12 characters. A passphrase works well.
-				</p>{/if}
+			{#if mode !== 'login' || reset}<p><a href="/pair/start">Sign in with another browser</a></p>
+				<p class="entry-help">Use at least 12 characters. A passphrase works well.</p>{/if}
 			{#if message}<p role="alert" class="entry-message">{message}</p>{/if}
 			<button class="button primary" type="submit" disabled={pending}
 				>{pending
@@ -147,6 +149,7 @@
 				onclick={signInPasskey}
 				disabled={pending}>Sign in with a passkey</button
 			>
+			<p><a href="/pair/start">Sign in with another browser</a></p>
 			<p class="entry-help">
 				Locked out? Stop Perilune, then recover an owner account on the server using <code
 					>node scripts/auth.mjs recover email --server-stopped</code

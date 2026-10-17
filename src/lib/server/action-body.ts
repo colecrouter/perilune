@@ -1,14 +1,12 @@
 import { error } from '@sveltejs/kit';
 /** Tiny finite form reads must never wait for upload/camera transfer permits. */
-export async function readActionBody(request: Request): Promise<FormData> {
-	if (!request.headers.get('content-type')?.startsWith('application/x-www-form-urlencoded'))
-		error(415, 'Use an encoded action form.');
-	if (!request.body) error(400, 'Missing action form.');
+export async function readBoundedBody(request: Request, limit = 8192): Promise<Uint8Array> {
+	if (!request.body) error(400, 'Missing request body.');
 	const reader = request.body.getReader();
 	let timedOut = false;
 	const timer = setTimeout(() => {
 		timedOut = true;
-		void reader.cancel('Action form timed out.').catch(() => {});
+		void reader.cancel('Request body timed out.').catch(() => {});
 	}, 5000);
 	const aborted = () => {
 		void reader.cancel('Request aborted.').catch(() => {});
@@ -26,10 +24,10 @@ export async function readActionBody(request: Request): Promise<FormData> {
 				break;
 			}
 			size += value.length;
-			if (size > 8192) error(413, 'Action form is too large.');
+			if (size > limit) error(413, 'Request body is too large.');
 			chunks.push(value);
 		}
-		if (timedOut) error(408, 'Action form timed out.');
+		if (timedOut) error(408, 'Request body timed out.');
 		if (request.signal.aborted) error(400, 'Request aborted.');
 		const bytes = new Uint8Array(size);
 		let offset = 0;
@@ -37,14 +35,21 @@ export async function readActionBody(request: Request): Promise<FormData> {
 			bytes.set(chunk, offset);
 			offset += chunk.length;
 		}
-		const form = new FormData();
-		for (const [key, value] of new URLSearchParams(new TextDecoder().decode(bytes)))
-			form.append(key, value);
-		return form;
+		return bytes;
 	} finally {
 		clearTimeout(timer);
 		request.signal.removeEventListener('abort', aborted);
 		if (!finished) await reader.cancel().catch(() => {});
 		reader.releaseLock();
 	}
+}
+
+export async function readActionBody(request: Request): Promise<FormData> {
+	if (!request.headers.get('content-type')?.startsWith('application/x-www-form-urlencoded'))
+		error(415, 'Use an encoded action form.');
+	const bytes = await readBoundedBody(request);
+	const form = new FormData();
+	for (const [key, value] of new URLSearchParams(new TextDecoder().decode(bytes)))
+		form.append(key, value);
+	return form;
 }

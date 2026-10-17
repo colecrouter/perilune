@@ -4,6 +4,8 @@ import { authService, requireIdentity } from '#lib/server/auth/index.js';
 import { roles, type Role } from '#lib/server/auth/service.js';
 export async function GET(event: RequestEvent) {
 	if (event.params.operation === 'status') return json({ setup: authService!.needsSetup() });
+	if (event.params.operation === 'browsers')
+		return json({ browsers: authService!.browsers(requireIdentity(event).user.id) });
 	requireIdentity(event, 'owner');
 	if (event.params.operation !== 'manage') error(404, 'Unknown account action.');
 	return json({ accounts: authService!.accounts(), invitations: authService!.invitations() });
@@ -22,6 +24,14 @@ export async function POST(event: RequestEvent) {
 			await authService!.enroll(
 				body as { token: string; name: string; email: string; password: string }
 			);
+			return json({ ok: true });
+		}
+		if (event.params.operation === 'disconnect-integration' && typeof body.id === 'string') {
+			authService!.disconnectIntegration(requireIdentity(event, 'operator').user.id, body.id);
+			return json({ ok: true });
+		}
+		if (event.params.operation === 'revoke-browser' && typeof body.id === 'string') {
+			authService!.revokeBrowser(requireIdentity(event).user.id, body.id);
 			return json({ ok: true });
 		}
 		const identity = requireIdentity(event, 'owner');

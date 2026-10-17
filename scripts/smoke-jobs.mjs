@@ -146,12 +146,16 @@ try {
 	await page.setViewportSize({ width: 320, height: 844 });
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 	await page.screenshot({ path: 'test-results/jobs-mobile.png', fullPage: true });
-	await page.getByText('Send files from your slicer', { exact: true }).click();
-	await page.getByRole('button', { name: 'Create upload-only key', exact: true }).click();
-	await page.getByRole('textbox', { name: 'New upload key', exact: true }).waitFor();
-	const token = await page
-		.getByRole('textbox', { name: 'New upload key', exact: true })
-		.inputValue();
+	const slicerReturnHref = page.url();
+	await page.getByRole('link', { name: 'Connect your slicer in Account → Integrations' }).click();
+	await page.getByRole('button', { name: 'Create key', exact: true }).click();
+	await page.getByLabel('New slicer key', { exact: true }).waitFor();
+	assert.equal(await page.getByLabel('New slicer key').getAttribute('type'), 'password');
+	await page.getByRole('button', { name: 'Reveal key', exact: true }).click();
+	assert.equal(await page.getByLabel('New slicer key').getAttribute('type'), 'text');
+	await page.getByRole('button', { name: 'Hide key', exact: true }).click();
+	assert.equal(await page.getByLabel('New slicer key').getAttribute('type'), 'password');
+	const token = await page.getByLabel('New slicer key', { exact: true }).inputValue();
 	const headers = { 'X-Api-Key': token };
 	const info = await fetch(base + '/server/info', { headers });
 	assert.equal(info.status, 200);
@@ -233,10 +237,8 @@ try {
 		401
 	);
 
-	await page.getByRole('button', { name: 'Revoke', exact: true }).click();
-	await page
-		.getByRole('textbox', { name: 'New upload key', exact: true })
-		.waitFor({ state: 'hidden' });
+	await page.getByRole('button', { name: 'Revoke key', exact: true }).click();
+	await page.getByLabel('New slicer key', { exact: true }).waitFor({ state: 'hidden' });
 	assert.equal((await fetch(base + '/server/info', { headers })).status, 401);
 	assert.equal(
 		(
@@ -247,6 +249,7 @@ try {
 		).status,
 		401
 	);
+	await page.goto(slicerReturnHref);
 	await second.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
@@ -371,16 +374,16 @@ try {
 	await page.getByRole('link', { name: 'Back to library' }).click();
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 	await page.screenshot({ path: 'test-results/jobs-table-mobile.png', fullPage: true });
-	await page.getByText('Send files from your slicer', { exact: true }).click();
-	await page.getByRole('checkbox', { name: 'Allow starting prints', exact: true }).check();
+	const printReturnHref = page.url();
+	await page.getByRole('link', { name: 'Connect your slicer in Account → Integrations' }).click();
+	await page.getByLabel('Access', { exact: true }).selectOption('print');
 	await page
-		.locator('.slicer')
+		.locator('#integrations')
 		.screenshot({ path: 'test-results/jobs-slicer-permissions-mobile.png' });
-	await page.getByRole('button', { name: 'Create upload-and-print key', exact: true }).click();
-	const printToken = await page
-		.getByRole('textbox', { name: 'New upload key', exact: true })
-		.inputValue();
+	await page.getByRole('button', { name: 'Create key', exact: true }).click();
+	const printToken = await page.getByLabel('New slicer key', { exact: true }).inputValue();
 	const printHeaders = { 'X-Api-Key': printToken };
+	await page.goto(printReturnHref);
 	const legacy = () =>
 		fetch(base + '/printer/print/start', {
 			method: 'POST',
@@ -422,7 +425,7 @@ try {
 	await page?.screenshot({
 		path: 'test-results/jobs-failure.png',
 		fullPage: true,
-		mask: [page.getByRole('textbox', { name: 'New upload key' })]
+		mask: [page.getByLabel('New slicer key')]
 	});
 	console.error(logs);
 	throw cause;
