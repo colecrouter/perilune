@@ -4,6 +4,12 @@ import * as Migrator from 'effect/sql/Migrator';
 
 export const migrate = Migrator.make({})({
 	loader: Migrator.fromRecord({
+		'017_emergency_recovery': Effect.gen(function* () {
+			const sql = yield* SqlClient;
+			yield* sql`ALTER TABLE printer_safety_state ADD COLUMN hazard_reviewed_at INTEGER`;
+			yield* sql`ALTER TABLE printer_safety_state ADD COLUMN hazard_reviewed_by TEXT`;
+			yield* sql`ALTER TABLE printer_safety_state ADD COLUMN restart_id TEXT`;
+		}),
 		'016_slicer_print': Effect.gen(function* () {
 			const sql = yield* SqlClient;
 			yield* sql`ALTER TABLE slicer_keys ADD COLUMN can_print INTEGER NOT NULL DEFAULT 0`;

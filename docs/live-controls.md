@@ -82,12 +82,18 @@ remain unknown, with acknowledgement distinguished from observed completion.
 Emergency stop is available to operators and owners independently of ordinary
 queues, workflow locks and WebSocket readiness. It shuts down Klipper through the
 dedicated HTTP endpoint and latches normal writes, including later stages of
-already admitted workflows. Resolve the hazard and restart Klipper externally
-before safety review. Review requires an owner, ready/idle telemetry and all heater
-targets off; the original recovery lock then needs its own explicit review.
+already admitted workflows. Owners confirm they inspected the printer and resolved
+the hazard in the restart form. Submission records that confirmation and requests
+one firmware restart; there is no separate save button. Controls unlock only after
+fresh ready/idle state with every heater target off. If firmware was restarted
+elsewhere, owners can confirm inspection and verify readiness without another restart. Lost restart acknowledgements are
+not replayed; explicit read-only verification can reconcile readiness. Unrelated
+uncertain outcomes and the original ordinary-action recovery lock retain their
+own reviews. A newer emergency invalidates the hazard review. Firmware restart
+resets printer state and does not resume a job.
 
 Recovery cooldown and stop passed owner-authorized physical acceptance with a
 bounded temporary job. The original recovery reservation remained, both heater
-targets ended at zero, and the temporary file was removed. Physical emergency
-shutdown remains tracked in [#44](https://github.com/colecrouter/perilune/issues/44)
-until gantry support is coordinated. Emergency shutdown can release motors.
+targets ended at zero, and the temporary file was removed. Emergency shutdown can release motors. Physical acceptance of the new in-app
+hazard-review/firmware-restart flow is tracked on
+[#52](https://github.com/colecrouter/perilune/issues/52).

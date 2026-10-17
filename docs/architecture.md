@@ -907,9 +907,10 @@ receipt are persisted before dispatch. Storage failure dispatches nothing and
 keeps the memory interlock; use the physical stop if the server cannot dispatch.
 This is a network control, not a substitute for a physical emergency switch.
 
-Safety review needs an authorized owner, fresh ready/idle telemetry and all known
-heater targets off. Resolve hazards and restart Klipper externally after emergency
-shutdown before reviewing. Epoch/token checks prevent a concurrent newer emergency
+Emergency recovery records the owner’s hazard confirmation atomically with an
+explicit firmware restart submission, followed by fresh ready/idle/all-heaters-off
+verification. There is no separate save-review step. If firmware was restarted
+elsewhere, the verification form records the confirmation without sending a restart. Ordinary controls remain locked until verification succeeds. Epoch/token checks prevent a concurrent newer emergency
 from being cleared by an older review. Reviewing safety leaves the original basic
 recovery lock intact for its own explicit review. Other Moonraker clients remain
 outside Perilune's admission/interlock and may change printer state.
@@ -1057,3 +1058,36 @@ state survives eviction from bounded recent-action lists. Repeated telemetry
 snapshots do not extend the success timer. Connection diagnostics are collapsed
 by default, without hiding the reconnect banners or changing initial SSR
 connection behavior. Simulator activity no longer invents unrecorded events.
+
+### Emergency recovery without an external Klipper client
+
+Migration 017 adds a durable hazard review and one-shot firmware-restart receipt
+reference to each printer's emergency latch. Owners confirm physical inspection
+in the restart form; the confirmation and restart reservation persist atomically.
+A new emergency immediately invalidates the previous review, even while its new
+latch is still being persisted.
+
+The explicitly submitted owner-only restart uses Moonraker's
+`POST /printer/firmware_restart` endpoint. The process-owned safety worker fences
+it against the current emergency token, authorization, transport generation and
+30-second dispatch expiry. It confirms shutdown/error immediately before
+sending, persists admission before dispatch, and sends once. Restart observation
+is bounded to 60 seconds plus individual transport request bounds. Navigation
+and request abort do not own this worker. Restarted workers turn pending
+receipts unknown, preserve review/restart state, and never replay them.
+
+Ordinary controls remain locked until a fresh query observes a ready, idle
+printer and zero targets for every reported heater. An acknowledged restart also
+requires a later transport generation before automatic verification. Owners can
+explicitly run read-only readiness verification after a lost acknowledgement or
+an external restart. Verification reviews only that cycle's uncertain restart;
+hazard review covers only its emergency receipt. Unrelated uncertain safety and
+ordinary-action reservations are preserved. Individual safety-outcome review
+also now targets one selected unknown receipt rather than clearing all unknown
+outcomes together.
+
+The recovery panel and restart confirmation support enhanced and native forms,
+retain progress across reconnect/navigation, and explain offline/pending states.
+Protocol/headless tests cover the complete flow; physical emergency/restart
+acceptance remains a coordinated owner check on the daily-use checklist (#52).
+Moonraker endpoint reference: https://moonraker.readthedocs.io/en/latest/external_api/printer/

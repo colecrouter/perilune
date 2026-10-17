@@ -8,7 +8,7 @@ import { MoonrakerConfig, MoonrakerService, type MoonrakerSnapshot } from './moo
 import { printerAdmission, printerInterlock } from './printer-admission.js';
 export class SafetySettings extends Context.Service<
 	SafetySettings,
-	{ enabled: boolean; observationMs?: number; pollMs?: number }
+	{ enabled: boolean; observationMs?: number; restartObservationMs?: number; pollMs?: number }
 >()('perilune/SafetySettings') {}
 export class SafetyService extends Context.Service<
 	SafetyService,
@@ -19,13 +19,17 @@ export class SafetyService extends Context.Service<
 		) => Effect.Effect<SafetyAction, ActionRejected>;
 		receipt: (id: string, actor: CalibrationActor) => Effect.Effect<SafetyAction, ActionRejected>;
 		review: (id: string, actor: CalibrationActor) => Effect.Effect<void, ActionRejected>;
+		acknowledge: (token: string, actor: CalibrationActor) => Effect.Effect<void, ActionRejected>;
+		verify: (token: string, actor: CalibrationActor) => Effect.Effect<void, ActionRejected>;
 	}
 >()('perilune/SafetyService') {}
 const rejected = (message: string) => new ActionRejected({ message });
 export const SafetyDisabled = Layer.succeed(SafetyService, {
 	receipt: () => Effect.fail(rejected('Safety receipt unavailable.')),
 	submit: () => Effect.fail(rejected('Live safety actions are disabled.')),
-	review: () => Effect.fail(rejected('No live safety outcome to review.'))
+	review: () => Effect.fail(rejected('No live safety outcome to review.')),
+	acknowledge: () => Effect.fail(rejected('Live safety recovery is disabled.')),
+	verify: () => Effect.fail(rejected('Live safety recovery is disabled.'))
 });
 const authorized = (actor: CalibrationActor, owner = false) =>
 	(owner ? actor.role === 'owner' : ['owner', 'operator'].includes(actor.role ?? '')) &&
@@ -40,13 +44,15 @@ interface Row {
 	record: string;
 }
 const label = (kind: SafetyAction['kind']) =>
-	kind === 'abortProbe'
-		? 'Abort current manual probe during recovery'
-		: kind === 'emergency'
-			? 'Emergency stop'
-			: kind === 'stop'
-				? 'Stop current job during recovery'
-				: 'Turn off heaters during recovery';
+	kind === 'restart'
+		? 'Restart firmware after safety review'
+		: kind === 'abortProbe'
+			? 'Abort current manual probe during recovery'
+			: kind === 'emergency'
+				? 'Emergency stop'
+				: kind === 'stop'
+					? 'Stop current job during recovery'
+					: 'Turn off heaters during recovery';
 export function observedHeatersOff(state: MoonrakerSnapshot): boolean {
 	const targets: Array<number | null> = state.additionalTemperatures
 		.filter((t) => t.heater)
@@ -79,10 +85,17 @@ export const SafetyServiceLive = Layer.effect(
 				Effect.asVoid
 			);
 		yield* sql`INSERT OR IGNORE INTO printer_safety_state(target,token,halted) VALUES(${target},${randomUUID()},0)`;
-		const stored = yield* sql<{
+		type Latch = {
 			token: string;
 			halted: number;
-		}>`SELECT token,halted FROM printer_safety_state WHERE target=${target}`;
+			hazard_reviewed_at: number | null;
+			restart_id: string | null;
+		};
+		const latchState = () =>
+			sql<Latch>`SELECT token,halted,hazard_reviewed_at,restart_id FROM printer_safety_state WHERE target=${target}`;
+		let latch = (yield* latchState())[0];
+		let activeToken = latch.token;
+		const stored = [latch];
 		if (stored[0].halted) interlock.interrupt();
 		const history: SafetyAction[] = [];
 		for (const row of yield* rows()) {
@@ -109,7 +122,16 @@ export const SafetyServiceLive = Layer.effect(
 				].sort((a, b) => b.createdAt - a.createdAt);
 				return {
 					...s,
-					safety: { enabled: settings.enabled, halted: interlock.halted, actions },
+					safety: {
+						enabled: settings.enabled,
+						halted: interlock.halted,
+						actions,
+						recovery: {
+							token: activeToken,
+							reviewedAt: latch.token === activeToken ? latch.hazard_reviewed_at : null,
+							restartId: latch.token === activeToken ? latch.restart_id : null
+						}
+					},
 					revision: s.revision + 1,
 					updatedAt: Date.now()
 				};
@@ -121,6 +143,7 @@ export const SafetyServiceLive = Layer.effect(
 			record: SafetyAction;
 			epoch: number;
 			generation: number;
+			attempted: boolean;
 		};
 		let ordinary: Work | undefined, emergency: Work | undefined;
 		const failedAdmissions = new Map<
@@ -132,7 +155,8 @@ export const SafetyServiceLive = Layer.effect(
 				| '/printer/print/cancel'
 				| '/printer/gcode/script'
 				| '/printer/emergency_stop'
-				| '/printer/info',
+				| '/printer/info'
+				| '/printer/firmware_restart',
 			method: 'POST' | 'GET',
 			job: Work,
 			body?: unknown
@@ -140,7 +164,10 @@ export const SafetyServiceLive = Layer.effect(
 			Effect.tryPromise({
 				try: async (signal) => {
 					if (method === 'POST') {
-						if (job.request.operation.type !== 'emergency') {
+						if (
+							job.request.operation.type !== 'emergency' &&
+							job.request.operation.type !== 'restart'
+						) {
 							const latest = await Effect.runPromise(SubscriptionRef.get(transport.state));
 							if (
 								latest.generation !== job.generation ||
@@ -156,16 +183,22 @@ export const SafetyServiceLive = Layer.effect(
 							)
 								throw rejected('The current job changed before stopping.');
 						}
+						if (job.request.operation.type === 'restart') {
+							const latest = await Effect.runPromise(SubscriptionRef.get(transport.state));
+							if (latest.connection !== 'connected' || latest.generation !== job.generation)
+								throw rejected('Connection changed before firmware restart.');
+						}
 						if (!authorized(job.actor, job.request.operation.type !== 'emergency'))
 							throw rejected('Safety action authorization expired.');
 						if (Date.now() - job.record.createdAt >= 30000)
 							throw rejected('Safety action expired before dispatch.');
 						if (
 							interlock.epoch !== job.epoch ||
-							(job.request.operation.type !== 'emergency' && interlock.halted)
+							(!['emergency', 'restart'].includes(job.request.operation.type) && interlock.halted)
 						)
 							throw rejected('A newer emergency stop interrupted this safety action.');
 					}
+					if (method === 'POST') job.attempted = true;
 					const headers = new Headers();
 					if (config.apiKey) headers.set('X-Api-Key', config.apiKey);
 					if (body) headers.set('Content-Type', 'application/json');
@@ -204,6 +237,104 @@ export const SafetyServiceLive = Layer.effect(
 					cause instanceof ActionRejected
 						? cause
 						: rejected('The safety request or its acknowledgement was lost.')
+			});
+		const restartPermit = (job: Work) =>
+			Effect.gen(function* () {
+				const operation = job.request.operation;
+				const current = (yield* latchState())[0];
+				if (
+					operation.type !== 'restart' ||
+					!settings.enabled ||
+					!authorized(job.actor, true) ||
+					!interlock.halted ||
+					interlock.epoch !== job.epoch ||
+					!current.halted ||
+					activeToken !== operation.recoveryOf ||
+					current.token !== operation.recoveryOf ||
+					!current.hazard_reviewed_at ||
+					current.restart_id !== job.record.id
+				)
+					return yield* Effect.fail(
+						rejected('Safety review or emergency state changed before firmware restart.')
+					);
+				const printerState = yield* SubscriptionRef.get(printer.state);
+				if (printerState.actions.some((a) => ['queued', 'sending'].includes(a.status)))
+					return yield* Effect.fail(
+						rejected(
+							'Wait for the interrupted ordinary command to settle before restarting firmware.'
+						)
+					);
+				const telemetry = yield* SubscriptionRef.get(transport.state);
+				if (telemetry.connection !== 'connected' || telemetry.generation !== job.generation)
+					return yield* Effect.fail(rejected('Reconnect to Moonraker before restarting firmware.'));
+				const info = yield* request('/printer/info', 'GET', job);
+				if (!['shutdown', 'error'].includes(info?.state))
+					return yield* Effect.fail(
+						rejected(
+							'Firmware is not in shutdown/error. Verify readiness instead of restarting again.'
+						)
+					);
+			});
+		const readyIdle = (state: MoonrakerSnapshot) =>
+			state.connection === 'connected' &&
+			state.klippy === 'ready' &&
+			state.telemetryReady &&
+			state.motion.busy === false &&
+			!state.motion.calibration &&
+			['standby', 'complete', 'cancelled', 'error'].includes(state.job.state) &&
+			observedHeatersOff(state);
+		const finishRecovery = (token: string, actor: CalibrationActor, expectedEpoch: number) =>
+			Effect.gen(function* () {
+				if (
+					!settings.enabled ||
+					!authorized(actor, true) ||
+					!interlock.halted ||
+					interlock.epoch !== expectedEpoch
+				)
+					return yield* Effect.fail(rejected('Safety state or owner authorization changed.'));
+				const current = (yield* latchState())[0];
+				if (
+					activeToken !== token ||
+					current.token !== token ||
+					!current.halted ||
+					!current.hazard_reviewed_at
+				)
+					return yield* Effect.fail(rejected('Complete the current hazard review first.'));
+				const initial = yield* SubscriptionRef.get(transport.state);
+				const fresh = yield* transport.refresh(initial.generation);
+				if (!readyIdle(fresh))
+					return yield* Effect.fail(
+						rejected(
+							'Verification needs fresh ready, idle printer state with every heater target off. Controls remain locked.'
+						)
+					);
+				if (!authorized(actor, true) || activeToken !== token || interlock.epoch !== expectedEpoch)
+					return yield* Effect.fail(
+						rejected('A new emergency or authorization change interrupted verification.')
+					);
+				yield* sql.withTransaction(
+					Effect.gen(function* () {
+						if (current.restart_id) {
+							const existing =
+								yield* sql<Row>`SELECT * FROM safety_actions WHERE id=${current.restart_id} AND target=${target}`;
+							if (existing[0]) {
+								const record = JSON.parse(existing[0].record) as SafetyAction;
+								if (record.kind === 'restart' && record.status === 'unknown')
+									yield* save({ ...record, reviewedAt: Date.now() });
+							}
+						}
+						yield* sql`UPDATE printer_safety_state SET halted=0 WHERE target=${target} AND token=${token} AND hazard_reviewed_at IS NOT NULL`;
+					})
+				);
+				if (!interlock.clear(expectedEpoch))
+					return yield* Effect.fail(rejected('A newer emergency interrupted verification.'));
+				latch = (yield* latchState())[0];
+				if (current.restart_id) {
+					const records =
+						yield* sql<Row>`SELECT * FROM safety_actions WHERE id=${current.restart_id} AND target=${target}`;
+					if (records[0]) yield* publish(JSON.parse(records[0].record) as SafetyAction);
+				}
+				yield* publish();
 			});
 		const freshFor = (job: Work) =>
 			Effect.gen(function* () {
@@ -244,7 +375,6 @@ export const SafetyServiceLive = Layer.effect(
 			});
 		const run = (job: Work) =>
 			Effect.gen(function* () {
-				let attempted = false;
 				const result = yield* Effect.gen(function* () {
 					if (
 						!settings.enabled ||
@@ -253,7 +383,8 @@ export const SafetyServiceLive = Layer.effect(
 						return yield* Effect.fail(rejected('Safety action authorization expired.'));
 					if (Date.now() - job.record.createdAt >= 30000)
 						return yield* Effect.fail(rejected('Safety action expired before dispatch.'));
-					if (job.request.operation.type !== 'emergency') yield* freshFor(job);
+					if (job.request.operation.type === 'restart') yield* restartPermit(job);
+					else if (job.request.operation.type !== 'emergency') yield* freshFor(job);
 					job.record = {
 						...job.record,
 						status: 'sending',
@@ -262,7 +393,8 @@ export const SafetyServiceLive = Layer.effect(
 					yield* save(job.record);
 					yield* publish(job.record);
 					// Recheck current transport identity after persistence, immediately before HTTP dispatch.
-					if (job.request.operation.type !== 'emergency') yield* freshFor(job);
+					if (job.request.operation.type === 'restart') yield* restartPermit(job);
+					else if (job.request.operation.type !== 'emergency') yield* freshFor(job);
 					if (
 						!authorized(job.actor, job.request.operation.type !== 'emergency') ||
 						interlock.epoch !== job.epoch ||
@@ -271,9 +403,11 @@ export const SafetyServiceLive = Layer.effect(
 						return yield* Effect.fail(
 							rejected('Safety action expired or was interrupted before dispatch.')
 						);
-					attempted = true;
+
 					if (job.request.operation.type === 'emergency')
 						yield* request('/printer/emergency_stop', 'POST', job);
+					else if (job.request.operation.type === 'restart')
+						yield* request('/printer/firmware_restart', 'POST', job);
 					else if (job.request.operation.type === 'stop')
 						yield* request('/printer/print/cancel', 'POST', job);
 					else
@@ -287,7 +421,11 @@ export const SafetyServiceLive = Layer.effect(
 					};
 					yield* save(job.record);
 					yield* publish(job.record);
-					const deadline = Date.now() + (settings.observationMs ?? 10000);
+					const deadline =
+						Date.now() +
+						(job.request.operation.type === 'restart'
+							? (settings.restartObservationMs ?? 60000)
+							: (settings.observationMs ?? 10000));
 					while (true) {
 						if (interlock.epoch !== job.epoch)
 							return yield* Effect.fail(
@@ -296,7 +434,14 @@ export const SafetyServiceLive = Layer.effect(
 						let matched = false;
 						if (job.request.operation.type === 'emergency')
 							matched = (yield* request('/printer/info', 'GET', job)).state === 'shutdown';
-						else {
+						else if (job.request.operation.type === 'restart') {
+							const current = yield* SubscriptionRef.get(transport.state);
+							const observed = yield* transport.refresh(current.generation).pipe(Effect.result);
+							matched =
+								observed._tag === 'Success' &&
+								observed.success.generation > job.generation &&
+								readyIdle(observed.success);
+						} else {
 							const observed = yield* transport.refresh(job.generation);
 							matched =
 								job.request.operation.type === 'abortProbe'
@@ -320,13 +465,15 @@ export const SafetyServiceLive = Layer.effect(
 				}).pipe(Effect.result);
 				job.record = {
 					...job.record,
-					status: result._tag === 'Success' ? 'completed' : attempted ? 'unknown' : 'failed',
+					status: result._tag === 'Success' ? 'completed' : job.attempted ? 'unknown' : 'failed',
 					message:
 						result._tag === 'Success'
 							? job.request.operation.type === 'emergency'
-								? 'Klipper shutdown observed. Resolve the hazard, restart Klipper, then review safety.'
-								: 'Result observed. The original unknown action remains locked until explicitly reviewed.'
-							: attempted
+								? 'Klipper shutdown observed. Complete the hazard review, then explicitly restart firmware.'
+								: job.request.operation.type === 'restart'
+									? 'Firmware restart acknowledged and fresh ready, idle state with heater targets off observed.'
+									: 'Result observed. The original unknown action remains locked until explicitly reviewed.'
+							: job.attempted
 								? uncertain
 								: result.failure instanceof ActionRejected
 									? result.failure.message
@@ -340,6 +487,10 @@ export const SafetyServiceLive = Layer.effect(
 						message: 'Safety outcome storage failed. ' + uncertain
 					};
 				yield* publish(job.record);
+				if (job.request.operation.type === 'restart' && job.record.status === 'completed')
+					yield* admission
+						.withPermits(1)(finishRecovery(job.request.operation.recoveryOf, job.actor, job.epoch))
+						.pipe(Effect.ignore);
 			});
 		const worker = (lane: 'ordinary' | 'emergency') =>
 			Effect.gen(function* () {
@@ -405,7 +556,33 @@ export const SafetyServiceLive = Layer.effect(
 						)
 					);
 				const snapshot = yield* SubscriptionRef.get(printer.state);
-				if (!isEmergency) {
+				if (request.operation.type === 'restart') {
+					const current = (yield* latchState())[0];
+					if (
+						!interlock.halted ||
+						!current.halted ||
+						activeToken !== request.operation.recoveryOf ||
+						current.token !== request.operation.recoveryOf
+					)
+						return yield* Effect.fail(
+							rejected(
+								'Emergency state changed. Review the current hazard before restarting firmware.'
+							)
+						);
+					if (current.restart_id) {
+						const previous =
+							yield* sql<Row>`SELECT * FROM safety_actions WHERE id=${current.restart_id}`;
+						if (
+							!previous[0] ||
+							(JSON.parse(previous[0].record) as SafetyAction).status !== 'failed'
+						)
+							return yield* Effect.fail(
+								rejected(
+									'A firmware restart was already submitted. Check its receipt and verify readiness; it will not be replayed.'
+								)
+							);
+					}
+				} else if (!isEmergency) {
 					if (
 						interlock.halted ||
 						snapshot.liveRecovery?.id !==
@@ -433,13 +610,26 @@ export const SafetyServiceLive = Layer.effect(
 					reviewedAt: null
 				};
 				const epoch = isEmergency ? interlock.interrupt() : interlock.epoch;
-				if (isEmergency) yield* publish();
+				if (isEmergency) {
+					activeToken = request.id;
+					yield* publish();
+				}
 				const persisted = yield* sql
 					.withTransaction(
 						Effect.gen(function* () {
 							yield* sql`INSERT INTO safety_actions(id,target,actor,payload,record) VALUES(${request.id},${target},${actor.id},${payload},${JSON.stringify(record)})`;
 							if (isEmergency)
-								yield* sql`UPDATE printer_safety_state SET token=${request.id},halted=1 WHERE target=${target}`;
+								yield* sql`UPDATE printer_safety_state SET token=${request.id},halted=1,hazard_reviewed_at=NULL,hazard_reviewed_by=NULL,restart_id=NULL WHERE target=${target}`;
+							if (request.operation.type === 'restart') {
+								yield* sql`UPDATE printer_safety_state SET restart_id=${request.id},hazard_reviewed_at=COALESCE(hazard_reviewed_at,${Date.now()}),hazard_reviewed_by=COALESCE(hazard_reviewed_by,${actor.id}) WHERE target=${target} AND token=${request.operation.recoveryOf}`;
+								const existing =
+									yield* sql<Row>`SELECT * FROM safety_actions WHERE id=${request.operation.recoveryOf} AND target=${target}`;
+								if (existing[0]) {
+									const previous = JSON.parse(existing[0].record) as SafetyAction;
+									if (previous.kind === 'emergency' && previous.status === 'unknown')
+										yield* save({ ...previous, reviewedAt: Date.now() });
+								}
+							}
 						})
 					)
 					.pipe(Effect.result);
@@ -455,8 +645,21 @@ export const SafetyServiceLive = Layer.effect(
 					yield* publish(failure);
 					return failure;
 				}
+				latch = (yield* latchState())[0];
+				if (request.operation.type === 'restart') {
+					const reviewed =
+						yield* sql<Row>`SELECT * FROM safety_actions WHERE id=${request.operation.recoveryOf} AND target=${target}`;
+					if (reviewed[0]) yield* publish(JSON.parse(reviewed[0].record) as SafetyAction);
+				}
 				yield* publish(record);
-				const job = { request, actor, record, epoch, generation: telemetry.generation };
+				const job = {
+					request,
+					actor,
+					record,
+					epoch,
+					generation: telemetry.generation,
+					attempted: false
+				};
 				if (isEmergency) emergency = job;
 				else ordinary = job;
 				return record;
@@ -488,6 +691,67 @@ export const SafetyServiceLive = Layer.effect(
 					)
 				),
 
+			acknowledge: (token, actor) =>
+				admission.withPermits(1)(
+					Effect.gen(function* () {
+						if (!settings.enabled || !authorized(actor, true))
+							return yield* Effect.fail(rejected('An authorized owner must review the hazard.'));
+						if (ordinary || emergency)
+							return yield* Effect.fail(rejected('Wait for the safety action to settle.'));
+						const current = (yield* latchState())[0];
+						if (
+							!interlock.halted ||
+							!current.halted ||
+							activeToken !== token ||
+							current.token !== token
+						)
+							return yield* Effect.fail(
+								rejected('Emergency state changed. Review the current hazard.')
+							);
+						yield* sql.withTransaction(
+							Effect.gen(function* () {
+								yield* sql`UPDATE printer_safety_state SET hazard_reviewed_at=COALESCE(hazard_reviewed_at,${Date.now()}),hazard_reviewed_by=COALESCE(hazard_reviewed_by,${actor.id}) WHERE target=${target} AND token=${token}`;
+								const existing =
+									yield* sql<Row>`SELECT * FROM safety_actions WHERE id=${token} AND target=${target}`;
+								if (existing[0]) {
+									const record = JSON.parse(existing[0].record) as SafetyAction;
+									if (record.kind === 'emergency' && record.status === 'unknown')
+										yield* save({ ...record, reviewedAt: Date.now() });
+								}
+							})
+						);
+						const reviewed =
+							yield* sql<Row>`SELECT * FROM safety_actions WHERE id=${token} AND target=${target}`;
+						if (reviewed[0]) yield* publish(JSON.parse(reviewed[0].record) as SafetyAction);
+						latch = (yield* latchState())[0];
+						yield* publish();
+					}).pipe(
+						Effect.uninterruptible,
+						Effect.mapError((cause) =>
+							cause instanceof ActionRejected
+								? cause
+								: rejected('Hazard review could not be saved. Controls remain locked.')
+						)
+					)
+				),
+			verify: (token, actor) =>
+				admission.withPermits(1)(
+					Effect.gen(function* () {
+						if (ordinary || emergency)
+							return yield* Effect.fail(rejected('Wait for the safety action to settle.'));
+						yield* finishRecovery(token, actor, interlock.epoch);
+					}).pipe(
+						Effect.uninterruptible,
+						Effect.mapError((cause) =>
+							cause instanceof ActionRejected
+								? cause
+								: rejected(
+										'Fresh readiness verification is unavailable. Reconnect the printer and try verification again; no command was sent.'
+									)
+						)
+					)
+				),
+
 			review: (id, actor) =>
 				admission.withPermits(1)(
 					Effect.gen(function* () {
@@ -495,12 +759,22 @@ export const SafetyServiceLive = Layer.effect(
 							return yield* Effect.fail(rejected('An authorized owner must review safety.'));
 						if (ordinary || emergency)
 							return yield* Effect.fail(rejected('Wait for the safety action to settle.'));
+						if (interlock.halted)
+							return yield* Effect.fail(
+								rejected(
+									'Complete emergency recovery before reviewing individual uncertain actions.'
+								)
+							);
 						const epoch = interlock.epoch;
 						const latch = (yield* sql<{
 							token: string;
 						}>`SELECT token FROM printer_safety_state WHERE target=${target}`)[0];
 						const snapshot = yield* SubscriptionRef.get(printer.state);
-						if (snapshot.safety?.actions[0]?.id !== id)
+						if (
+							!snapshot.safety?.actions.some(
+								(a) => a.id === id && a.status === 'unknown' && !a.reviewedAt
+							)
+						)
 							return yield* Effect.fail(
 								rejected('Safety state changed. Review the latest outcome.')
 							);
@@ -528,7 +802,7 @@ export const SafetyServiceLive = Layer.effect(
 						yield* sql.withTransaction(
 							Effect.gen(function* () {
 								for (const action of snapshot.safety?.actions ?? [])
-									if (action.status === 'unknown' && action.reviewedAt === null)
+									if (action.id === id && action.status === 'unknown' && action.reviewedAt === null)
 										yield* save({ ...action, reviewedAt });
 								yield* sql`UPDATE printer_safety_state SET halted=0 WHERE target=${target} AND token=${latch.token}`;
 							})
@@ -541,10 +815,7 @@ export const SafetyServiceLive = Layer.effect(
 										...s.safety,
 										halted: interlock.halted,
 										actions: s.safety.actions.map((a) =>
-											snapshot.safety?.actions.some((old) => old.id === a.id) &&
-											a.status === 'unknown'
-												? { ...a, reviewedAt }
-												: a
+											a.id === id && a.status === 'unknown' ? { ...a, reviewedAt } : a
 										)
 									}
 								: undefined,

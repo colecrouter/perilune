@@ -261,6 +261,11 @@ try {
 	// ResizeObserver-driven charts settle after the viewport resize event.
 	await app.screenshot({ path: 'test-results/progressive-mobile.png', fullPage: true });
 	await app.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
+	// Long reconnect labels must fit even when the status changes after resizing.
+	await app.locator('.connection-status').evaluate((node) => {
+		node.textContent = 'Live updates unavailable';
+	});
+	await app.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
 	assert.equal(await app.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 	assert.deepEqual(errors, []);
 
