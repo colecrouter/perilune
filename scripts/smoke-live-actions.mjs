@@ -41,10 +41,40 @@ const upstream = createServer((req, res) => {
 	res.setHeader('Content-Type', 'application/json');
 	if (
 		req.method === 'POST' &&
-		['/printer/emergency_stop', '/printer/print/cancel', '/printer/gcode/script'].includes(req.url)
+		[
+			'/printer/emergency_stop',
+			'/printer/print/cancel',
+			'/printer/gcode/script',
+			'/printer/firmware_restart'
+		].includes(req.url)
 	) {
 		safetyRequests.push(req.url);
-		if (req.url === '/printer/emergency_stop') safetyShutdown = true;
+		if (req.url === '/printer/emergency_stop') {
+			safetyShutdown = true;
+			for (const socket of protocol.clients)
+				if (socket.readyState === 1)
+					socket.send(
+						JSON.stringify({ jsonrpc: '2.0', method: 'notify_klippy_shutdown', params: [] })
+					);
+		}
+		if (req.url === '/printer/firmware_restart') {
+			status.extruder.target = 0;
+			status.heater_bed.target = 0;
+			status.print_stats.state = 'standby';
+			for (const socket of protocol.clients)
+				if (socket.readyState === 1)
+					socket.send(
+						JSON.stringify({ jsonrpc: '2.0', method: 'notify_klippy_disconnected', params: [] })
+					);
+			setTimeout(() => {
+				safetyShutdown = false;
+				for (const socket of protocol.clients)
+					if (socket.readyState === 1)
+						socket.send(
+							JSON.stringify({ jsonrpc: '2.0', method: 'notify_klippy_ready', params: [] })
+						);
+			}, 100);
+		}
 		if (req.url === '/printer/print/cancel') status.print_stats.state = 'cancelled';
 		if (req.url === '/printer/gcode/script') {
 			status.extruder.target = 0;
@@ -87,7 +117,7 @@ protocol.on('connection', (socket) => {
 		let result = {};
 		switch (req.method) {
 			case 'server.info':
-				result = { klippy_state: 'ready' };
+				result = { klippy_state: safetyShutdown ? 'shutdown' : 'ready' };
 				break;
 			case 'printer.objects.list':
 				result = { objects: Object.keys(status) };
@@ -481,14 +511,19 @@ try {
 		.waitFor();
 	await page.getByRole('link', { name: '← Return to overview', exact: true }).click();
 	assert.equal(safetyRequests.filter((p) => p === '/printer/emergency_stop').length, 1);
-	safetyShutdown = false; // Represents an explicit external restart after resolving the hazard.
-	await page.getByRole('link', { name: 'Review safety', exact: true }).click();
-	const reviewSafety = page.getByRole('dialog');
-	await reviewSafety
+	const recoveryPanel = page.getByRole('region', { name: 'Emergency recovery', exact: true });
+	await recoveryPanel
 		.getByRole('checkbox', { name: 'I have inspected the printer and resolved the hazard' })
 		.check();
-	await reviewSafety.getByRole('button', { name: 'Review safety', exact: true }).click();
-	await page.waitForURL(base + '/');
+	await recoveryPanel.getByRole('button', { name: 'Save hazard review', exact: true }).click();
+	await recoveryPanel.getByText('Hazard review saved.', { exact: false }).waitFor();
+	assert.equal(safetyShutdown, true, 'Review does not restart firmware');
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.screenshot({ path: 'test-results/emergency-recovery-mobile.png', fullPage: true });
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await recoveryPanel.getByRole('button', { name: 'Restart firmware', exact: true }).click();
+	await recoveryPanel.waitFor({ state: 'hidden' });
+	assert.equal(safetyRequests.filter((p) => p === '/printer/firmware_restart').length, 1);
 	await page
 		.getByText('Emergency interlock active.', { exact: false })
 		.waitFor({ state: 'hidden' });

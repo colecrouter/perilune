@@ -21,7 +21,11 @@ export const SafetyRequest = Schema.Struct({
 			type: Schema.Literal('abortProbe'),
 			recoveryOf: Schema.String.check(Schema.isUUID())
 		}),
-		Schema.Struct({ type: Schema.Literal('emergency') })
+		Schema.Struct({ type: Schema.Literal('emergency') }),
+		Schema.Struct({
+			type: Schema.Literal('restart'),
+			recoveryOf: Schema.String.check(Schema.isUUID())
+		})
 	])
 });
 export type SafetyRequest = typeof SafetyRequest.Type;
@@ -35,10 +39,11 @@ export interface SafetySnapshot {
 	enabled: boolean;
 	halted: boolean;
 	actions: SafetyAction[];
+	recovery?: { token: string; reviewedAt: number | null; restartId: string | null };
 }
 export function safetyReason(safety?: SafetySnapshot): string | null {
 	if (safety?.halted)
-		return 'Emergency stop interlock is active. Resolve the hazard, restart Klipper and review safety before continuing.';
+		return 'Emergency stop interlock is active. Complete the hazard review, then restart firmware and verify readiness before continuing.';
 	if (safety?.actions.some((a) => ['queued', 'sending'].includes(a.status)))
 		return 'A safety action is pending.';
 	if (safety?.actions.some((a) => a.status === 'unknown' && a.reviewedAt === null))
@@ -60,7 +65,7 @@ export function parseSafetyForm(data: FormData): SafetyRequest {
 					recoveryOf: field('recoveryOf'),
 					expectedJob: { filename: field('filename'), runId: field('runId') }
 				}
-			: type === 'cooldown' || type === 'abortProbe'
+			: type === 'cooldown' || type === 'abortProbe' || type === 'restart'
 				? { type, recoveryOf: field('recoveryOf') }
 				: { type };
 	if (field('confirmed') !== 'true') throw new Error('Confirm this safety action.');

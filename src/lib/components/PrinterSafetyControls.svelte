@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
 	import SafetyButton from './SafetyButton.svelte';
+	import EmergencyRecovery from './EmergencyRecovery.svelte';
 	let { snapshot }: { snapshot?: PrinterSnapshot } = $props();
 	const owner = $derived(page.data.user?.role === 'owner');
 	const operator = $derived(owner || page.data.user?.role === 'operator');
@@ -34,16 +35,19 @@
 					/>{/if}
 				<SafetyButton {snapshot} intent="cooldown" label="Turn off heaters" />
 			{/if}
-			{#if owner && (safety.halted || safety.actions.some((a) => a.status === 'unknown' && !a.reviewedAt))}<SafetyButton
+			{#if owner && !safety.halted && safety.actions.some((a) => a.status === 'unknown' && !a.reviewedAt)}<SafetyButton
 					{snapshot}
 					intent="review"
 					label="Review safety"
 				/>{/if}
 		</div>
 		{#if safety.halted}<p role="alert">
-				Emergency interlock active. Resolve the hazard, restart Klipper, then review safety.
-				Ordinary controls remain locked.
+				Emergency interlock active. Review the hazard before restarting firmware. Ordinary controls
+				remain locked.
 			</p>{/if}
+		{#if safety.halted && owner}{#key safety.recovery?.token}<EmergencyRecovery
+					{snapshot}
+				/>{/key}{/if}
 		{#each active as action (action.id)}<p role="status">
 				<a href={`/safety/${action.id}`}>{action.label}: {action.status}</a>{action.acknowledged &&
 				!action.observed

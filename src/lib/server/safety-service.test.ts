@@ -41,15 +41,35 @@ async function fixture() {
 		})
 	);
 	const paths: string[] = [];
-	let behavior: 'normal' | 'drop' | 'partial' = 'normal',
-		shutdown = false,
+	let behavior: 'normal' | 'drop' | 'partial' | 'stuck' = 'normal',
 		refreshHook: (() => Promise<void>) | undefined;
 	const server = createServer(async (req, res) => {
 		const path = req.url!;
 		if (req.method === 'POST') paths.push(path);
 		if (path === '/printer/emergency_stop') {
-			shutdown = true;
+			await Effect.runPromise(
+				SubscriptionRef.update(state, (s) => ({
+					...s,
+					klippy: 'shutdown',
+					telemetryReady: false,
+					generation: s.generation + 1
+				}))
+			);
 		}
+		if (path === '/printer/firmware_restart' && behavior !== 'stuck')
+			await Effect.runPromise(
+				SubscriptionRef.update(state, (s) => ({
+					...s,
+					klippy: 'ready',
+					telemetryReady: true,
+					generation: s.generation + 1,
+					job: { ...s.job, state: 'standby' },
+					heaters: {
+						bed: { ...s.heaters.bed, target: 0 },
+						nozzle: { ...s.heaters.nozzle, target: behavior === 'partial' ? 200 : 0 }
+					}
+				}))
+			);
 		if (path === '/printer/print/cancel')
 			await Effect.runPromise(
 				SubscriptionRef.update(state, (s) => ({
@@ -88,7 +108,10 @@ async function fixture() {
 		res.setHeader('Content-Type', 'application/json');
 		res.end(
 			JSON.stringify({
-				result: path === '/printer/info' ? { state: shutdown ? 'shutdown' : 'ready' } : 'ok'
+				result:
+					path === '/printer/info'
+						? { state: (await Effect.runPromise(SubscriptionRef.get(state))).klippy }
+						: 'ok'
 			})
 		);
 	});
@@ -120,7 +143,14 @@ async function fixture() {
 	});
 	const runtime = ManagedRuntime.make(
 		SafetyServiceLive.pipe(
-			Layer.provide(Layer.succeed(SafetySettings, { enabled: true, observationMs: 25, pollMs: 2 })),
+			Layer.provide(
+				Layer.succeed(SafetySettings, {
+					enabled: true,
+					observationMs: 25,
+					restartObservationMs: 30,
+					pollMs: 2
+				})
+			),
 			Layer.provide(Layer.succeed(MoonrakerConfig, { url, requestTimeoutMs: 100 })),
 			Layer.provideMerge(transport),
 			Layer.provideMerge(printer),
@@ -246,52 +276,122 @@ it('emergency bypasses ordinary admission and unavailable WebSocket readiness, l
 	await normal;
 	expect((await f.snapshot()).liveRecovery?.id).toBe(f.recoveryId);
 });
-it('review requires ready idle heaters off and never clears the original reservation', async () => {
+
+it('hazard review works offline, is durable and does not restart or unlock controls', async () => {
 	const f = await fixture(),
-		record = await f.submit({ type: 'emergency' });
-	await f.finished(record.id);
-	await expect(f.runtime.runPromise(f.safety.review(record.id, owner))).rejects.toThrow(
-		/ready, idle/
-	);
+		emergency = await f.submit({ type: 'emergency' });
+	await f.finished(emergency.id);
 	await Effect.runPromise(
-		SubscriptionRef.update(f.state, (s) => ({
-			...s,
-			job: { ...s.job, state: 'cancelled' as const },
-			heaters: { bed: { current: 25, target: 0 }, nozzle: { current: 25, target: 0 } }
-		}))
+		SubscriptionRef.update(f.state, (s) => ({ ...s, connection: 'disconnected' }))
 	);
-	await f.runtime.runPromise(f.safety.review(record.id, owner));
-	expect((await f.snapshot()).safety?.halted).toBe(false);
-	expect((await f.snapshot()).liveRecovery?.id).toBe(f.recoveryId);
+	await f.runtime.runPromise(f.safety.acknowledge(emergency.id, owner));
+	const current = await f.snapshot();
+	expect(current.safety?.halted).toBe(true);
+	expect(current.safety?.recovery?.reviewedAt).toBeTypeOf('number');
+	expect(f.paths).toEqual(['/printer/emergency_stop']);
+	const sql = await f.runtime.runPromise(SqlClient);
+	const row = await f.runtime.runPromise(
+		sql<{ hazard_reviewed_at: number }>`SELECT hazard_reviewed_at FROM printer_safety_state`
+	);
+	expect(row[0].hazard_reviewed_at).toBe(current.safety?.recovery?.reviewedAt);
+	await expect(f.runtime.runPromise(f.safety.verify(emergency.id, owner))).rejects.toThrow();
 });
-it('new emergency admitted during review cannot be cleared by that review', async () => {
+it('review then explicit restart verifies new ready telemetry before unlocking, without clearing live recovery', async () => {
+	const f = await fixture(),
+		emergency = await f.submit({ type: 'emergency' });
+	await f.finished(emergency.id);
+	await expect(f.submit({ type: 'restart', recoveryOf: emergency.id })).rejects.toThrow(
+		/hazard review/
+	);
+	await f.runtime.runPromise(f.safety.acknowledge(emergency.id, owner));
+	const restart = await f.submit({ type: 'restart', recoveryOf: emergency.id });
+	expect((await f.finished(restart.id)).status).toBe('completed');
+	await expect.poll(async () => (await f.snapshot()).safety?.halted).toBe(false);
+	expect((await f.snapshot()).liveRecovery?.id).toBe(f.recoveryId);
+	expect(f.paths).toEqual(['/printer/emergency_stop', '/printer/firmware_restart']);
+	const duplicate = await f.submit({ type: 'restart', recoveryOf: emergency.id }, restart.id);
+	expect(duplicate.id).toBe(restart.id);
+	expect(f.paths.length).toBe(2);
+});
+it('lost restart acknowledgement stays locked, cannot be replayed, and supports explicit read-only verification', async () => {
+	const f = await fixture(),
+		emergency = await f.submit({ type: 'emergency' });
+	await f.finished(emergency.id);
+	await f.runtime.runPromise(f.safety.acknowledge(emergency.id, owner));
+	f.setBehavior('drop');
+	const restart = await f.submit({ type: 'restart', recoveryOf: emergency.id });
+	expect((await f.finished(restart.id)).status).toBe('unknown');
+	expect((await f.snapshot()).safety?.halted).toBe(true);
+	await expect(f.submit({ type: 'restart', recoveryOf: emergency.id })).rejects.toThrow(
+		/already submitted/
+	);
+	await f.runtime.runPromise(f.safety.verify(emergency.id, owner));
+	expect((await f.snapshot()).safety?.halted).toBe(false);
+	expect((await f.runtime.runPromise(f.safety.receipt(restart.id, owner))).reviewedAt).toBeTypeOf(
+		'number'
+	);
+	expect(f.paths.filter((p) => p === '/printer/firmware_restart')).toHaveLength(1);
+});
+it.each(['partial', 'stuck'] as const)(
+	'restart %s observation does not release the interlock',
+	async (behavior) => {
+		const f = await fixture(),
+			emergency = await f.submit({ type: 'emergency' });
+		await f.finished(emergency.id);
+		await f.runtime.runPromise(f.safety.acknowledge(emergency.id, owner));
+		f.setBehavior(behavior);
+		const restart = await f.submit({ type: 'restart', recoveryOf: emergency.id });
+		expect((await f.finished(restart.id)).status).toBe('unknown');
+		expect((await f.snapshot()).safety?.halted).toBe(true);
+		await expect(f.runtime.runPromise(f.safety.verify(emergency.id, owner))).rejects.toThrow();
+	}
+);
+it('new emergency invalidates a saved hazard review and rejects stale tokens', async () => {
 	const f = await fixture(),
 		first = await f.submit({ type: 'emergency' });
 	await f.finished(first.id);
-	await Effect.runPromise(
-		SubscriptionRef.update(f.state, (s) => ({
-			...s,
-			job: { ...s.job, state: 'cancelled' as const },
-			heaters: { bed: { current: 25, target: 0 }, nozzle: { current: 25, target: 0 } }
-		}))
-	);
-	let release!: () => void,
-		entered = false;
-	const held = new Promise<void>((resolve) => (release = resolve));
-	f.hook(async () => {
-		entered = true;
-		await held;
-	});
-	const review = f.runtime.runPromise(f.safety.review(first.id, owner)).then(
-		() => null,
-		(e) => e
-	);
-	await expect.poll(() => entered).toBe(true);
+	await f.runtime.runPromise(f.safety.acknowledge(first.id, owner));
 	const second = await f.submit({ type: 'emergency' });
 	await f.finished(second.id);
-	release();
-	expect(await review).toBeTruthy();
-	expect((await f.snapshot()).safety?.halted).toBe(true);
+	expect((await f.snapshot()).safety?.recovery?.reviewedAt).toBeNull();
+	await expect(f.submit({ type: 'restart', recoveryOf: first.id })).rejects.toThrow(
+		/hazard review/
+	);
+	await expect(f.runtime.runPromise(f.safety.acknowledge(first.id, owner))).rejects.toThrow(
+		/changed/
+	);
+	await expect(f.runtime.runPromise(f.safety.verify(second.id, owner))).rejects.toThrow(/review/);
+});
+it('owner authorization is required for offline review and rechecked before restart dispatch', async () => {
+	const f = await fixture(),
+		emergency = await f.submit({ type: 'emergency' });
+	await f.finished(emergency.id);
+	await expect(
+		f.runtime.runPromise(f.safety.acknowledge(emergency.id, { ...owner, role: 'operator' }))
+	).rejects.toThrow(/owner/);
+	await f.runtime.runPromise(f.safety.acknowledge(emergency.id, owner));
+	let allowed = true;
+	const restart = await f.submit({ type: 'restart', recoveryOf: emergency.id }, randomUUID(), {
+		...owner,
+		authorized: () => allowed
+	});
+	allowed = false;
+	expect((await f.finished(restart.id)).status).toBe('failed');
+	expect(f.paths.filter((p) => p === '/printer/firmware_restart')).toHaveLength(0);
+});
+it('unrelated uncertain safety outcomes survive the emergency recovery flow', async () => {
+	const f = await fixture();
+	f.setBehavior('drop');
+	const unknown = await f.submit({ type: 'cooldown', recoveryOf: f.recoveryId });
+	await f.finished(unknown.id);
+	f.setBehavior('normal');
+	const emergency = await f.submit({ type: 'emergency' });
+	await f.finished(emergency.id);
+	await f.runtime.runPromise(f.safety.acknowledge(emergency.id, owner));
+	const restart = await f.submit({ type: 'restart', recoveryOf: emergency.id });
+	await f.finished(restart.id);
+	await expect.poll(async () => (await f.snapshot()).safety?.halted).toBe(false);
+	expect((await f.runtime.runPromise(f.safety.receipt(unknown.id, owner))).reviewedAt).toBeNull();
 });
 it('revoked authorization at execution prevents physical dispatch', async () => {
 	const f = await fixture();
@@ -424,4 +524,102 @@ it('recovery abort ends the freshly observed manual helper without clearing the 
 	expect((await f.snapshot()).liveRecovery?.id).toBe(f.recoveryId);
 	expect((await Effect.runPromise(SubscriptionRef.get(f.state))).heaters.nozzle.target).toBe(200);
 	expect(f.paths).toEqual(['/printer/gcode/script']);
+});
+
+it('a new emergency during readiness verification cannot be cleared by the older verification', async () => {
+	const f = await fixture(),
+		first = await f.submit({ type: 'emergency' });
+	await f.finished(first.id);
+	await f.runtime.runPromise(f.safety.acknowledge(first.id, owner));
+	await Effect.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			klippy: 'ready',
+			telemetryReady: true,
+			job: { ...s.job, state: 'standby' },
+			heaters: { bed: { current: 25, target: 0 }, nozzle: { current: 25, target: 0 } }
+		}))
+	);
+	let entered = false,
+		release!: () => void;
+	const gate = new Promise<void>((resolve) => (release = resolve));
+	f.hook(async () => {
+		entered = true;
+		await gate;
+	});
+	const verification = f.runtime.runPromise(f.safety.verify(first.id, owner)).then(
+		() => null,
+		(cause) => cause
+	);
+	await expect.poll(() => entered).toBe(true);
+	const second = await f.submit({ type: 'emergency' });
+	await f.finished(second.id);
+	release();
+	expect(await verification).toBeTruthy();
+	expect((await f.snapshot()).safety).toMatchObject({
+		halted: true,
+		recovery: { token: second.id, reviewedAt: null }
+	});
+});
+
+it('backend restart preserves hazard review and uncertain restart without replay', async () => {
+	const f = await fixture(),
+		emergency = await f.submit({ type: 'emergency' });
+	await f.finished(emergency.id);
+	await f.runtime.runPromise(f.safety.acknowledge(emergency.id, owner));
+	f.setBehavior('drop');
+	const restart = await f.submit({ type: 'restart', recoveryOf: emergency.id });
+	await f.finished(restart.id);
+	const sql = await f.runtime.runPromise(SqlClient);
+	const restarted = ManagedRuntime.make(
+		SafetyServiceLive.pipe(
+			Layer.provide(Layer.succeed(SqlClient, sql)),
+			Layer.provide(Layer.succeed(PrinterService, f.printer)),
+			Layer.provide(
+				Layer.succeed(MoonrakerService, {
+					state: f.state,
+					command: () => Effect.void,
+					refresh: () => SubscriptionRef.get(f.state)
+				})
+			),
+			Layer.provide(Layer.succeed(MoonrakerConfig, { url: f.url })),
+			Layer.provide(Layer.succeed(SafetySettings, { enabled: true }))
+		)
+	);
+	cleanup.push(() => restarted.dispose());
+	const safety = await restarted.runPromise(SafetyService);
+	expect((await f.snapshot()).safety?.recovery?.reviewedAt).toBeTypeOf('number');
+	expect((await restarted.runPromise(safety.receipt(restart.id, owner))).status).toBe('unknown');
+	await expect(
+		restarted.runPromise(
+			safety.submit(
+				{
+					id: randomUUID(),
+					confirmed: true,
+					operation: { type: 'restart', recoveryOf: emergency.id }
+				},
+				owner
+			)
+		)
+	).rejects.toThrow(/already submitted/);
+	expect(f.paths.filter((p) => p === '/printer/firmware_restart')).toHaveLength(1);
+	await restarted.runPromise(safety.verify(emergency.id, owner));
+	expect((await f.snapshot()).safety?.halted).toBe(false);
+});
+
+it('individual outcome review never clears a different unknown safety receipt', async () => {
+	const f = await fixture();
+	f.setBehavior('drop');
+	const first = await f.submit({ type: 'cooldown', recoveryOf: f.recoveryId });
+	await f.finished(first.id);
+	const second = await f.submit({ type: 'cooldown', recoveryOf: f.recoveryId });
+	await f.finished(second.id);
+	await Effect.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({ ...s, job: { ...s.job, state: 'standby' } }))
+	);
+	await f.runtime.runPromise(f.safety.review(first.id, owner));
+	expect((await f.runtime.runPromise(f.safety.receipt(first.id, owner))).reviewedAt).toBeTypeOf(
+		'number'
+	);
+	expect((await f.runtime.runPromise(f.safety.receipt(second.id, owner))).reviewedAt).toBeNull();
 });
