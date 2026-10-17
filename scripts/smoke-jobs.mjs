@@ -150,6 +150,11 @@ try {
 	await page.getByRole('link', { name: 'Connect your slicer in Account → Integrations' }).click();
 	await page.getByRole('button', { name: 'Create key', exact: true }).click();
 	await page.getByLabel('New slicer key', { exact: true }).waitFor();
+	assert.equal(await page.getByLabel('New slicer key').getAttribute('type'), 'password');
+	await page.getByRole('button', { name: 'Reveal key', exact: true }).click();
+	assert.equal(await page.getByLabel('New slicer key').getAttribute('type'), 'text');
+	await page.getByRole('button', { name: 'Hide key', exact: true }).click();
+	assert.equal(await page.getByLabel('New slicer key').getAttribute('type'), 'password');
 	const token = await page.getByLabel('New slicer key', { exact: true }).inputValue();
 	const headers = { 'X-Api-Key': token };
 	const info = await fetch(base + '/server/info', { headers });
