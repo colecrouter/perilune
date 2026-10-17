@@ -44,7 +44,11 @@
 				>Review and explicitly confirm this printer safety action.</Dialog.Description
 			>
 			<Dialog.Close bind:ref={back} class="button secondary">Back</Dialog.Close>
-			{#if captured}<SafetyConfirmation {intent} snapshot={captured} />{/if}
+			{#if captured}<SafetyConfirmation
+					{intent}
+					snapshot={captured}
+					receipts={snapshot.safety?.actions}
+				/>{/if}
 		</Dialog.Content></Dialog.Portal
 	>
 </Dialog.Root>

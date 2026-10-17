@@ -128,11 +128,13 @@ try {
 	);
 	assert.equal(await first.locator('link[rel="icon"]').count(), 1);
 	const printingIcon = await first.locator('link[rel="icon"]').getAttribute('href');
-	await first.waitForFunction(
-		() => document.body.innerText.includes('Updates') && document.body.innerText.includes('Live')
+	await first.waitForFunction(() =>
+		document.querySelector('.connection-status')?.textContent.includes('Connected')
 	);
 	await first.evaluate(() => document.fonts.ready);
-	await first.getByRole('slider', { name: /Nozzle temperatures over/ }).waitFor({ timeout: 10000 });
+	await first
+		.getByRole('slider', { name: /All sensor temperatures over/ })
+		.waitFor({ timeout: 10000 });
 	await mkdir('test-results', { recursive: true });
 	await first.screenshot({ path: 'test-results/overview-serif.png', fullPage: true });
 	await first.getByRole('switch', { name: 'Serif headings' }).click();
@@ -176,7 +178,7 @@ try {
 	await first.getByRole('checkbox', { name: 'Cool down bed', exact: true }).uncheck();
 	await first.screenshot({ path: 'test-results/stop-print.png', fullPage: true });
 	await first.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
-	await second.getByText('cancelled', { exact: true }).waitFor();
+	await second.getByRole('heading', { name: 'Print stopped', exact: true }).waitFor();
 	await first.waitForFunction(
 		() => !document.querySelector('link[rel="icon"]')?.href.startsWith('data:')
 	);
@@ -190,7 +192,7 @@ try {
 		.waitFor();
 	await first.getByRole('combobox', { name: 'Window', exact: true }).selectOption('5');
 	await first
-		.getByRole('slider', { name: /Nozzle temperatures over the last 5 minutes/ })
+		.getByRole('slider', { name: /All sensor temperatures over the last 5 minutes/ })
 		.waitFor();
 	await first.screenshot({ path: 'test-results/temperature-desktop.png', fullPage: true });
 	await first.setViewportSize({ width: 320, height: 844 });

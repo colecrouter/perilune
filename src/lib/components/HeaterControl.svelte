@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ActionForm from './ActionForm.svelte';
+	import type { ActionRecord } from '#lib/domain/printer.js';
 	import { onMount, untrack } from 'svelte';
 	import { heaterState } from '#lib/domain/temperature.js';
 	import Icon from './Icon.svelte';
@@ -11,6 +12,7 @@
 		readOnly = false,
 		progressive = false,
 		available = true,
+		receipts,
 		onSet
 	}: {
 		heater: 'nozzle' | 'bed';
@@ -20,6 +22,7 @@
 		readOnly?: boolean;
 		progressive?: boolean;
 		available?: boolean;
+		receipts?: ActionRecord[];
 		onSet: (target: number) => Promise<void>;
 	} = $props();
 	// A draft belongs to this input, not to the incoming printer snapshot.
@@ -77,6 +80,7 @@
 	</div>
 	{#if progressive}<div class="heater-controls">
 			<ActionForm
+				{receipts}
 				fields={{ intent: 'temperature', heater }}
 				onAccepted={(_, submitted) => {
 					submittedTarget = Number(submitted.get('target'));
@@ -121,6 +125,7 @@
 				{/snippet}</ActionForm
 			>
 			<ActionForm
+				{receipts}
 				fields={{ intent: 'temperature', heater, target: '0' }}
 				onAccepted={(_, submitted) => {
 					if (String(draft ?? '') === submitted.get('previousDraft')) {

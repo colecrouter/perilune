@@ -13,14 +13,12 @@
 				(action.status === 'unknown' && !action.reviewedAt)
 		) ?? []
 	);
-	const history = $derived(
-		safety?.actions.filter((action) => !active.some((current) => current.id === action.id)) ?? []
-	);
 </script>
 
 {#if snapshot && safety?.enabled && operator}
 	<aside aria-label="Printer safety" class:locked={safety.halted}>
 		<div class="buttons">
+			<a class="activity-link" href="/safety/history">Safety activity</a>
 			<SafetyButton {snapshot} />
 			{#if owner && snapshot.liveRecovery && !safety.halted}
 				<SafetyButton
@@ -52,29 +50,25 @@
 					? ' · acknowledged; result not yet verified'
 					: ''}{action.reviewedAt ? ' · reviewed' : ''}
 			</p>{/each}
-		{#if history.length}<details>
-				<summary>Recent safety actions</summary>
-				{#each history as action (action.id)}<p>
-						<a href={`/safety/${action.id}`}>{action.label}: {action.status}</a
-						>{action.acknowledged && !action.observed
-							? ' · acknowledged; result not yet verified'
-							: ''}{action.reviewedAt ? ' · reviewed' : ''}
-					</p>{/each}
-			</details>{/if}
 	</aside>
 {/if}
 
 <style>
 	aside {
-		margin: 1rem;
-		padding: 0.8rem 1rem;
-		border: 1px solid var(--border);
-		border-radius: 0.8rem;
+		padding: 0.6rem clamp(1rem, 3vw, 2.5rem);
+		border-bottom: 1px solid var(--border);
 	}
 	.buttons {
 		display: flex;
 		gap: 0.6rem;
 		flex-wrap: wrap;
+		align-items: center;
+		justify-content: flex-end;
+	}
+	.activity-link {
+		margin-right: auto;
+		font-size: 0.8rem;
+		color: var(--muted);
 	}
 	p {
 		font-size: 0.85rem;

@@ -129,7 +129,10 @@ try {
 		.getByRole('dialog')
 		.getByRole('button', { name: 'Start simulated print', exact: true })
 		.click();
-	await second.getByRole('heading', { name: 'fixture-bracket.gcode', exact: true }).waitFor();
+	await second
+		.getByRole('region', { name: 'Current job', exact: true })
+		.getByText('fixture-bracket.gcode', { exact: true })
+		.waitFor();
 	await page.getByRole('button', { name: 'Pause print', exact: true }).click();
 	await second.getByRole('button', { name: 'Resume print', exact: true }).waitFor();
 	await page.getByRole('button', { name: 'Remove file…', exact: true }).click();
@@ -248,7 +251,7 @@ try {
 	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.waitForFunction(
-		() => document.querySelector('.current-job .job-state').textContent === 'cancelled'
+		() => document.querySelector('[aria-label="Current job"]').dataset.jobState === 'cancelled'
 	);
 	await page.getByRole('button', { name: 'Review & start simulation', exact: true }).click();
 	await page
@@ -266,11 +269,14 @@ try {
 		.getByRole('dialog')
 		.getByRole('button', { name: 'Keep printing', exact: true })
 		.click();
-	assert.equal(await page.locator('.current-job .job-state').textContent(), 'printing');
+	assert.equal(
+		await page.locator('[aria-label="Current job"]').getAttribute('data-job-state'),
+		'printing'
+	);
 	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.waitForFunction(
-		() => document.querySelector('.current-job .job-state').textContent === 'cancelled'
+		() => document.querySelector('[aria-label="Current job"]').dataset.jobState === 'cancelled'
 	);
 	await page.getByRole('button', { name: 'Remove file…', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Remove file', exact: true }).click();
@@ -391,7 +397,7 @@ try {
 	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.waitForFunction(
-		() => document.querySelector('.current-job .job-state').textContent === 'cancelled'
+		() => document.querySelector('[aria-label="Current job"]').dataset.jobState === 'cancelled'
 	);
 	const combined = form();
 	combined.set('print', 'true');

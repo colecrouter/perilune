@@ -1019,3 +1019,41 @@ A printer's RESUME macro may purge filament and intentionally remain paused unti
 An owner can explicitly attest that an unknown Resume relates to the same paused print and clear its lock without stopping that print. This exception requires the original durable resume filename, fresh ready/idle paused telemetry, the owner-reviewed current filename/run ID and active owner authorization. Other unknown commands cannot use it. Old run IDs are process-local and cannot prove continuity after reconnect/restart; the UI makes that limitation an explicit owner inspection decision instead of silently treating a filename match as proof. The old receipt remains unknown and no command is replayed. Closing the dialog or changing job/recovery identity resets the attestation.
 
 Completed or reviewed safety receipts remain available in collapsed Recent safety actions history. Queued/sending actions, unreviewed unknown outcomes and the emergency interlock remain prominent. Paused recovery attestation is disabled until fresh connected/ready/idle telemetry is available, and resets when dialog or reviewed print identity changes.
+
+### Everyday overview and attention states
+
+The overview now puts the current job before the camera, with state-specific
+copy and controls. Paused jobs link to printer messages and explain that macros
+may require a purge and a second explicit Resume; Perilune does not infer a
+specific pause cause from `paused` alone. Finished jobs become a last-job summary
+without an active progress bar. Printing again opens the filtered library for
+review rather than replaying a command or starting a file automatically.
+
+Print controls explain role, connection, Klipper, storage, safety, pending-action,
+and calibration/configuration restrictions. Their forms retain the existing
+server-rendered fallback and job identity fencing; execution checks remain in
+the process-owned worker. The overview's temperature history defaults to all
+reported sensors on one shared time axis, with individual sensor focus and
+keyboard/touch inspection retained. Missing samples remain gaps.
+
+Global emergency controls use a compact utility strip. Pending and unresolved
+safety outcomes and the emergency interlock remain prominent. Routine terminal
+receipts are available on `/safety/history`, server-rendered for operators with
+live updates and links to their full receipts. This is presentation work; no
+physical command, permission, retry, or acknowledgement policy was relaxed.
+
+Remaining overview work includes identifying planned filament changes from file
+contents (#78), customizable layouts if the default proves insufficient, and
+owner acceptance of the revised layout during an actual print.
+
+The everyday-overview follow-up shares the job card with the Jobs workspace,
+including its control-readiness reasons and finished-job summary. Enhanced job,
+overview heater/cooldown, and safety-dialog forms follow live receipts rather
+than leaving a submission permanently labelled queued. Queue/execution prevents
+implicit duplicate submission as well as disabling buttons. Routine completed
+feedback clears after six seconds; failures and uncertain outcomes remain
+visible, and durable receipts remain available through activity links. Receipt
+state survives eviction from bounded recent-action lists. Repeated telemetry
+snapshots do not extend the success timer. Connection diagnostics are collapsed
+by default, without hiding the reconnect banners or changing initial SSR
+connection behavior. Simulator activity no longer invents unrecorded events.

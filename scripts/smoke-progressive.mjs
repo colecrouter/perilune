@@ -218,6 +218,42 @@ try {
 	} finally {
 		for (const upload of uploads) upload.destroy();
 	}
+	// A fresh hydrated page follows raw serialized receipts through the shared stream.
+	await idle();
+	const feedbackPage = await enhanced.newPage();
+	feedbackPage.on('pageerror', (e) => errors.push(e.message));
+	let feedbackPosts = 0;
+	feedbackPage.on('request', (request) => {
+		if (request.method() === 'POST' && new URL(request.url()).pathname === '/actions')
+			feedbackPosts++;
+	});
+	await feedbackPage.goto(base + '/');
+	await feedbackPage.waitForFunction(
+		() =>
+			document.querySelector('input[aria-label="Bed target"]')?.closest('form')?.dataset
+				.enhanced === 'true'
+	);
+	const feedbackForm = feedbackPage
+		.locator('form')
+		.filter({ has: feedbackPage.getByRole('spinbutton', { name: 'Bed target', exact: true }) });
+	await feedbackForm.locator('[name="target"]').fill('45');
+	await feedbackForm.getByRole('button', { name: 'Set', exact: true }).click();
+	await feedbackForm.getByRole('link', { name: 'Check receipt' }).waitFor();
+	await feedbackForm.evaluate((form) => form.requestSubmit());
+	await idle();
+	await feedbackForm.locator('.action-feedback').filter({ hasText: 'Completed' }).waitFor();
+	assert.equal(
+		feedbackPosts,
+		1,
+		'Implicit resubmission must not admit a second command while the first is queued/sending'
+	);
+	await feedbackForm.locator('.action-feedback').waitFor({ state: 'detached', timeout: 10_000 });
+	assert.equal(
+		await feedbackPage.getByRole('spinbutton', { name: 'Bed target', exact: true }).inputValue(),
+		'45'
+	);
+	await feedbackPage.close();
+
 	assert.ok(!(await app.textContent('body')).includes('Reconnecting to Perilune'));
 	await mkdir('test-results', { recursive: true });
 	await app.screenshot({ path: 'test-results/progressive-desktop.png', fullPage: true });
