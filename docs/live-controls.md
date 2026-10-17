@@ -82,10 +82,11 @@ remain unknown, with acknowledgement distinguished from observed completion.
 Emergency stop is available to operators and owners independently of ordinary
 queues, workflow locks and WebSocket readiness. It shuts down Klipper through the
 dedicated HTTP endpoint and latches normal writes, including later stages of
-already admitted workflows. Owners use the emergency-recovery panel to save a
-hazard review, explicitly restart firmware once, and verify fresh ready/idle
-state with every heater target off. Hazard review works while Klipper is shut
-down or offline and does not unlock controls. Lost restart acknowledgements are
+already admitted workflows. Owners confirm they inspected the printer and resolved
+the hazard in the restart form. Submission records that confirmation and requests
+one firmware restart; there is no separate save button. Controls unlock only after
+fresh ready/idle state with every heater target off. If firmware was restarted
+elsewhere, owners can confirm inspection and verify readiness without another restart. Lost restart acknowledgements are
 not replayed; explicit read-only verification can reconcile readiness. Unrelated
 uncertain outcomes and the original ordinary-action recovery lock retain their
 own reviews. A newer emergency invalidates the hazard review. Firmware restart

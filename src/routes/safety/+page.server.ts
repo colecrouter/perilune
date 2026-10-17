@@ -46,7 +46,8 @@ export const actions: Actions = {
 				data.get('intent') === 'acknowledge'
 					? service.acknowledge
 					: data.get('intent') === 'verify'
-						? service.verify
+						? (token: string, actor: Parameters<typeof service.verify>[1]) =>
+								service.acknowledge(token, actor).pipe(Effect.andThen(service.verify(token, actor)))
 						: service.review;
 			const result = await runtime.runPromise(operation(id, actor).pipe(Effect.result));
 			if (result._tag === 'Failure') return fail(409, { message: result.failure.message });

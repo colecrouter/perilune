@@ -61,7 +61,7 @@
 {:else}
 	<p>
 		{intent === 'restart'
-			? 'Restarts Klipper firmware once after the saved hazard review. Controls remain locked until fresh ready, idle state with heaters off is verified. This does not resume a print.'
+			? 'Records your confirmation that you inspected the printer and resolved the hazard, then restarts Klipper firmware once. Controls remain locked until fresh ready, idle state with heaters off is verified. This does not resume a print.'
 			: intent === 'abortProbe'
 				? 'Ends the currently observed manual probe helper without accepting or saving its result. The original uncertain action stays locked.'
 				: intent === 'emergency'
@@ -78,7 +78,7 @@
 			<label
 				><input type="checkbox" name="confirmed" value="true" required /> Confirm {intent ===
 				'restart'
-					? 'firmware restart after hazard review'
+					? 'I have inspected the printer, resolved the hazard, and want to restart firmware'
 					: intent === 'abortProbe'
 						? 'aborting the current manual probe'
 						: intent === 'emergency'

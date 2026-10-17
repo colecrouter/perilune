@@ -513,11 +513,12 @@ try {
 	assert.equal(safetyRequests.filter((p) => p === '/printer/emergency_stop').length, 1);
 	const recoveryPanel = page.getByRole('region', { name: 'Emergency recovery', exact: true });
 	await recoveryPanel
-		.getByRole('checkbox', { name: 'I have inspected the printer and resolved the hazard' })
+		.getByRole('checkbox', {
+			name: 'I have inspected the printer and resolved the hazard',
+			exact: true
+		})
 		.check();
-	await recoveryPanel.getByRole('button', { name: 'Save hazard review', exact: true }).click();
-	await recoveryPanel.getByText('Hazard review saved.', { exact: false }).waitFor();
-	assert.equal(safetyShutdown, true, 'Review does not restart firmware');
+	assert.equal(safetyShutdown, true, 'Checking the box does not restart firmware');
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.screenshot({ path: 'test-results/emergency-recovery-mobile.png', fullPage: true });
 	await page.setViewportSize({ width: 1280, height: 900 });

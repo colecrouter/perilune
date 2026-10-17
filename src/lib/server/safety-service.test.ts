@@ -300,11 +300,8 @@ it('review then explicit restart verifies new ready telemetry before unlocking, 
 	const f = await fixture(),
 		emergency = await f.submit({ type: 'emergency' });
 	await f.finished(emergency.id);
-	await expect(f.submit({ type: 'restart', recoveryOf: emergency.id })).rejects.toThrow(
-		/hazard review/
-	);
-	await f.runtime.runPromise(f.safety.acknowledge(emergency.id, owner));
 	const restart = await f.submit({ type: 'restart', recoveryOf: emergency.id });
+	expect((await f.snapshot()).safety?.recovery?.reviewedAt).toBeTypeOf('number');
 	expect((await f.finished(restart.id)).status).toBe('completed');
 	await expect.poll(async () => (await f.snapshot()).safety?.halted).toBe(false);
 	expect((await f.snapshot()).liveRecovery?.id).toBe(f.recoveryId);
@@ -355,7 +352,7 @@ it('new emergency invalidates a saved hazard review and rejects stale tokens', a
 	await f.finished(second.id);
 	expect((await f.snapshot()).safety?.recovery?.reviewedAt).toBeNull();
 	await expect(f.submit({ type: 'restart', recoveryOf: first.id })).rejects.toThrow(
-		/hazard review/
+		/current hazard/
 	);
 	await expect(f.runtime.runPromise(f.safety.acknowledge(first.id, owner))).rejects.toThrow(
 		/changed/
@@ -622,4 +619,47 @@ it('individual outcome review never clears a different unknown safety receipt', 
 		'number'
 	);
 	expect((await f.runtime.runPromise(f.safety.receipt(second.id, owner))).reviewedAt).toBeNull();
+});
+
+it('fences the old reviewed token synchronously before a new emergency can publish or persist', async () => {
+	const f = await fixture();
+	const first = await f.submit({ type: 'emergency' });
+	await f.finished(first.id);
+	await f.runtime.runPromise(f.safety.acknowledge(first.id, owner));
+	let locked = false;
+	let release!: () => void;
+	const gate = new Promise<void>((resolve) => (release = resolve));
+	const held = f.runtime.runPromise(
+		SubscriptionRef.updateEffect(f.printer.state, (s) =>
+			Effect.promise(async () => {
+				locked = true;
+				await gate;
+				return s;
+			})
+		)
+	);
+	await expect.poll(() => locked).toBe(true);
+	const epoch = printerInterlock(f.printer.state).epoch;
+	const secondId = randomUUID();
+	const second = f.submit({ type: 'emergency' }, secondId);
+	await expect.poll(() => printerInterlock(f.printer.state).epoch).toBeGreaterThan(epoch);
+	try {
+		// Publication is blocked, so both browser state and durable token still describe the first emergency.
+		expect((await f.snapshot()).safety?.recovery?.token).toBe(first.id);
+		await expect(f.submit({ type: 'restart', recoveryOf: first.id })).rejects.toThrow(/changed/);
+		await expect(f.runtime.runPromise(f.safety.acknowledge(first.id, owner))).rejects.toThrow(
+			/changed/
+		);
+		await expect(f.runtime.runPromise(f.safety.verify(first.id, owner))).rejects.toThrow(/review/);
+		expect(f.paths.filter((p) => p === '/printer/firmware_restart')).toHaveLength(0);
+	} finally {
+		release();
+		await held;
+	}
+	await second;
+	await f.finished(secondId);
+	expect((await f.snapshot()).safety?.recovery).toMatchObject({
+		token: secondId,
+		reviewedAt: null
+	});
 });

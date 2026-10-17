@@ -45,50 +45,40 @@
 		</p>
 		<ol>
 			<li>
-				<h3>Inspect the printer</h3>
-				{#if recovery.reviewedAt}<p>
-						Hazard review saved. Firmware restart still requires a separate action.
-					</p>{:else}<form method="POST" action="/safety" use:enhance={update}>
-						<input type="hidden" name="intent" value="acknowledge" /><input
-							type="hidden"
-							name="actionId"
-							value={recovery.token}
-						/>
+				<h3>Inspect the printer &amp; restart firmware</h3>
+				<p class="muted">
+					Restart only after inspecting the printer and resolving the hazard. Your confirmation is
+					recorded when you submit the restart.
+				</p>
+				<ActionForm
+					action="/safety"
+					receiptBase="/safety"
+					receipts={snapshot.safety?.actions}
+					fields={{ intent: 'restart', recoveryOf: recovery.token }}
+				>
+					{#snippet children({ pending, uncertain })}
 						<label
-							><input type="checkbox" name="confirmed" value="true" required disabled={working} /> I have
-							inspected the printer and resolved the hazard</label
-						>
-						<p class="muted">
-							You can save this review while Klipper is shut down or the printer is offline. Saving
-							it does not unlock controls or restart firmware.
-						</p>
-						<button class="button secondary" disabled={working}
-							>{pending ? 'Saving…' : 'Save hazard review'}</button
-						>
-					</form>{/if}
-			</li>
-			<li>
-				<h3>Restart firmware</h3>
-				{#if recovery.reviewedAt}<ActionForm
-						action="/safety"
-						receiptBase="/safety"
-						receipts={snapshot.safety?.actions}
-						fields={{ intent: 'restart', recoveryOf: recovery.token, confirmed: 'true' }}
-						>{#snippet children({ pending, uncertain })}<button
-								class="button primary"
+							><input
+								type="checkbox"
+								name="confirmed"
+								value="true"
+								required
 								disabled={!canRestart || working || pending || uncertain}
-								>{pending ? 'Restarting firmware…' : 'Restart firmware'}</button
-							>{/snippet}</ActionForm
-					>
-					{#if !canRestart}<p class="muted">
-							{recovery.restartId && restart?.status !== 'failed'
-								? 'A restart was already submitted. Check its receipt, then verify readiness; it will not be resent automatically.'
-								: ready
-									? 'Firmware already reports ready. Verify readiness below.'
-									: 'Reconnect Moonraker and wait for Klipper to report shutdown or error before restarting.'}
-						</p>{/if}
-					{#if restart}<a href={`/safety/${restart.id}`}>Firmware restart receipt</a>{/if}
-				{:else}<p class="muted">Save the hazard review first.</p>{/if}
+							/> I have inspected the printer and resolved the hazard</label
+						>
+						<button class="button primary" disabled={!canRestart || working || pending || uncertain}
+							>{pending ? 'Restarting firmware…' : 'Restart firmware'}</button
+						>
+					{/snippet}
+				</ActionForm>
+				{#if !canRestart}<p class="muted">
+						{recovery.restartId && restart?.status !== 'failed'
+							? 'A restart was already submitted. Check its receipt, then verify readiness; it will not be resent automatically.'
+							: ready
+								? 'Firmware already reports ready. Verify readiness below.'
+								: 'Reconnect Moonraker and wait for Klipper to report shutdown or error before restarting.'}
+					</p>{/if}
+				{#if restart}<a href={`/safety/${restart.id}`}>Firmware restart receipt</a>{/if}
 			</li>
 			<li>
 				<h3>Verify readiness &amp; unlock</h3>
@@ -102,9 +92,16 @@
 						type="hidden"
 						name="actionId"
 						value={recovery.token}
-					/><input type="hidden" name="confirmed" value="true" /><button
-						class="button secondary"
-						disabled={!recovery.reviewedAt || !ready || working}
+					/>
+					{#if recovery.reviewedAt}<input
+							type="hidden"
+							name="confirmed"
+							value="true"
+						/>{:else}<label
+							><input type="checkbox" name="confirmed" value="true" required disabled={working} /> I have
+							inspected the printer and resolved the hazard before unlocking controls</label
+						>{/if}
+					<button class="button secondary" disabled={!ready || working}
 						>{pending ? 'Checking…' : 'Verify readiness & unlock'}</button
 					>
 				</form>

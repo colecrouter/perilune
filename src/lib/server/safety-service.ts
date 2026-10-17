@@ -94,6 +94,7 @@ export const SafetyServiceLive = Layer.effect(
 		const latchState = () =>
 			sql<Latch>`SELECT token,halted,hazard_reviewed_at,restart_id FROM printer_safety_state WHERE target=${target}`;
 		let latch = (yield* latchState())[0];
+		let activeToken = latch.token;
 		const stored = [latch];
 		if (stored[0].halted) interlock.interrupt();
 		const history: SafetyAction[] = [];
@@ -126,9 +127,9 @@ export const SafetyServiceLive = Layer.effect(
 						halted: interlock.halted,
 						actions,
 						recovery: {
-							token: latch.token,
-							reviewedAt: latch.hazard_reviewed_at,
-							restartId: latch.restart_id
+							token: activeToken,
+							reviewedAt: latch.token === activeToken ? latch.hazard_reviewed_at : null,
+							restartId: latch.token === activeToken ? latch.restart_id : null
 						}
 					},
 					revision: s.revision + 1,
@@ -248,6 +249,7 @@ export const SafetyServiceLive = Layer.effect(
 					!interlock.halted ||
 					interlock.epoch !== job.epoch ||
 					!current.halted ||
+					activeToken !== operation.recoveryOf ||
 					current.token !== operation.recoveryOf ||
 					!current.hazard_reviewed_at ||
 					current.restart_id !== job.record.id
@@ -291,7 +293,12 @@ export const SafetyServiceLive = Layer.effect(
 				)
 					return yield* Effect.fail(rejected('Safety state or owner authorization changed.'));
 				const current = (yield* latchState())[0];
-				if (current.token !== token || !current.halted || !current.hazard_reviewed_at)
+				if (
+					activeToken !== token ||
+					current.token !== token ||
+					!current.halted ||
+					!current.hazard_reviewed_at
+				)
 					return yield* Effect.fail(rejected('Complete the current hazard review first.'));
 				const initial = yield* SubscriptionRef.get(transport.state);
 				const fresh = yield* transport.refresh(initial.generation);
@@ -301,7 +308,7 @@ export const SafetyServiceLive = Layer.effect(
 							'Verification needs fresh ready, idle printer state with every heater target off. Controls remain locked.'
 						)
 					);
-				if (!authorized(actor, true) || interlock.epoch !== expectedEpoch)
+				if (!authorized(actor, true) || activeToken !== token || interlock.epoch !== expectedEpoch)
 					return yield* Effect.fail(
 						rejected('A new emergency or authorization change interrupted verification.')
 					);
@@ -554,11 +561,13 @@ export const SafetyServiceLive = Layer.effect(
 					if (
 						!interlock.halted ||
 						!current.halted ||
-						current.token !== request.operation.recoveryOf ||
-						!current.hazard_reviewed_at
+						activeToken !== request.operation.recoveryOf ||
+						current.token !== request.operation.recoveryOf
 					)
 						return yield* Effect.fail(
-							rejected('Complete the current hazard review before restarting firmware.')
+							rejected(
+								'Emergency state changed. Review the current hazard before restarting firmware.'
+							)
 						);
 					if (current.restart_id) {
 						const previous =
@@ -601,15 +610,26 @@ export const SafetyServiceLive = Layer.effect(
 					reviewedAt: null
 				};
 				const epoch = isEmergency ? interlock.interrupt() : interlock.epoch;
-				if (isEmergency) yield* publish();
+				if (isEmergency) {
+					activeToken = request.id;
+					yield* publish();
+				}
 				const persisted = yield* sql
 					.withTransaction(
 						Effect.gen(function* () {
 							yield* sql`INSERT INTO safety_actions(id,target,actor,payload,record) VALUES(${request.id},${target},${actor.id},${payload},${JSON.stringify(record)})`;
 							if (isEmergency)
 								yield* sql`UPDATE printer_safety_state SET token=${request.id},halted=1,hazard_reviewed_at=NULL,hazard_reviewed_by=NULL,restart_id=NULL WHERE target=${target}`;
-							if (request.operation.type === 'restart')
-								yield* sql`UPDATE printer_safety_state SET restart_id=${request.id} WHERE target=${target} AND token=${request.operation.recoveryOf}`;
+							if (request.operation.type === 'restart') {
+								yield* sql`UPDATE printer_safety_state SET restart_id=${request.id},hazard_reviewed_at=COALESCE(hazard_reviewed_at,${Date.now()}),hazard_reviewed_by=COALESCE(hazard_reviewed_by,${actor.id}) WHERE target=${target} AND token=${request.operation.recoveryOf}`;
+								const existing =
+									yield* sql<Row>`SELECT * FROM safety_actions WHERE id=${request.operation.recoveryOf} AND target=${target}`;
+								if (existing[0]) {
+									const previous = JSON.parse(existing[0].record) as SafetyAction;
+									if (previous.kind === 'emergency' && previous.status === 'unknown')
+										yield* save({ ...previous, reviewedAt: Date.now() });
+								}
+							}
 						})
 					)
 					.pipe(Effect.result);
@@ -626,6 +646,11 @@ export const SafetyServiceLive = Layer.effect(
 					return failure;
 				}
 				latch = (yield* latchState())[0];
+				if (request.operation.type === 'restart') {
+					const reviewed =
+						yield* sql<Row>`SELECT * FROM safety_actions WHERE id=${request.operation.recoveryOf} AND target=${target}`;
+					if (reviewed[0]) yield* publish(JSON.parse(reviewed[0].record) as SafetyAction);
+				}
 				yield* publish(record);
 				const job = {
 					request,
@@ -674,7 +699,12 @@ export const SafetyServiceLive = Layer.effect(
 						if (ordinary || emergency)
 							return yield* Effect.fail(rejected('Wait for the safety action to settle.'));
 						const current = (yield* latchState())[0];
-						if (!interlock.halted || !current.halted || current.token !== token)
+						if (
+							!interlock.halted ||
+							!current.halted ||
+							activeToken !== token ||
+							current.token !== token
+						)
 							return yield* Effect.fail(
 								rejected('Emergency state changed. Review the current hazard.')
 							);
