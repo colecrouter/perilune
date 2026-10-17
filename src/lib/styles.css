@@ -178,6 +178,8 @@ small {
 }
 .header-tools {
 	display: flex;
+	flex-wrap: wrap;
+	max-width: 100%;
 	align-items: center;
 	gap: 12px;
 	padding-top: 2px;
