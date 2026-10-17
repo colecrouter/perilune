@@ -907,9 +907,9 @@ receipt are persisted before dispatch. Storage failure dispatches nothing and
 keeps the memory interlock; use the physical stop if the server cannot dispatch.
 This is a network control, not a substitute for a physical emergency switch.
 
-Safety review needs an authorized owner, fresh ready/idle telemetry and all known
-heater targets off. Resolve hazards and restart Klipper externally after emergency
-shutdown before reviewing. Epoch/token checks prevent a concurrent newer emergency
+Emergency recovery separates the owner hazard review (available while shut down
+or offline) from explicit firmware restart and fresh ready/idle/all-heaters-off
+verification. Ordinary controls remain locked until verification succeeds. Epoch/token checks prevent a concurrent newer emergency
 from being cleared by an older review. Reviewing safety leaves the original basic
 recovery lock intact for its own explicit review. Other Moonraker clients remain
 outside Perilune's admission/interlock and may change printer state.

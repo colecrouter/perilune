@@ -26,7 +26,7 @@ async function fixture() {
 		SubscriptionRef.make<MoonrakerSnapshot>({
 			...emptyMoonrakerSnapshot(),
 			connection: 'connected',
-			klippy: 'ready',
+			klippy: 'ready' as const,
 			telemetryReady: true,
 			generation: 1,
 			availableObjects: ['extruder', 'heater_bed'],
@@ -50,7 +50,7 @@ async function fixture() {
 			await Effect.runPromise(
 				SubscriptionRef.update(state, (s) => ({
 					...s,
-					klippy: 'shutdown',
+					klippy: 'shutdown' as const,
 					telemetryReady: false,
 					generation: s.generation + 1
 				}))
@@ -60,10 +60,10 @@ async function fixture() {
 			await Effect.runPromise(
 				SubscriptionRef.update(state, (s) => ({
 					...s,
-					klippy: 'ready',
+					klippy: 'ready' as const,
 					telemetryReady: true,
 					generation: s.generation + 1,
-					job: { ...s.job, state: 'standby' },
+					job: { ...s.job, state: 'standby' as const },
 					heaters: {
 						bed: { ...s.heaters.bed, target: 0 },
 						nozzle: { ...s.heaters.nozzle, target: behavior === 'partial' ? 200 : 0 }
@@ -282,7 +282,7 @@ it('hazard review works offline, is durable and does not restart or unlock contr
 		emergency = await f.submit({ type: 'emergency' });
 	await f.finished(emergency.id);
 	await Effect.runPromise(
-		SubscriptionRef.update(f.state, (s) => ({ ...s, connection: 'disconnected' }))
+		SubscriptionRef.update(f.state, (s) => ({ ...s, connection: 'reconnecting' as const }))
 	);
 	await f.runtime.runPromise(f.safety.acknowledge(emergency.id, owner));
 	const current = await f.snapshot();
@@ -534,9 +534,9 @@ it('a new emergency during readiness verification cannot be cleared by the older
 	await Effect.runPromise(
 		SubscriptionRef.update(f.state, (s) => ({
 			...s,
-			klippy: 'ready',
+			klippy: 'ready' as const,
 			telemetryReady: true,
-			job: { ...s.job, state: 'standby' },
+			job: { ...s.job, state: 'standby' as const },
 			heaters: { bed: { current: 25, target: 0 }, nozzle: { current: 25, target: 0 } }
 		}))
 	);
@@ -615,7 +615,7 @@ it('individual outcome review never clears a different unknown safety receipt', 
 	const second = await f.submit({ type: 'cooldown', recoveryOf: f.recoveryId });
 	await f.finished(second.id);
 	await Effect.runPromise(
-		SubscriptionRef.update(f.state, (s) => ({ ...s, job: { ...s.job, state: 'standby' } }))
+		SubscriptionRef.update(f.state, (s) => ({ ...s, job: { ...s.job, state: 'standby' as const } }))
 	);
 	await f.runtime.runPromise(f.safety.review(first.id, owner));
 	expect((await f.runtime.runPromise(f.safety.receipt(first.id, owner))).reviewedAt).toBeTypeOf(
