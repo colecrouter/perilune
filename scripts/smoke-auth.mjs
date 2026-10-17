@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
+import { testPairing } from './smoke-pairing-helper.mjs';
 import { authenticate } from './smoke-auth-helper.mjs';
 const directory = await mkdtemp(join(tmpdir(), 'perilune-auth-smoke-'));
 const filename = join(directory, 'state.sqlite');
@@ -45,6 +46,8 @@ try {
 	page.on('pageerror', (error) => errors.push(error.message));
 	await page.goto(`${base}/account`);
 	await page.getByRole('heading', { name: 'Your account' }).waitFor();
+	await mkdir('test-results', { recursive: true });
+	await testPairing(owner, base, directory, filename);
 	const cdp = await owner.newCDPSession(page);
 	await cdp.send('WebAuthn.enable');
 	await cdp.send('WebAuthn.addVirtualAuthenticator', {

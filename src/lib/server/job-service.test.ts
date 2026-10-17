@@ -515,3 +515,30 @@ it('uploads live content once, verifies bytes, blocks active jobs and removes on
 	);
 	expect(deletes).toBe(2);
 });
+
+it('defaults keys to no expiration, records use, and enforces optional expiry and ownership', async () => {
+	const { runtime, jobs } = await create();
+	const permanent = await runtime.runPromise(jobs.issueKey('owner', 0, 'Permanent'));
+	const expiring = await runtime.runPromise(jobs.issueKey('owner', 0, 'Temporary', false, 1));
+	expect(permanent.key.expires).toBe(0);
+	expect(permanent.key.lastUsed).toBeNull();
+	expect(expiring.key.expires).toBeGreaterThan(Date.now());
+	await runtime.runPromise(jobs.validateKey(permanent.token));
+	expect(
+		(await runtime.runPromise(jobs.keys('owner'))).find((key) => key.id === permanent.key.id)
+			?.lastUsed
+	).toBeGreaterThan(0);
+	expect(await runtime.runPromise(jobs.keys('other'))).toEqual([]);
+	await runtime.runPromise(jobs.revokeKey('other', permanent.key.id));
+	expect(await runtime.runPromise(jobs.validateKey(permanent.token))).toBe(true);
+	await expect(runtime.runPromise(jobs.issueKey('owner', 0, 'Invalid', false, -1))).rejects.toThrow(
+		'expiry'
+	);
+	const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 2 * 86400_000);
+	try {
+		expect(await runtime.runPromise(jobs.validateKey(expiring.token))).toBe(false);
+		expect(await runtime.runPromise(jobs.validateKey(permanent.token))).toBe(true);
+	} finally {
+		clock.mockRestore();
+	}
+});

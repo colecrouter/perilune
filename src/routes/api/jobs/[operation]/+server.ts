@@ -77,7 +77,13 @@ export async function POST(event: RequestEvent) {
 			.get(identity.user.id) as { authVersion: number };
 		return json(
 			await jobOperation(
-				service.issueKey(identity.user.id, user.authVersion, body.name, body.canPrint === true),
+				service.issueKey(
+					identity.user.id,
+					user.authVersion,
+					body.name,
+					body.canPrint === true,
+					body.expiresDays as number | undefined
+				),
 				event
 			)
 		);

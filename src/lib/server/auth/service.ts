@@ -5,6 +5,9 @@ import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
+import { makeSignature } from 'better-auth/crypto';
+import { getCookies } from 'better-auth/cookies';
+import pairingSchema from './004.sql?raw';
 import { passkey } from '@better-auth/passkey';
 import schema from './001.sql?raw';
 import recoverySchema from './002.sql?raw';
@@ -41,7 +44,8 @@ export function createAuthService(
 	}
 	for (const [version, sql] of [
 		[2, recoverySchema],
-		[3, processSchema]
+		[3, processSchema],
+		[4, pairingSchema]
 	] as const) {
 		db.exec('BEGIN IMMEDIATE');
 		try {
@@ -73,6 +77,7 @@ export function createAuthService(
 	if (secret.length < 32)
 		throw new Error('Authentication secret must contain at least 32 characters.');
 	const enrollment = new AsyncLocalStorage<{ role: Role }>();
+	const pairing = new AsyncLocalStorage<{ owner: string; epoch: number }>();
 	const auth = betterAuth({
 		appName: 'Perilune',
 		baseURL: origin,
@@ -90,7 +95,8 @@ export function createAuthService(
 			}
 		},
 		session: {
-			expiresIn: 60 * 60 * 24 * 7,
+			expiresIn: 60 * 60 * 24 * 90,
+			updateAge: 60 * 60 * 24,
 			cookieCache: { enabled: false },
 			additionalFields: {
 				authVersion: { type: 'number', required: true, defaultValue: 0, input: false }
@@ -133,7 +139,11 @@ export function createAuthService(
 						)?.periluneVersions;
 						const version =
 							versions?.get(session.userId) ??
-							(enrollment.getStore() ? Number(user?.authVersion) : -1);
+							(pairing.getStore()?.owner === session.userId
+								? pairing.getStore()!.epoch
+								: enrollment.getStore()
+									? Number(user?.authVersion)
+									: -1);
 						if (!user || Number(user.authVersion) !== version)
 							throw new APIError('FORBIDDEN', { message: 'Please sign in again.' });
 						if (!credential?.password)
@@ -184,7 +194,151 @@ export function createAuthService(
 		db,
 		origin,
 		async identity(headers: Headers) {
-			return auth.api.getSession({ headers, query: { disableCookieCache: true } });
+			return auth.api.getSession({
+				headers,
+				query: { disableCookieCache: true, disableRefresh: true }
+			});
+		},
+		async resolveIdentity(headers: Headers) {
+			return auth.api.getSession({
+				headers,
+				query: { disableCookieCache: true },
+				returnHeaders: true
+			});
+		},
+		startPairing(name: string) {
+			const now = Date.now();
+			db.prepare('DELETE FROM browser_pairing WHERE expires<=?').run(now);
+			if (Number(db.prepare('SELECT count(*) AS count FROM browser_pairing').get()?.count) >= 100)
+				throw new Error('Too many pairing requests. Try again in a few minutes.');
+			const token = randomBytes(32).toString('base64url');
+			const code = randomBytes(5).toString('hex').toUpperCase();
+			const expires = now + 300_000;
+			db.prepare('INSERT INTO browser_pairing(hash,code,name,expires) VALUES(?,?,?,?)').run(
+				digest(token),
+				code,
+				name.trim().slice(0, 80) || 'Paired browser',
+				expires
+			);
+			return { token, code, expires, url: `${origin}/pair` };
+		},
+		pairingRequest(code: string) {
+			return db
+				.prepare(
+					'SELECT name,expires FROM browser_pairing WHERE code=? AND expires>? AND approved=0'
+				)
+				.get(code.toUpperCase(), Date.now());
+		},
+		approvePairing(identity: Identity, code: string, approve: boolean, integrationId?: string) {
+			if (!valid(identity)) throw new Error('Please sign in again.');
+			const row = db.prepare('SELECT authVersion FROM user WHERE id=?').get(identity.user.id)!;
+			if (
+				integrationId &&
+				!db
+					.prepare(
+						'SELECT id FROM slicer_keys WHERE id=? AND owner=? AND epoch=? AND (expires=0 OR expires>?)'
+					)
+					.get(integrationId, identity.user.id, Number(row.authVersion), Date.now())
+			)
+				throw new Error('Choose an active integration owned by your account.');
+			const result = approve
+				? db
+						.prepare(
+							'UPDATE browser_pairing SET owner=?,epoch=?,integration_id=?,approved=1 WHERE code=? AND expires>? AND approved=0'
+						)
+						.run(
+							identity.user.id,
+							Number(row.authVersion),
+							integrationId ?? null,
+							code.toUpperCase(),
+							Date.now()
+						)
+				: db
+						.prepare('DELETE FROM browser_pairing WHERE code=? AND expires>? AND approved=0')
+						.run(code.toUpperCase(), Date.now());
+			if (!result.changes) throw new Error('Pairing request expired or was already handled.');
+			audit(identity.user.id, approve ? 'browser.approved' : 'browser.denied', null);
+		},
+		async redeemPairing(token: string) {
+			if (token.length !== 43) throw new Error('Invalid pairing request.');
+			const request = db
+				.prepare('SELECT * FROM browser_pairing WHERE hash=? AND expires>?')
+				.get(digest(token), Date.now());
+			if (!request) throw new Error('Pairing expired or was cancelled. Start again.');
+			if (!request.approved) return null;
+			// Claim before asynchronous session creation. Ambiguous outcomes never reopen a grant.
+			if (
+				!db
+					.prepare('UPDATE browser_pairing SET approved=2 WHERE hash=? AND approved=1')
+					.run(digest(token)).changes
+			)
+				throw new Error('Pairing request already used.');
+			const owner = String(request.owner);
+			const context = await auth.$context;
+			const session = await pairing.run({ owner, epoch: Number(request.epoch) }, () =>
+				context.internalAdapter.createSession(owner)
+			);
+			if (!session) throw new Error('Could not create browser session.');
+			db.prepare(
+				'INSERT INTO paired_browser(session_id,name,created,integration_id) VALUES(?,?,?,?)'
+			).run(
+				session.id,
+				String(request.name),
+				Date.now(),
+				request.integration_id === null ? null : String(request.integration_id)
+			);
+			if (
+				!db
+					.prepare('UPDATE browser_pairing SET session_id=? WHERE hash=? AND approved=2')
+					.run(session.id, digest(token)).changes
+			) {
+				db.prepare('DELETE FROM session WHERE id=?').run(session.id);
+				throw new Error('Pairing cancelled.');
+			}
+			const cookie = getCookies(auth.options).sessionToken;
+			return {
+				name: cookie.name,
+				value: `${session.token}.${await makeSignature(session.token, secret!)}`,
+				attributes: cookie.attributes
+			};
+		},
+		cancelPairing(token: string) {
+			if (token.length !== 43) throw new Error('Invalid pairing request.');
+			const row = db
+				.prepare('DELETE FROM browser_pairing WHERE hash=? RETURNING session_id')
+				.get(digest(token));
+			if (row?.session_id) db.prepare('DELETE FROM session WHERE id=?').run(String(row.session_id));
+			sweep();
+		},
+		browsers(owner: string) {
+			return db
+				.prepare(
+					'SELECT p.session_id AS id,p.name,p.created,p.integration_id AS integrationId,s.updatedAt AS lastUsed,s.expiresAt AS expires FROM paired_browser p JOIN session s ON s.id=p.session_id WHERE s.userId=? AND s.expiresAt>? ORDER BY p.created DESC'
+				)
+				.all(owner, Date.now());
+		},
+		disconnectIntegration(owner: string, id: string) {
+			db.exec('BEGIN IMMEDIATE');
+			try {
+				db.prepare(
+					'DELETE FROM session WHERE userId=? AND id IN (SELECT session_id FROM paired_browser WHERE integration_id=?)'
+				).run(owner, id);
+				db.prepare('DELETE FROM browser_pairing WHERE owner=? AND integration_id=?').run(owner, id);
+				db.prepare('DELETE FROM slicer_keys WHERE owner=? AND id=?').run(owner, id);
+				audit(owner, 'integration.disconnected', id);
+				db.exec('COMMIT');
+			} catch (cause) {
+				db.exec('ROLLBACK');
+				throw cause;
+			}
+			sweep();
+		},
+		revokeBrowser(owner: string, id: string) {
+			db.prepare(
+				'DELETE FROM session WHERE id=? AND userId=? AND id IN (SELECT session_id FROM paired_browser)'
+			).run(id, owner);
+			audit(owner, 'browser.revoked', id);
+			sweep();
 		},
 		watch(session: Identity) {
 			const controller = new AbortController();

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import Integrations from '#lib/components/Integrations.svelte';
 	import DeviceSettings from '#lib/components/DeviceSettings.svelte';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import { authClient } from '#lib/client/auth.js';
@@ -70,6 +71,7 @@
 		<h1>Your account</h1>
 		<p>Signed in as {data.user?.name} · {data.user?.role}</p>
 		<DeviceSettings />
+		<Integrations canOperate={data.user?.role === 'owner' || data.user?.role === 'operator'} />
 		<section class="account-card">
 			<h2>Secure access</h2>
 			<p>

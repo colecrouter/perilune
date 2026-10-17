@@ -48,12 +48,22 @@ export const handle: typeof integration.handle = async ({ event, resolve }) => {
 		response.headers.set('Cache-Control', 'no-store');
 		return response;
 	}
-	event.locals.identity = await authService.identity(event.request.headers);
-	if (event.url.pathname.startsWith('/api/account/')) {
+	// Pairing redemption may replace an existing login. Do not renew the old cookie.
+	const resolved =
+		event.url.pathname === '/api/pairing/poll'
+			? { response: await authService.identity(event.request.headers), headers: new Headers() }
+			: await authService.resolveIdentity(event.request.headers);
+	event.locals.identity = resolved.response;
+	if (
+		event.url.pathname.startsWith('/api/account/') ||
+		event.url.pathname.startsWith('/api/pairing/')
+	) {
 		if (event.request.method !== 'GET') sameOrigin(event.request);
 	} else if (
 		![
 			'/login',
+			'/pair',
+			'/pair/start',
 			'/setup',
 			'/register',
 			'/health',
@@ -74,6 +84,8 @@ export const handle: typeof integration.handle = async ({ event, resolve }) => {
 	const response = await integration.handle({ event, resolve });
 	response.headers.set('Cache-Control', 'no-store');
 	response.headers.set('Referrer-Policy', 'same-origin');
+	for (const cookie of resolved.headers.getSetCookie())
+		response.headers.append('Set-Cookie', cookie);
 	return response;
 };
 export const init = async () => {

@@ -44,7 +44,7 @@ export const SlicerServiceLive = Layer.effect(
 							return yield* Effect.fail(
 								reject(
 									403,
-									'This key allows uploads only. Create an upload-and-print key in Perilune Jobs, or choose Upload only in your slicer.'
+									'This key allows uploads only. Create an upload-and-print key in Account → Integrations, or choose Upload only in your slicer.'
 								)
 							);
 						if (!safeRelativePath(filename))

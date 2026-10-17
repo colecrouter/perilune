@@ -116,7 +116,7 @@ const jobsLayer = JobServiceLive.pipe(
 			checkPrintKey: (id, owner, epoch) => {
 				const key = authService?.db
 					.prepare(
-						`SELECT k.id FROM slicer_keys k JOIN user u ON u.id=k.owner WHERE k.id=? AND k.owner=? AND k.epoch=? AND k.expires>? AND k.can_print=1 AND u.authVersion=k.epoch AND u.role IN ('owner','operator')`
+						`SELECT k.id FROM slicer_keys k JOIN user u ON u.id=k.owner WHERE k.id=? AND k.owner=? AND k.epoch=? AND (k.expires=0 OR k.expires>?) AND k.can_print=1 AND u.authVersion=k.epoch AND u.role IN ('owner','operator')`
 					)
 					.get(id, owner, epoch, Date.now());
 				return Boolean(key);

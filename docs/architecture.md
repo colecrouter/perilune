@@ -159,7 +159,7 @@ fallback remains unverified on Safari hardware.
 ## Local authentication
 
 Better Auth 1.7.7 uses Node SQLite directly, with password and optional passkey
-credentials, revocable seven-day sessions, and cookie caching disabled. Its schema
+credentials, revocable 90-day sessions renewed during use, and cookie caching disabled. Its schema
 is generated into `src/lib/server/auth/001.sql` and applied once under a versioned
 transaction. Auth/enrollment tables share the database file with Effect SQL action
 storage. Runtime and CLI migrations recheck their version after acquiring SQLite's
@@ -345,8 +345,8 @@ files are presented. Cached files remain visible during failure. Live uploads,
 deletes and physical starts remain prohibited. Real-device file-library validation
 and physical command testing remain outstanding; protocol fixtures cover this slice.
 
-Operators can issue upload-only or explicitly print-enabled slicer keys from Jobs. Keys are hashed at rest,
-expire after 90 days, are individually revocable, and are bound to an active
+Operators can issue upload-only or explicitly print-enabled slicer keys from Account → Integrations. Keys are hashed at rest,
+have no expiration by default (optional 90-day or one-year expiry in the UI), are individually revocable, and are bound to an active
 operator/owner and its authentication recovery epoch. They authorize the
 Moonraker-compatible `/server/info`, `/server/files/roots` and
 `/server/files/upload` subset. Print-enabled keys additionally authorize `/printer/print/start`; unrelated APIs still
@@ -1091,3 +1091,39 @@ retain progress across reconnect/navigation, and explain offline/pending states.
 Protocol/headless tests cover the complete flow; physical emergency/restart
 acceptance remains a coordinated owner check on the daily-use checklist (#52).
 Moonraker endpoint reference: https://moonraker.readthedocs.io/en/latest/external_api/printer/
+
+## Browser pairing and integration management
+
+Account → Integrations provides Moonraker-compatible slicer setup, named account-owned
+upload or upload-and-print keys, creation/last-use dates, optional expiration, and
+individual revocation. New secrets start masked with explicit Copy/Reveal controls;
+only creation returns the full key. Existing keys retain their original expiration.
+Upload credentials never authorize interactive browser access.
+
+Login offers general browser pairing at `/pair/start`. The requesting browser holds
+a random 256-bit redemption secret in memory; the database stores its hash and a
+separate 40-bit human code. A signed-in browser enters that code at `/pair`, inspects
+the requester-supplied name, and explicitly approves or denies account access.
+Requests expire after five minutes, are bounded globally, and have separate bounded
+polling/action rate budgets per address. Requests enforce the configured origin,
+finite body size and read time. Approval captures the current recovery epoch;
+redemption claims the grant before asynchronous session creation and never reopens
+an ambiguous grant. Cancellation invalidates pending and in-flight grants and can
+revoke an already-created session while the grant remains available.
+
+Paired browsers use ordinary Better Auth sessions and persistent HttpOnly,
+SameSite=Lax cookies (Secure on HTTPS), with a 90-day lifetime renewed at most daily.
+The HTTP hook forwards renewal cookies; internal identity checks do not silently
+consume renewals. Paired sessions are independently listed/revoked, terminate live
+session leases on revocation, and respect account removal/recovery. During approval,
+a browser can optionally be linked to an existing active slicer key. Revoking only
+a key or browser leaves the other credential intact; Disconnect integration revokes
+the key, linked browsers, and pending linked grants together.
+
+Headless production auth smoke covers two-browser approval, shared-address polling,
+a complete persistent Chromium context close/relaunch, cookie renewal through an
+ordinary app request, cancellation, origin enforcement, and revocation. Unit tests
+cover expiry, denial, one-time redemption, recovery epochs, ownership, and cancellation
+racing session creation. Actual Orca/WebKit cookie retention across a complete macOS
+application quit/relaunch remains an owner-assisted acceptance check; no slicer-specific
+API injection or passkey support is required by this flow.
