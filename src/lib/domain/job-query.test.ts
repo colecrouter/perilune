@@ -18,7 +18,7 @@ it('bounds untrusted query parameters and round-trips links', () => {
 	const query = parseJobQuery(
 		new URLSearchParams('sort=sql&direction=bad&page=Infinity&size=100000&q=' + 'x'.repeat(200))
 	);
-	expect(query).toMatchObject({ sort: 'uploaded', direction: 'desc', page: 1, pageSize: 25 });
+	expect(query).toMatchObject({ sort: 'uploaded', direction: 'desc', page: 1, pageSize: 10 });
 	expect(query.q).toHaveLength(180);
 	expect(parseJobQuery(new URLSearchParams(jobQueryString(query)))).toEqual(query);
 });

@@ -33,7 +33,22 @@ export const load: PageServerLoad = async (event) => {
 						}).pipe(Effect.catch(() => Effect.succeed(undefined)))
 					)
 				: await runtime.runPromise(store.jobFile(fileId));
-		if (file) return { review: { intent, fileId, name: file.name, filename: '', runId: '' } };
+		if (file) {
+			const jobs = await runtime.runPromise(JobService);
+			const inspected = await runtime.runPromise(
+				jobs.inspect(fileId).pipe(Effect.catch(() => Effect.succeed(file)))
+			);
+			return {
+				review: {
+					intent,
+					fileId,
+					name: file.name,
+					filename: '',
+					runId: '',
+					manualInterventions: inspected.metadata?.manualInterventions
+				}
+			};
+		}
 	}
 	return { review: null };
 };

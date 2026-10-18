@@ -1,3 +1,4 @@
+import { readBoundedBody } from '#lib/server/action-body.js';
 import { error, json } from '@sveltejs/kit';
 import { requireIdentity, sameOrigin } from '#lib/server/auth/index.js';
 import { runtime } from '#lib/server/runtime.js';
@@ -24,8 +25,7 @@ export const GET = async (event) => {
 export const POST = async (event) => {
 	sameOrigin(event.request);
 	const identity = requireIdentity(event);
-	const text = await event.request.text();
-	if (text.length > 8192) error(413, 'Notification request is too large.');
+	const text = new TextDecoder().decode(await readBoundedBody(event.request));
 	let body: Record<string, unknown>;
 	try {
 		body = JSON.parse(text);

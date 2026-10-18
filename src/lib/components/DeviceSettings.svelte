@@ -5,6 +5,7 @@
 	import { installation } from '#lib/client/install.svelte.js';
 	let installed = $state(false);
 	let supported = $state(false);
+	let permission = $state<NotificationPermission>('default');
 	let ios = $state(false);
 	let subscribed = $state(false);
 	let pending = $state(false);
@@ -45,6 +46,7 @@
 			'serviceWorker' in navigator &&
 			'PushManager' in window &&
 			'Notification' in window;
+		if ('Notification' in window) permission = Notification.permission;
 		preferences.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 		let active = true;
 		if (supported)
@@ -70,7 +72,7 @@
 	});
 	async function enable() {
 		// Request permission directly in the click gesture, before any network requests.
-		const permission = await Notification.requestPermission();
+		permission = await Notification.requestPermission();
 		if (permission !== 'granted')
 			throw new Error(
 				'Notifications are blocked. Allow them in your browser or device settings to try again.'
@@ -156,6 +158,20 @@
 			Push notifications aren’t available in this browser. Use a supported browser over HTTPS.
 		</p>
 	{:else}
+		<p class="help">
+			Browser permission: <strong
+				>{permission === 'granted'
+					? 'allowed'
+					: permission === 'denied'
+						? 'blocked'
+						: 'not requested'}</strong
+			>
+			· {subscribed ? 'This device is registered.' : 'This device is not registered.'}
+		</p>
+		{#if permission === 'denied'}<p class="help">
+				Allow notifications in your browser or OS settings, then reload this page. Installing the
+				app does not automatically grant permission.
+			</p>{/if}
 		<fieldset disabled={pending} oninput={() => (edited = true)}>
 			<legend>Notify me about</legend>
 			<label><input type="checkbox" bind:checked={preferences.complete} />Completed prints</label>
@@ -194,7 +210,8 @@
 					onclick={() =>
 						run(async () => {
 							await request('test');
-							message = 'Test notification sent. Check your device’s notifications.';
+							message =
+								'Test accepted by the push service. Confirm it appears in your device’s notifications.';
 						})}>Send a test</button
 				><button disabled={pending} onclick={() => run(disable)}>Disable notifications</button
 				>{:else}<button class="button primary" disabled={pending} onclick={() => run(enable)}

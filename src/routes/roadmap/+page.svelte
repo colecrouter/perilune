@@ -7,14 +7,17 @@
 	><div class="roadmap">
 		<h1>Building Perilune</h1>
 		<p class="muted">
-			This first slice proves shared state, service lifetimes, and responsive controls. The
-			following workflows are being developed in focused increments.
+			Perilune now supports persistent live printer connectivity and a self-hosted daily-use
+			workflow. Physical results and device behavior remain subject to attended acceptance. Open
+			Help for current setup and use instructions.
 		</p>
+		<p><a href="/help">Help & setup →</a></p>
 		<section id="jobs">
 			<h2>Jobs</h2>
 			<p>
-				The Jobs library now supports G-code uploads, observed print history, and scoped slicer
-				upload keys. Live file writes and print scheduling remain planned.
+				Jobs supports inspected uploads, observed history, explicit live print controls, and planned
+				manual-change previews. Account → Integrations manages scoped slicer keys and browser
+				pairing. Live workflows require explicit server options.
 			</p>
 		</section>
 		<section id="calibration">
@@ -24,8 +27,8 @@
 				cancellation controls, and contextual documentation. Bed mesh inspection now visualizes
 				reported samples and compatible profile differences. Opt-in cold live probing now supports
 				result review, temporary use/restoration and saving with restart verification. Filament
-				handling and extrusion-distance measurement now have a guided simulator workflow and a
-				manual live calculator. Live extrusion and print-based tuning remain planned.
+				handling, measured extrusion, and live Z calibration have separately enabled workflows.
+				Broader print-based tuning remains future work.
 			</p>
 		</section>
 		<section id="configuration">
@@ -33,15 +36,17 @@
 			<p>
 				The configuration workspace now has explained settings, lossless raw editing, protected
 				calibration-generated values, reviewed simulator saves, conflict checks and backups. Live
-				files support owner-only inspection, drafts and export; coordinated live writing follows.
+				files support owner-only inspection, drafts, reviewed application, and persistent recovery
+				with explicit server opt-in.
 			</p>
 		</section>
 		<section>
 			<h2>Camera and authentication</h2>
 			<p>
 				The go2rtc camera gateway now provides stable app URLs and encoded video playback. Built-in
-				accounts, invitations and passkeys are implemented. Broader media protocols, external
-				authentication, and print notifications remain planned.
+				accounts, invitations, passkeys, browser pairing, installation, and configurable device
+				notifications are implemented. Broader media protocols and external identity integration
+				remain future work.
 			</p>
 		</section>
 		<a class="button primary" href="https://github.com/colecrouter/perilune/milestones"

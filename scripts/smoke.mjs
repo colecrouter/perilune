@@ -352,6 +352,20 @@ try {
 	);
 	await first.setViewportSize({ width: 1280, height: 900 });
 	await first.screenshot({ path: 'test-results/device-settings-desktop.png', fullPage: true });
+	await first.getByText('Browser permission:', { exact: false }).waitFor();
+	await first.goto(`${base}/help`);
+	assert.equal(await first.title(), 'Help & setup · Perilune');
+	await first.getByRole('link', { name: 'Printing & filament changes', exact: true }).click();
+	await first.getByRole('heading', { name: 'Before you print', exact: true }).waitFor();
+	assert.equal(new URL(first.url()).hash, '#printing');
+	await first.screenshot({ path: 'test-results/help-desktop.png', fullPage: true });
+	await first.setViewportSize({ width: 320, height: 844 });
+	assert.equal(
+		await first.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+		false,
+		'Help fits a narrow phone'
+	);
+	await first.screenshot({ path: 'test-results/help-mobile.png', fullPage: true });
 	assert.deepEqual(errors, [], 'Production browser errors');
 	const polyfills = await fetch(`${base}/legacy-polyfills.js`);
 	assert.equal(polyfills.status, 200, 'Polyfills are served');

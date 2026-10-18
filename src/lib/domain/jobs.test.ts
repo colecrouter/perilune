@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
 import {
 	emptyMetadata,
+	inspectManualInterventions,
 	parseGcode,
 	safeRelativePath,
 	startReason,
@@ -24,7 +25,10 @@ describe('job inspection and readiness', () => {
 			filamentGrams: 12.4
 		});
 		expect(parseGcode(encode(';TIME:210\nG1 X1'))).toMatchObject({ estimatedSeconds: 210 });
-		expect(parseGcode(encode('G28\n'))).toEqual(emptyMetadata());
+		expect(parseGcode(encode('G28\n'))).toEqual({
+			...emptyMetadata(),
+			manualInterventions: { filamentChanges: 0, pauses: 0, locations: [] }
+		});
 	});
 	it('rejects binary and command-free files, traversal and host URLs', () => {
 		expect(() => parseGcode(new Uint8Array([0xff, 0x00]))).toThrow();
@@ -77,3 +81,28 @@ it.each(['pause', 'resume', 'cancel'] as const)(
 		expect(() => applyCommand(current, command)).toThrow('active job changed');
 	}
 );
+
+it('counts only recognizable executable filament-change and pause commands with bounded locations', () => {
+	const result = inspectManualInterventions(
+		encode(
+			'; M600\n(M600) G1 X1\nRESPOND MSG="M600"\nM600_OTHER\nM6000\nN23 M600 *12 ; change\n  m0600 ; change\nPAUSE\nM0\nM1\nM25\n'
+		)
+	);
+	expect(result).toMatchObject({ filamentChanges: 2, pauses: 4 });
+	expect(result.locations[0]).toEqual({ line: 6, command: 'M600' });
+	expect(inspectManualInterventions(encode('M600\n'.repeat(30))).locations).toHaveLength(12);
+	expect(inspectManualInterventions(encode('G1 X10\n'))).toMatchObject({
+		filamentChanges: 0,
+		pauses: 0
+	});
+	expect(() => inspectManualInterventions(new Uint8Array(20 * 1024 * 1024 + 1))).toThrow('limit');
+	expect(() => inspectManualInterventions(encode('M600\0'))).toThrow('Binary');
+});
+
+it('handles long malformed comment prefixes without treating quoted or commented commands as changes', () => {
+	expect(inspectManualInterventions(encode('('.repeat(100_000) + '\nG1 X1\n'))).toMatchObject({
+		filamentChanges: 0,
+		pauses: 0
+	});
+	expect(() => inspectManualInterventions(encode('{"result":"M600"}'))).toThrow('commands');
+});

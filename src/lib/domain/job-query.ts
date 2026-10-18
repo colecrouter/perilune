@@ -19,7 +19,7 @@ export function parseJobQuery(params: URLSearchParams): JobQuery {
 		sort: jobSorts.includes(sort as JobSort) ? (sort as JobSort) : 'uploaded',
 		direction: params.get('direction') === 'asc' ? 'asc' : 'desc',
 		page: Number.isSafeInteger(page) && page > 0 ? Math.min(page, 100000) : 1,
-		pageSize: [10, 25, 50].includes(size) ? size : 25
+		pageSize: [10, 25, 50].includes(size) ? size : 10
 	};
 }
 export interface JobCatalog {

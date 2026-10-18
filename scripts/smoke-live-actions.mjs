@@ -451,7 +451,6 @@ try {
 	await page.getByRole('link', { name: 'Stop current job', exact: true }).waitFor();
 	await page.getByRole('link', { name: 'Stop current job', exact: true }).click();
 	const safetyDialog = page.getByRole('dialog');
-	await safetyDialog.getByRole('checkbox', { name: 'Confirm stopping this job' }).check();
 	await safetyDialog.getByRole('button', { name: 'Stop job', exact: true }).click();
 	await safetyDialog.getByRole('link', { name: 'Check receipt', exact: true }).waitFor();
 	await safetyDialog.getByRole('button', { name: 'Back', exact: true }).click();
@@ -468,7 +467,6 @@ try {
 	assert.equal(status.print_stats.state, 'cancelled');
 	await nativePage.goto(base);
 	await nativePage.getByRole('link', { name: 'Turn off heaters', exact: true }).click();
-	await nativePage.getByRole('checkbox', { name: 'Confirm turning off all heaters' }).check();
 	await nativePage.getByRole('button', { name: 'Turn off heaters', exact: true }).click();
 	await nativePage
 		.getByRole('heading', { name: 'Turn off heaters during recovery', exact: true })
@@ -497,12 +495,13 @@ try {
 		'Dropped command was not replayed'
 	);
 
-	await page.getByRole('link', { name: 'Emergency stop', exact: true }).click();
-	const emergency = page.getByRole('dialog');
-	await emergency.getByRole('checkbox', { name: 'Confirm emergency shutdown' }).check();
-	await emergency.getByRole('button', { name: 'Emergency stop', exact: true }).click();
-	await emergency.getByRole('link', { name: 'Check receipt', exact: true }).waitFor();
-	await emergency.getByRole('button', { name: 'Back', exact: true }).click();
+	await page.getByRole('button', { name: 'Emergency stop', exact: true }).click();
+	await page.getByText('Emergency interlock active.', { exact: false }).waitFor();
+	assert.equal(
+		await page.getByRole('dialog').count(),
+		0,
+		'Emergency shutdown has no blocking confirmation dialog'
+	);
 	await page.getByRole('link', { name: 'Safety activity', exact: true }).click();
 	await page
 		.locator('article')
@@ -531,10 +530,8 @@ try {
 
 	await page.goto(base + '/console');
 	await page.getByLabel('Command', { exact: true }).fill('M105\nM114');
-	await page.getByRole('button', { name: 'Review command…', exact: true }).click();
-	const consoleReview = page.getByRole('dialog');
-	await consoleReview.getByText('This runs on the real printer', { exact: false }).waitFor();
-	await consoleReview.getByRole('button', { name: 'Run on printer', exact: true }).click();
+	await page.getByText('Commands and macros run on the real printer', { exact: false }).waitFor();
+	await page.getByRole('button', { name: 'Send command', exact: true }).click();
 	await page
 		.getByText('Klipper acknowledged the script and motion barrier', { exact: false })
 		.waitFor();
