@@ -1,3 +1,4 @@
+import { jobOwner } from './job-attribution.js';
 import { SlicerService, SlicerServiceLive } from './slicer-service.js';
 import { LiveMeshService, LiveMeshServiceLive } from './live-mesh-service.js';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -1044,12 +1045,14 @@ it('native slicer start uses the live worker once and waits for observed printin
 	const [a, b] = await Promise.all([f.start(), f.start()]);
 	expect(a.id).toBe(b.id);
 	expect(a.status).toBe('completed');
+	expect(await f.runtime.runPromise(jobOwner((await f.snapshot()).job.runId))).toBe(owner.id);
 	expect(f.operations.filter((op) => op.type === 'job' && op.method === 'start')).toHaveLength(1);
 });
 it('native slicer start never replays a lost live acknowledgement', async () => {
 	const f = await slicerFixture();
 	f.setBehavior('drop');
 	await expect(f.start()).rejects.toThrow(/unknown/);
+	expect(await f.runtime.runPromise(jobOwner((await f.snapshot()).job.runId))).toBeNull();
 	f.setBehavior('normal');
 	await expect(f.start()).rejects.toThrow(/unknown/);
 	expect(f.operations.filter((op) => op.type === 'job' && op.method === 'start')).toHaveLength(1);
@@ -1354,3 +1357,28 @@ it('fences a late PID completion after emergency stop without saving or replayin
 	await f.submit(pidCommand, owner, id);
 	expect(f.operations).toHaveLength(1);
 });
+
+for (const before of [undefined, null, 'previous', 'new-history'] as const) {
+	it(`persists durable slicer ownership only with a verified new history cursor (before=${before})`, async () => {
+		const f = await slicerFixture();
+		await f.runtime.runPromise(
+			SubscriptionRef.update(f.state, (s) => ({ ...s, historyCursor: before }))
+		);
+		f.setAfterControl(async () => {
+			await f.runtime.runPromise(
+				SubscriptionRef.update(f.state, (s) => ({
+					...s,
+					historyCursor: 'new-history',
+					job: { ...s.job, historyKey: 'new-history' }
+				}))
+			);
+		});
+		const result = await f.start();
+		expect(result.status).toBe('completed');
+		const key = (await f.snapshot()).job.runId;
+		expect(await f.runtime.runPromise(jobOwner(key, 'new-history'))).toBe(owner.id);
+		expect(await f.runtime.runPromise(jobOwner('restarted-process', 'new-history'))).toBe(
+			before === undefined || before === 'new-history' ? null : owner.id
+		);
+	});
+}

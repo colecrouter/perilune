@@ -744,9 +744,10 @@ are checked at event and dispatch time; skipped events are never replayed.
 
 Observed completed/failed jobs and ready-to-error/shutdown Klipper transitions
 produce generic text with no filename, upstream errors or private addresses.
-Cold-start historical state is not announced. Live telemetry lacks a stable run
-identifier: reconnects reset the baseline, deliberately skipping ambiguous
-transitions. Delivery is best effort, with persisted claims before dispatch and
+Cold-start historical state is not announced. Reconnects reset the transition
+baseline, deliberately skipping ambiguous transitions. Optional Moonraker history
+identities retain verified ownership across a restart, but do not replay offline
+events. Delivery is best effort, with persisted claims before dispatch and
 no automatic retry after unknown outcome. Browser notification tags suppress
 same-event duplicates. This is not a durable alarm or print-history replacement.
 
@@ -1248,3 +1249,40 @@ Rolling session support is a separate future enhancement (#101), requiring a
 reviewed selection/proof protocol and no fallback to older identities. No browser
 locks or application-only “latest session” checks are claimed to retract already
 issued HTTP responses.
+
+## Account-scoped print notices
+
+Migration 021 records the initiating Perilune account alongside a verified start's
+completed receipt in one transaction. Simulator, browser and native slicer starts
+use the same account identity; lost acknowledgements and failed starts do not
+claim ownership. Attribution retains the latest 5,000 starts independently of
+receipt pruning. Filenames and Moonraker's proxy-user field never establish an
+account owner.
+
+When Moonraker advertises its history component, bounded optional read-only queries
+provide a hashed backend/job-id/start-time identity. A verified start attaches it
+only when history changed from a successfully read pre-dispatch cursor. Stale
+rows cannot attach to a different run in the same connection. After reconnect or
+process restart, the latest matching `status: in_progress` history row is trusted
+as Moonraker's authoritative active-job identity. The API offers no atomic join
+between object telemetry and history; a faulty or indefinitely stale upstream
+record across that boundary cannot be independently disambiguated. Reconnects can
+resolve an already verified durable claim; missing, conflicting or unavailable
+history leaves restarted jobs unattributed. A history read failure does not fail
+or replay a physical command. There is no inference from a matching filename and
+no history catch-up notification.
+
+The default device policy is notices for that account's prints. Separate opt-ins
+include anyone's prints (including external/unattributed jobs) and shared printer
+errors without an owned active print. Existing device records normalize both
+opt-ins to false. Per-kind toggles and quiet hours still apply. Printer errors
+during an active job follow its attribution; idle errors require the shared-error
+opt-in. A deliberate test remains specific to the requesting device.
+
+Audience and event are queued together. Only currently authorized eligible devices
+can cause a camera capture; delivery rereads each device's current preferences,
+account and epoch before claiming/sending. Images remain account/epoch-bound and
+expire after five minutes. Account-only policy intentionally skips notices for
+jobs started outside Perilune unless their owner can be established from an
+already verified durable identity. Actual OS delivery and image presentation
+remain owner/device acceptance work.

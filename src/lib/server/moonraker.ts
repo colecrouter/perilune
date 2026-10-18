@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { pidParameters, type PidTelemetry } from '#lib/domain/pid.js';
 import {
 	discoverMacros,
@@ -28,6 +29,8 @@ export class MoonrakerConfig extends Context.Service<MoonrakerConfig, MoonrakerS
 ) {}
 export type KlippyState = 'unknown' | 'ready' | 'startup' | 'shutdown' | 'error' | 'disconnected';
 export interface MoonrakerSnapshot {
+	/** Latest successfully queried history identity; null means an empty history. */
+	historyCursor?: string | null;
 	pidTelemetry?: PidTelemetry;
 	zProbe?: import('#lib/domain/live-z.js').ZProbeCapability;
 	filament?: import('#lib/domain/printer.js').PrinterSnapshot['filament'];
@@ -48,6 +51,7 @@ export interface MoonrakerSnapshot {
 	probeResponses: Array<{ sequence: number; x: number; y: number; space?: 'probe' | 'nozzle' }>;
 	job: {
 		runId?: string;
+		historyKey?: string;
 		filename: string;
 		state: 'unknown' | 'standby' | 'printing' | 'paused' | 'complete' | 'cancelled' | 'error';
 		progress: number | null;
@@ -167,6 +171,13 @@ export function normalizeMoonrakerStatus(
 	)
 		? (print.state as MoonrakerSnapshot['job']['state'])
 		: 'unknown';
+	const runId = ['printing', 'paused'].includes(state)
+		? previous.telemetryReady &&
+			['printing', 'paused'].includes(previous.job.state) &&
+			previous.job.filename === print.filename
+			? previous.job.runId
+			: crypto.randomUUID()
+		: previous.job.runId;
 	const heaterLimits = Object.fromEntries(
 		(['bed', 'nozzle'] as const).flatMap((heater) => {
 			const config = record(
@@ -235,13 +246,8 @@ export function normalizeMoonrakerStatus(
 				heater: temperatureFields(name)?.includes('target') ?? false
 			})),
 		job: {
-			runId: ['printing', 'paused'].includes(state)
-				? previous.telemetryReady &&
-					['printing', 'paused'].includes(previous.job.state) &&
-					previous.job.filename === print.filename
-					? previous.job.runId
-					: crypto.randomUUID()
-				: previous.job.runId,
+			runId,
+			historyKey: runId === previous.job.runId ? previous.job.historyKey : undefined,
 			filename: typeof print.filename === 'string' ? print.filename : '',
 			state,
 			progress: progress === null ? null : Math.max(0, Math.min(100, progress * 100)),
@@ -312,6 +318,8 @@ export const MoonrakerServiceLive = Layer.effect(
 				let nextId = 0;
 				let status: ObjectStatus = {};
 				let subscribed = false;
+				let historyEnabled = false;
+				const historyRuns = new Map<string, string>();
 				let readinessVersion = 0;
 				let subscribing = false;
 				let refreshing: Array<{ delta: Record<string, unknown>; time: number | null }> | undefined;
@@ -368,6 +376,64 @@ export const MoonrakerServiceLive = Layer.effect(
 							});
 							ws.send(JSON.stringify({ jsonrpc: '2.0', method, params, id }));
 						});
+					// History reads are optional and never determine whether a physical command is sent.
+					const refreshHistory = async () => {
+						if (!historyEnabled || !current.telemetryReady) return;
+						await publish({ ...current, historyCursor: undefined });
+						const run = current.job.runId;
+						const version = readinessVersion;
+						const generation = current.generation;
+						try {
+							const result = record(
+								await request(
+									'server.history.list',
+									{ limit: 1, order: 'desc' },
+									Math.min(timeout, 2000),
+									false
+								)
+							);
+							if (
+								closed ||
+								signal.aborted ||
+								generation !== current.generation ||
+								version !== readinessVersion ||
+								run !== current.job.runId ||
+								!current.telemetryReady
+							)
+								return;
+							if (!Array.isArray(result.jobs)) return;
+							if (result.jobs.length === 0) {
+								await publish({ ...current, historyCursor: null });
+								return;
+							}
+							const latest = record(result.jobs[0]);
+							if (
+								typeof latest.job_id !== 'string' ||
+								latest.job_id.length > 200 ||
+								number(latest.start_time) === null
+							)
+								return;
+							const key = createHash('sha256')
+								.update(JSON.stringify([config.url, latest.job_id, latest.start_time]))
+								.digest('hex');
+							await publish({ ...current, historyCursor: key });
+							const prior = historyRuns.get(key);
+							if (prior !== undefined && prior !== (run ?? 'inactive')) return;
+							historyRuns.set(key, run ?? 'inactive');
+							if (historyRuns.size > 64) historyRuns.delete(historyRuns.keys().next().value!);
+							if (
+								!run ||
+								!['printing', 'paused'].includes(current.job.state) ||
+								latest.status !== 'in_progress' ||
+								latest.filename !== current.job.filename
+							)
+								return;
+							if (current.job.historyKey && current.job.historyKey !== key) return;
+							await publish({ ...current, job: { ...current.job, historyKey: key } });
+						} catch {
+							/* Missing or unavailable history leaves attribution process-local. */
+						}
+					};
 					ws.addEventListener('close', close);
 					ws.addEventListener('error', close);
 					ws.addEventListener('message', (event) => {
@@ -504,6 +570,8 @@ export const MoonrakerServiceLive = Layer.effect(
 					while (!closed && !signal.aborted) {
 						const version = readinessVersion;
 						const server = record(await request('server.info'));
+						historyEnabled =
+							Array.isArray(server.components) && server.components.includes('history');
 						if (closed || signal.aborted) break;
 						if (version !== readinessVersion) continue;
 						if (config.discoverWebcams) {
@@ -572,6 +640,7 @@ export const MoonrakerServiceLive = Layer.effect(
 									}
 								})
 							);
+							await refreshHistory();
 							if (current.console?.macros.length || config.pidCalibrationEnabled)
 								void request('printer.gcode.help', undefined, timeout, false)
 									.then((help) => {
@@ -680,6 +749,12 @@ export const MoonrakerServiceLive = Layer.effect(
 								fence(generation);
 								mergeStatus(status, record(result.status));
 								const at = number(result.eventtime);
+								for (const delta of refreshing)
+									if (at === null || delta.time === null || delta.time >= at)
+										mergeStatus(status, delta.delta);
+								await publish(normalizeMoonrakerStatus(status, current));
+								await refreshHistory();
+								fence(generation);
 								for (const delta of refreshing)
 									if (at === null || delta.time === null || delta.time >= at)
 										mergeStatus(status, delta.delta);

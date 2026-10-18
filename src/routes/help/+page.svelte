@@ -93,7 +93,11 @@
 					Open <a href="/account">Account → Perilune on this device</a>, enable notifications, and
 					send a test.
 				</li>
-				<li>Close the app and verify delivery. Choose the event types and quiet hours you want.</li>
+				<li>
+					Close the app and verify delivery. Choose the event types and quiet hours you want. By
+					default, notices follow prints started by your account, including slicer integrations.
+					Account offers separate options for anyone’s prints and shared printer errors.
+				</li>
 			</ol>
 			<p>
 				Notifications apply to this device. OS support, permissions, quiet hours, connectivity, and

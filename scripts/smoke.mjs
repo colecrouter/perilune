@@ -419,6 +419,20 @@ try {
 
 	await first.goto(`${base}/account`);
 	await first.getByRole('heading', { name: 'Perilune on this device', exact: true }).waitFor();
+	assert.equal(
+		await first.getByLabel('Include prints started by anyone', { exact: true }).isChecked(),
+		false
+	);
+	assert.equal(
+		await first
+			.getByLabel('Include printer errors when I have no active print', { exact: true })
+			.isChecked(),
+		false
+	);
+	await first.getByLabel('Include prints started by anyone', { exact: true }).check();
+	await first
+		.getByLabel('Include printer errors when I have no active print', { exact: true })
+		.check();
 	await first.getByLabel('Quiet hours', { exact: true }).check();
 	await first.getByLabel('From', { exact: true }).fill('21:30');
 	await first.screenshot({ path: 'test-results/device-settings-mobile.png', fullPage: true });

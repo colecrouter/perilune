@@ -137,6 +137,7 @@ export interface PrinterSnapshot {
 	job: {
 		filename: string;
 		runId?: string;
+		historyKey?: string;
 		state: 'unknown' | 'standby' | 'printing' | 'paused' | 'complete' | 'cancelled' | 'error';
 		progress: number | null;
 		layer: number | null;

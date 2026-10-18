@@ -16,6 +16,7 @@ afterEach(async () => {
 });
 async function simulator(
 	options: {
+		history?: { jobs: Array<Record<string, unknown>> };
 		objects?: string[];
 		klippy?: string;
 		ignoreInfoAfter?: number;
@@ -92,7 +93,13 @@ async function simulator(
 					break;
 				case 'server.info':
 					if (++infoCount > (options.ignoreInfoAfter ?? Infinity)) return;
-					result = { klippy_state: klippy };
+					result = {
+						klippy_state: klippy,
+						...(options.history ? { components: ['history'] } : {})
+					};
+					break;
+				case 'server.history.list':
+					result = options.history;
 					break;
 				case 'printer.gcode.help':
 					if (options.ignoreHelp) return;
@@ -101,6 +108,7 @@ async function simulator(
 				case 'printer.objects.list':
 					result = { objects: options.objects ?? Object.keys(initial) };
 					break;
+				case 'printer.objects.query':
 				case 'printer.objects.subscribe':
 					requested = message.params?.objects ?? {};
 					if (options.shutdownDuringSubscribe) {
@@ -139,6 +147,7 @@ async function simulator(
 			Layer.provide(
 				Layer.succeed(MoonrakerConfig, {
 					url: `ws://127.0.0.1:${address.port}`,
+					liveControlsEnabled: !!options.history,
 					requestTimeoutMs: 100,
 					heartbeatMs: 50,
 					reconnectMinMs: 20,
@@ -151,6 +160,7 @@ async function simulator(
 	const service = await runtime.runPromise(MoonrakerService);
 	return {
 		methods,
+		service,
 		requested: () => requested,
 		clients,
 		runtime,
@@ -435,4 +445,36 @@ it('optional macro help timeouts do not block telemetry and response text stays 
 	await new Promise((resolve) => setTimeout(resolve, 600));
 	expect((await printer.snapshot()).generation).toBe(generation);
 	expect((await printer.snapshot()).telemetryReady).toBe(true);
+});
+
+it('reattaches durable history after reconnect and rejects a stale row for another run of the same filename', async () => {
+	const history = {
+		jobs: [{ job_id: '000001', start_time: 1234, filename: 'fixture.gcode', status: 'in_progress' }]
+	};
+	const p = await simulator({ history });
+	await expect.poll(async () => (await p.snapshot()).job.historyKey).toMatch(/^[a-f0-9]{64}$/);
+	const first = (await p.snapshot()).job;
+	p.clients[0]!.terminate();
+	await expect.poll(async () => (await p.snapshot()).job.runId).not.toBe(first.runId);
+	await expect.poll(async () => (await p.snapshot()).job.historyKey).toBe(first.historyKey);
+	const reconnectedRun = (await p.snapshot()).job.runId;
+	p.notify('notify_status_update', [{ print_stats: { state: 'complete' } }, 201]);
+	await expect.poll(async () => (await p.snapshot()).job.state).toBe('complete');
+	p.notify('notify_status_update', [{ print_stats: { state: 'printing' } }, 202]);
+	await expect.poll(async () => (await p.snapshot()).job.runId).not.toBe(reconnectedRun);
+	expect((await p.snapshot()).job.historyKey).toBeUndefined();
+	// Query the current telemetry, leaving the upstream history row deliberately stale.
+	const current = await p.runtime.runPromise(p.service.refresh((await p.snapshot()).generation));
+	expect(current.job.historyKey).toBeUndefined();
+	history.jobs[0] = { ...history.jobs[0]!, job_id: '000002', start_time: 2345 };
+	const next = await p.runtime.runPromise(p.service.refresh(current.generation));
+	expect(next.job.historyKey).toMatch(/^[a-f0-9]{64}$/);
+	expect(next.job.historyKey).not.toBe(first.historyKey);
+});
+it('keeps active telemetry usable when advertised history has no usable identity', async () => {
+	const p = await simulator({ history: { jobs: [] } });
+	await expect.poll(async () => (await p.snapshot()).telemetryReady).toBe(true);
+	const next = await p.runtime.runPromise(p.service.refresh((await p.snapshot()).generation));
+	expect(next.job.state).toBe('printing');
+	expect(next.job.historyKey).toBeUndefined();
 });
