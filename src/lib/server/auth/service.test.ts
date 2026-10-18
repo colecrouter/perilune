@@ -376,3 +376,96 @@ it('cancels an approved grant while session creation is in flight and revokes a 
 		f.close();
 	}
 });
+
+describe('fixed-lifetime authentication cookie ordering', () => {
+	it('does not renew ordinary reads or auth session reads and cannot clear a newer login on delayed sign-out', async () => {
+		const f = fixture();
+		try {
+			f.setup();
+			await f.service.enroll({
+				token: 'setup-fixture',
+				name: 'Owner',
+				email: 'owner@example.test',
+				password
+			});
+			const old = await login(f.service, 'owner@example.test');
+			const { makeSignature } = await import('better-auth/crypto');
+			const secret = (await import('node:fs'))
+				.readFileSync(f.filename + '.auth-secret', 'utf8')
+				.trim();
+			const cookie =
+				'better-auth.session_token=' +
+				encodeURIComponent(
+					old.session.token + '.' + (await makeSignature(old.session.token, secret))
+				);
+			const expiry = Date.now() + 5 * 86400_000;
+			f.service.db.prepare('UPDATE session SET expiresAt=? WHERE id=?').run(expiry, old.session.id);
+			const ordinary = await f.service.resolveIdentity(new Headers({ cookie }));
+			expect(ordinary.headers.getSetCookie()).toEqual([]);
+			expect(
+				f.service.db.prepare('SELECT expiresAt FROM session WHERE id=?').get(old.session.id)
+					?.expiresAt
+			).toBe(expiry);
+			const read = await f.service.handle(
+				new Request(origin + '/api/auth/get-session', { headers: { cookie } })
+			);
+			expect(read.status).toBe(200);
+			expect(read.headers.getSetCookie()).toEqual([]);
+			const newer = await login(f.service, 'owner@example.test');
+			const signout = await f.service.handle(
+				new Request(origin + '/api/auth/sign-out', {
+					method: 'POST',
+					headers: { cookie, Origin: origin }
+				})
+			);
+			expect(signout.status).toBe(200);
+			expect(signout.headers.getSetCookie()).toEqual([]);
+			expect(f.service.valid(newer)).toBe(true);
+			expect(f.service.valid(old)).toBeFalsy();
+		} finally {
+			f.close();
+		}
+	});
+	it('suppresses expired-session cleanup cookies while keeping fresh session issuance', async () => {
+		const f = fixture();
+		try {
+			f.setup();
+			await f.service.enroll({
+				token: 'setup-fixture',
+				name: 'Owner',
+				email: 'owner@example.test',
+				password
+			});
+			const response = await f.service.handle(
+				new Request(origin + '/api/auth/sign-in/email', {
+					method: 'POST',
+					headers: {
+						Origin: origin,
+						'Content-Type': 'application/json',
+						'x-perilune-client-ip': '192.0.2.240'
+					},
+					body: JSON.stringify({ email: 'owner@example.test', password })
+				})
+			);
+			expect(response.status).toBe(200);
+			expect(
+				response.headers.getSetCookie().some((cookie) => /Max-Age=7776000/i.test(cookie))
+			).toBe(true);
+			const cookie = response.headers
+				.getSetCookie()
+				.map((cookie) => cookie.split(';')[0])
+				.join('; ');
+			f.service.db.prepare('UPDATE session SET expiresAt=0').run();
+			const expired = await f.service.handle(
+				new Request(origin + '/api/auth/get-session', { headers: { cookie } })
+			);
+			expect(await expired.json()).toBeNull();
+			expect(expired.headers.getSetCookie()).toEqual([]);
+			const ordinary = await f.service.resolveIdentity(new Headers({ cookie }));
+			expect(ordinary.response).toBeNull();
+			expect(ordinary.headers.getSetCookie()).toEqual([]);
+		} finally {
+			f.close();
+		}
+	});
+});

@@ -101,6 +101,9 @@
 						? 'Create your account to join this printer.'
 						: 'Sign in to check on your printer and pick up where you left off.'}
 		</p>
+		{#if mode === 'login' && !reset}<p class="entry-help">
+				Sign-in lasts up to 90 days. You can sign out or revoke access sooner.
+			</p>{/if}
 		<form onsubmit={submit}>
 			{#if mode === 'setup'}<label
 					>Setup token<input

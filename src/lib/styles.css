@@ -1038,3 +1038,27 @@ progress::-moz-progress-bar {
 		justify-content: center;
 	}
 }
+
+/* Account-owned typography overrides the initial serif presentation across routes. */
+.app-preferences {
+	display: contents;
+}
+.app-preferences[data-serif='false'] :is(h1, h2, h3) {
+	font-family: 'Inter Variable', sans-serif;
+}
+.preference-error {
+	position: fixed;
+	bottom: 1rem;
+	right: 1rem;
+	z-index: 100;
+	max-width: min(28rem, calc(100vw - 2rem));
+	padding: 1rem;
+	border: 1px solid var(--border-strong);
+	border-radius: 0.8rem;
+	background: var(--surface);
+	color: var(--text);
+	box-shadow: 0 8px 32px #15182b22;
+}
+.preference-error button {
+	margin-top: 0.5rem;
+}

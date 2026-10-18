@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { preferencesContext } from '#lib/client/preferences.svelte.js';
 	import { untrack } from 'svelte';
 	import {
 		Chart,
@@ -42,7 +43,11 @@
 	const all = $derived(selected === '*');
 	const palette = ['var(--accent)', '#a47740', '#8a78bd', '#548ba9', '#b36980', '#6b8750'];
 	const color = (index: number) => palette[index % palette.length];
+	const preferences = preferencesContext();
 	let minutes = $state(15);
+	$effect(() => {
+		if (preferences) minutes = preferences.values.temperatureMinutes;
+	});
 	let inspectedAt = $state<number | null>(null);
 	let pinned = $state(false);
 	const sensor = $derived(sensors.find((item) => item.id === selected) ?? sensors[0]);
@@ -162,7 +167,10 @@
 		<label
 			>Window<select
 				bind:value={minutes}
-				onchange={() => {
+				onchange={(event) => {
+					preferences?.update({
+						temperatureMinutes: Number(event.currentTarget.value) as 5 | 15 | 60
+					});
 					inspectedAt = null;
 					pinned = false;
 				}}

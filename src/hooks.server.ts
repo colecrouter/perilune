@@ -43,7 +43,7 @@ export const handle: typeof integration.handle = async ({ event, resolve }) => {
 			return Response.json(null, { headers: { 'Cache-Control': 'no-store' } });
 		const headers = new Headers(event.request.headers);
 		headers.set('x-perilune-client-ip', event.getClientAddress());
-		const response = await authService.auth.handler(new Request(event.request, { headers }));
+		const response = await authService.handle(new Request(event.request, { headers }));
 		authService.sweep();
 		response.headers.set('Cache-Control', 'no-store');
 		return response;

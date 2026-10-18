@@ -159,7 +159,7 @@ fallback remains unverified on Safari hardware.
 ## Local authentication
 
 Better Auth 1.7.7 uses Node SQLite directly, with password and optional passkey
-credentials, revocable 90-day sessions renewed during use, and cookie caching disabled. Its schema
+credentials, revocable fixed 90-day sessions, and cookie caching disabled. Its schema
 is generated into `src/lib/server/auth/001.sql` and applied once under a versioned
 transaction. Auth/enrollment tables share the database file with Effect SQL action
 storage. Runtime and CLI migrations recheck their version after acquiring SQLite's
@@ -1112,20 +1112,17 @@ an ambiguous grant. Cancellation invalidates pending and in-flight grants and ca
 revoke an already-created session while the grant remains available.
 
 Paired browsers use ordinary Better Auth sessions and persistent HttpOnly,
-SameSite=Lax cookies (Secure on HTTPS), with a 90-day lifetime renewed at most daily.
-The HTTP hook forwards renewal cookies; internal identity checks do not silently
-consume renewals. Paired sessions are independently listed/revoked, terminate live
+SameSite=Lax cookies (Secure on HTTPS), with a fixed 90-day lifetime. Identity reads never renew or clear browser authentication cookies, and sign-out invalidates its captured session without emitting a cookie deletion that could clear a newer login. Paired sessions are independently listed/revoked, terminate live
 session leases on revocation, and respect account removal/recovery. During approval,
 a browser can optionally be linked to an existing active slicer key. Revoking only
 a key or browser leaves the other credential intact; Disconnect integration revokes
 the key, linked browsers, and pending linked grants together.
 
 Headless production auth smoke covers two-browser approval, shared-address polling,
-a complete persistent Chromium context close/relaunch, cookie renewal through an
-ordinary app request, cancellation, origin enforcement, and revocation. Unit tests
+a complete persistent Chromium context close/relaunch, fixed expiry through ordinary requests and delayed-response ordering for new logins/pairing, cancellation, origin enforcement, and revocation. Unit tests
 cover expiry, denial, one-time redemption, recovery epochs, ownership, and cancellation
-racing session creation. Actual Orca/WebKit cookie retention across a complete macOS
-application quit/relaunch remains an owner-assisted acceptance check; no slicer-specific
+racing session creation. Owner acceptance of actual Orca/WebKit cookie retention across a complete macOS
+application quit/relaunch is recorded in #93; no slicer-specific
 API injection or passkey support is required by this flow.
 
 ## Comfortable daily use
@@ -1218,3 +1215,36 @@ save/restart workflow. Synthetic simulator gains are labelled examples and canno
 be applied to hardware. The separate `PERILUNE_LIVE_PID` opt-in stays false until
 owner-coordinated heater acceptance. See [PID calibration](pid-calibration.md) for
 implemented behavior and the outstanding physical acceptance checklist.
+
+## Account-owned display defaults
+
+Migration 020 stores bounded display preferences per account. An authenticated,
+same-origin partial-update API merges fields atomically so independent tabs do
+not replace unrelated choices. The root server layout seeds request-owned client
+context; account changes abort and fence delayed preference responses. Optimistic
+choices survive save failures with explicit retry. Optional preference reads do
+not prevent printer state rendering when unavailable.
+
+Typography moves to Account and applies across workspaces. Console display flags,
+file columns/default page size and temperature-history window persist. Transient
+input/selection/calibration state and automatic console follow pauses do not;
+notification permissions/subscriptions retain their device lifetime. See
+[personal preferences](preferences.md) for ownership and synchronization limits.
+
+## Authentication response ordering
+
+The owner selected fixed 90-day sign-in after a deterministic browser fixture
+reproduced an old renewal response overwriting a new password-login or pairing
+cookie. Better Auth renewal is disabled globally. Ordinary identity resolution
+returns no cookie headers; auth session reads, error cleanup and sign-out filter
+session-related cookie writes. Successful explicit password/passkey authentication
+and approved pairing still issue a new persistent cookie. Sign-out invalidates
+its captured session in the database; leaving an invalid cookie in the browser
+cannot authenticate and avoids deleting a newer login through a delayed response.
+Independent sessions remain valid until individually revoked, expired or removed
+by account recovery. Existing sessions retain their currently stored expiry.
+
+Rolling session support is a separate future enhancement (#101), requiring a
+reviewed selection/proof protocol and no fallback to older identities. No browser
+locks or application-only “latest session” checks are claimed to retract already
+issued HTTP responses.

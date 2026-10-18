@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import DisplayPreferences from '#lib/components/DisplayPreferences.svelte';
 	import Integrations from '#lib/components/Integrations.svelte';
 	import DeviceSettings from '#lib/components/DeviceSettings.svelte';
 	import AppShell from '#lib/components/AppShell.svelte';
@@ -70,6 +71,7 @@
 		<p class="eyebrow">Mission crew</p>
 		<h1>Your account</h1>
 		<p>Signed in as {data.user?.name} · {data.user?.role}</p>
+		<DisplayPreferences />
 		<DeviceSettings />
 		<Integrations canOperate={data.user?.role === 'owner' || data.user?.role === 'operator'} />
 		<section class="account-card">

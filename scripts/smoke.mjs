@@ -65,10 +65,19 @@ try {
 		assert.ok(!response.headers()['cache-control']?.includes('immutable'));
 	}
 	assert.equal((await publicContext.request.get(`${base}/api/notifications`)).status(), 401);
+	assert.equal((await publicContext.request.get(`${base}/api/preferences`)).status(), 401);
 	await publicContext.close();
 	await authenticate(context, base, join(directory, 'state.sqlite'));
 	const first = await context.newPage();
 	const heldStatusRequests = new Set();
+	// A full document replacement invalidates that document's network handles;
+	// Playwright may omit terminal events for its abandoned live responses.
+	// SPA navigation does not send a main-frame document request, so the leak
+	// assertions below still require unused streams to close within the document.
+	first.on('request', (request) => {
+		if (request.isNavigationRequest() && request.frame() === first.mainFrame())
+			heldStatusRequests.clear();
+	});
 	first.on('request', (request) => {
 		if (request.url().includes('/getDashboard') || request.url().includes('/getPrinter'))
 			heldStatusRequests.add(request);
@@ -137,9 +146,76 @@ try {
 		.waitFor({ timeout: 10000 });
 	await mkdir('test-results', { recursive: true });
 	await first.screenshot({ path: 'test-results/overview-serif.png', fullPage: true });
-	await first.getByRole('switch', { name: 'Serif headings' }).click();
+	await first.goto(base + '/account');
+	const sansSaved = first.waitForResponse(
+		(r) => r.url().endsWith('/api/preferences') && r.request().method() === 'PATCH' && r.ok()
+	);
+	await first.getByRole('checkbox', { name: 'Serif headings', exact: true }).uncheck();
+	await sansSaved;
+	await first.goto(base);
+	await first.waitForFunction(() =>
+		getComputedStyle(document.querySelector('h1')).fontFamily.includes('Inter')
+	);
 	await first.screenshot({ path: 'test-results/overview-sans.png', fullPage: true });
-	await first.getByRole('switch', { name: 'Serif headings' }).click();
+	assert.equal(
+		(await (await context.request.get(base + '/api/preferences')).json()).preferences.serif,
+		false
+	);
+	assert.equal(
+		(
+			await context.request.patch(base + '/api/preferences', {
+				headers: { Origin: base },
+				data: { owner: 'another-account', serif: true }
+			})
+		).status(),
+		400
+	);
+	assert.equal(
+		(
+			await context.request.patch(base + '/api/preferences', {
+				headers: { Origin: 'https://foreign.invalid' },
+				data: { serif: true }
+			})
+		).status(),
+		403
+	);
+	await first.goto(base + '/account');
+	const saved = first.waitForResponse(
+		(r) => r.url().endsWith('/api/preferences') && r.request().method() === 'PATCH' && r.ok()
+	);
+	await first.getByRole('checkbox', { name: 'Serif headings', exact: true }).check();
+	await saved;
+	await first.goto(base);
+	// Two stale tabs changing different columns must send only the changed field.
+	await first.goto(base + '/jobs');
+	const columnsTab = await context.newPage();
+	await columnsTab.goto(base + '/jobs');
+	await first.locator('details.columns summary').click();
+	const durationSaved = first.waitForResponse(
+		(r) => r.url().endsWith('/api/preferences') && r.request().method() === 'PATCH' && r.ok()
+	);
+	await first.getByRole('checkbox', { name: 'Est. time', exact: true }).uncheck();
+	assert.deepEqual((await durationSaved).request().postDataJSON(), { jobsDuration: false });
+	await columnsTab.locator('details.columns summary').click();
+	const sizeSaved = columnsTab.waitForResponse(
+		(r) => r.url().endsWith('/api/preferences') && r.request().method() === 'PATCH' && r.ok()
+	);
+	await columnsTab.getByRole('checkbox', { name: 'Size', exact: true }).uncheck();
+	assert.deepEqual((await sizeSaved).request().postDataJSON(), { jobsSize: false });
+	await first.reload();
+	await first.locator('details.columns summary').click();
+	assert.equal(
+		await first.getByRole('checkbox', { name: 'Est. time', exact: true }).isChecked(),
+		false
+	);
+	assert.equal(await first.getByRole('checkbox', { name: 'Size', exact: true }).isChecked(), false);
+	await context.request.patch(base + '/api/preferences', {
+		headers: { Origin: base },
+		data: { jobsDuration: true, jobsSize: true }
+	});
+	await columnsTab.close();
+	await first.goto(base);
+
 	const second = await context.newPage();
 	await second.goto(base);
 	await second.getByRole('button', { name: 'Pause print', exact: true }).waitFor();

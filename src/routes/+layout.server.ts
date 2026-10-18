@@ -1,3 +1,5 @@
+import { defaultPreferences } from '#lib/domain/preferences.js';
+import { PreferenceService } from '#lib/server/preference-service.js';
 import { requireIdentity } from '#lib/server/auth/index.js';
 import type { LayoutServerLoad } from './$types.js';
 import { SubscriptionRef, Effect } from 'effect';
@@ -12,9 +14,18 @@ export const load: LayoutServerLoad = async (event) => {
 		Effect.gen(function* () {
 			return yield* Effect.all({
 				printer: SubscriptionRef.get((yield* PrinterService).state),
-				camera: SubscriptionRef.get((yield* CameraService).state)
+				camera: SubscriptionRef.get((yield* CameraService).state),
+				preferences: (yield* PreferenceService)
+					.get(user.id)
+					.pipe(Effect.catchCause(() => Effect.succeed(null)))
 			});
 		})
 	);
-	return { user: { id: user.id, name: user.name, role: user.role }, initial };
+	const { preferences, ...snapshot } = initial;
+	return {
+		user: { id: user.id, name: user.name, role: user.role },
+		initial: snapshot,
+		preferences: preferences ?? defaultPreferences,
+		preferencesUnavailable: preferences === null
+	};
 };

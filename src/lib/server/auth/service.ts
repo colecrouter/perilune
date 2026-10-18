@@ -96,7 +96,7 @@ export function createAuthService(
 		},
 		session: {
 			expiresIn: 60 * 60 * 24 * 90,
-			updateAge: 60 * 60 * 24,
+			disableSessionRefresh: true,
 			cookieCache: { enabled: false },
 			additionalFields: {
 				authVersion: { type: 'number', required: true, defaultValue: 0, input: false }
@@ -200,10 +200,42 @@ export function createAuthService(
 			});
 		},
 		async resolveIdentity(headers: Headers) {
-			return auth.api.getSession({
-				headers,
-				query: { disableCookieCache: true },
-				returnHeaders: true
+			// Reads never write or clear browser authentication cookies: a late
+			// response must not restore an older identity or erase a newer one.
+			return {
+				response: await auth.api.getSession({
+					headers,
+					query: { disableCookieCache: true, disableRefresh: true }
+				}),
+				headers: new Headers()
+			};
+		},
+		async handle(request: Request) {
+			const response = await auth.handler(request);
+			const path = new URL(request.url).pathname;
+			const createsSession =
+				request.method === 'POST' &&
+				response.ok &&
+				['/api/auth/sign-in/email', '/api/auth/passkey/verify-authentication'].includes(path);
+			if (createsSession) return response;
+			const protectedNames = Object.values(getCookies(auth.options)).map((cookie) => cookie.name);
+			const headers = new Headers(response.headers);
+			headers.delete('set-cookie');
+			for (const cookie of response.headers.getSetCookie()) {
+				const name = cookie.slice(0, cookie.indexOf('='));
+				if (
+					!protectedNames.some(
+						(protectedName) => name === protectedName || name.startsWith(protectedName + '.')
+					)
+				)
+					headers.append('set-cookie', cookie);
+			}
+			// In particular, sign-out deletes the captured session in the DB
+			// but never sends a delayed deletion for a newer browser cookie.
+			return new Response(response.body, {
+				status: response.status,
+				statusText: response.statusText,
+				headers
 			});
 		},
 		startPairing(name: string) {

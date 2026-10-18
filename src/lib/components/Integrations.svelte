@@ -14,8 +14,9 @@
 			name: string;
 			created: number;
 			integrationId: string | null;
-			lastUsed: string;
-			expires: string;
+			lastUsed: number;
+			current: boolean;
+			expires: number;
 		}[]
 	>([]);
 	let message = $state('');
@@ -170,20 +171,22 @@
 	{/if}
 	<h3>Paired browsers</h3>
 	<p>
-		Pairing works with slicers, touchscreens, and other browsers. Sessions renew during use and
-		expire after 90 days without renewal. Account recovery or removal revokes access.
+		Pairing works with slicers, touchscreens, and other browsers. Sign-in expires 90 days after
+		login or pairing, even when used regularly. Sign in or pair again to start a new period. Account
+		recovery or removal revokes access.
 	</p>
 	<a href="/pair">Approve a browser</a>
 	{#each browsers as browser (browser.id)}
 		<div class="integration-row">
 			<div>
-				<strong>{browser.name}</strong>{#if browser.integrationId}<small
+				<strong>{browser.name}</strong>{#if browser.current}<small>This browser</small
+					>{/if}{#if browser.integrationId}<small
 						>Linked to {keys.find((key) => key.id === browser.integrationId)?.name ??
 							'a revoked integration'}</small
 					>{/if}
 				<p>
-					Paired {new Date(browser.created).toLocaleDateString()} · Session renewed {new Date(
-						browser.lastUsed
+					Paired {new Date(browser.created).toLocaleDateString()} · Expires {new Date(
+						browser.expires
 					).toLocaleDateString()}
 				</p>
 			</div>

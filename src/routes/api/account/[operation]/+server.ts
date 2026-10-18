@@ -4,8 +4,14 @@ import { authService, requireIdentity } from '#lib/server/auth/index.js';
 import { roles, type Role } from '#lib/server/auth/service.js';
 export async function GET(event: RequestEvent) {
 	if (event.params.operation === 'status') return json({ setup: authService!.needsSetup() });
-	if (event.params.operation === 'browsers')
-		return json({ browsers: authService!.browsers(requireIdentity(event).user.id) });
+	if (event.params.operation === 'browsers') {
+		const identity = requireIdentity(event);
+		return json({
+			browsers: authService!
+				.browsers(identity.user.id)
+				.map((browser) => ({ ...browser, current: browser.id === identity.session.id }))
+		});
+	}
 	requireIdentity(event, 'owner');
 	if (event.params.operation !== 'manage') error(404, 'Unknown account action.');
 	return json({ accounts: authService!.accounts(), invitations: authService!.invitations() });

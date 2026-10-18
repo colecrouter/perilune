@@ -76,7 +76,9 @@
 				An embedded Device tab signs in separately: choose <a href="/pair/start"
 					>Sign in with another browser</a
 				>, then approve its code in a normal browser at <a href="/pair">Approve a browser</a>. You
-				can revoke a key, sign out a paired browser, or disconnect both through Account.
+				can revoke a key, sign out a paired browser, or disconnect both through Account. Browser
+				sign-in expires 90 days after login or pairing; regular use does not extend it. Slicer key
+				expiry is a separate choice.
 			</p>
 		</section>
 		<section id="phones">
