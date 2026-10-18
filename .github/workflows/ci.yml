@@ -1,14 +1,16 @@
 name: CI
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  validate:
+  checks:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -19,15 +21,56 @@ jobs:
       - run: npm install --global pnpm@12.11.2
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm run validate
+      - run: pnpm run validate:checks
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm install --global pnpm@12.11.2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: production-build
+          path: build/
+          if-no-files-found: error
+          retention-days: 1
+          include-hidden-files: true
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [platform, calibration, workspaces, actions]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm install --global pnpm@12.11.2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - uses: actions/download-artifact@v8
+        with:
+          name: production-build
+          path: build/
+      - run: node scripts/smoke-suite.mjs "${{ matrix.group }}"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: browser-evidence
+          name: browser-evidence-${{ matrix.group }}
           path: test-results/
           if-no-files-found: ignore
+
   container:
-    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -52,3 +95,21 @@ jobs:
           name: container-browser-evidence
           path: test-results/
           if-no-files-found: ignore
+
+  # Stable required check: never green when a dependency fails or is skipped.
+  validate:
+    if: always()
+    needs: [checks, build, smoke, container]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every validation group
+        env:
+          CHECKS: ${{ needs.checks.result }}
+          BUILD: ${{ needs.build.result }}
+          SMOKE: ${{ needs.smoke.result }}
+          CONTAINER: ${{ needs.container.result }}
+        run: |
+          test "$CHECKS" = success
+          test "$BUILD" = success
+          test "$SMOKE" = success
+          test "$CONTAINER" = success
