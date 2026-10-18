@@ -7,6 +7,8 @@ export interface Notice {
 	body: string;
 }
 export interface NoticePreferences {
+	allPrints: boolean;
+	sharedErrors: boolean;
 	complete: boolean;
 	failed: boolean;
 	printerError: boolean;
@@ -17,6 +19,8 @@ export interface NoticePreferences {
 	timezone: string;
 }
 export const defaultNoticePreferences: NoticePreferences = {
+	allPrints: false,
+	sharedErrors: false,
 	complete: true,
 	failed: true,
 	printerError: true,
@@ -57,14 +61,19 @@ export function noticeTransition(
 		title: kind === 'complete' ? 'Print complete' : 'Print needs attention',
 		body:
 			kind === 'complete'
-				? 'Your print has finished. Open Perilune to check it.'
-				: 'Your print stopped with an error. Open Perilune for details.'
+				? 'The print has finished. Open Perilune to check it.'
+				: 'The print stopped with an error. Open Perilune for details.'
 	};
 }
 export function checkNoticePreferences(value: unknown): NoticePreferences {
 	if (!value || typeof value !== 'object') throw new Error('Choose notification preferences.');
 	const p = value as NoticePreferences;
 	if (
+		!['allPrints', 'sharedErrors'].every(
+			(k) =>
+				p[k as keyof NoticePreferences] === undefined ||
+				typeof p[k as keyof NoticePreferences] === 'boolean'
+		) ||
 		!['complete', 'failed', 'printerError', 'snapshot', 'quiet'].every(
 			(k) => typeof p[k as keyof NoticePreferences] === 'boolean'
 		) ||
@@ -76,6 +85,8 @@ export function checkNoticePreferences(value: unknown): NoticePreferences {
 		throw new Error('Invalid notification preferences.');
 	new Intl.DateTimeFormat('en', { timeZone: p.timezone }).format();
 	return {
+		allPrints: p.allPrints ?? false,
+		sharedErrors: p.sharedErrors ?? false,
 		complete: p.complete,
 		failed: p.failed,
 		printerError: p.printerError,

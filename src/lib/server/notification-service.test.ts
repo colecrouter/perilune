@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test';
-import { Layer, ManagedRuntime, SubscriptionRef } from 'effect';
+import { Effect, Layer, ManagedRuntime, SubscriptionRef } from 'effect';
 import * as SqliteClient from '@effect/sql-sqlite-node/SqliteClient';
 import { SqlClient } from 'effect/sql/SqlClient';
 import {
@@ -10,7 +10,8 @@ import {
 } from './notification-service.js';
 import { PrinterService, PrinterServiceLive } from './printer-service.js';
 import { ActionStoreLive } from './action-store.js';
-import { CameraConfig, CameraServiceLive } from './camera.js';
+import { CameraService, CameraConfig, CameraServiceLive } from './camera.js';
+import { recordJobOwner } from './job-attribution.js';
 import { defaultNoticePreferences } from '#lib/domain/notifications.js';
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -25,8 +26,18 @@ async function fixture() {
 	const send = vi.fn(async (_subscription: unknown, _payload: string) => {});
 	const db = SqliteClient.layer({ filename: ':memory:' });
 	const printer = PrinterServiceLive.pipe(Layer.provide(ActionStoreLive.pipe(Layer.provide(db))));
-	const camera = CameraServiceLive.pipe(
-		Layer.provide(Layer.succeed(CameraConfig, { baseUrl: '' }))
+	const capture = vi.fn(() =>
+		Effect.succeed(
+			new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/jpeg' } })
+		)
+	);
+	const camera = Layer.effect(
+		CameraService,
+		Effect.map(CameraService, (service) => ({ ...service, proxy: capture }))
+	).pipe(
+		Layer.provide(
+			CameraServiceLive.pipe(Layer.provide(Layer.succeed(CameraConfig, { baseUrl: '' })))
+		)
 	);
 	const runtime = ManagedRuntime.make(
 		NotificationServiceLive.pipe(
@@ -49,11 +60,25 @@ async function fixture() {
 	const manage = (action: string, preferences = defaultNoticePreferences) =>
 		runtime.runPromise(service.manage(actor, { action, subscription, preferences }));
 	await manage('save');
+	const initial = await runtime.runPromise(SubscriptionRef.get(state));
+	await runtime.runPromise(recordJobOwner(initial.job.runId!, 'fixture-start', actor.id));
 	return {
 		runtime,
 		service,
 		state,
 		manage,
+		capture,
+		register: (id: string, account: string, preferences = defaultNoticePreferences) =>
+			runtime.runPromise(
+				service.manage(
+					{ id: account, epoch: 0 },
+					{
+						action: 'save',
+						subscription: { ...subscription, endpoint: subscription.endpoint + id },
+						preferences
+					}
+				)
+			),
 		send,
 		actor,
 		revoke: () => {
@@ -160,4 +185,71 @@ it('requires ownership and current epoch for private snapshots and refuses expir
 	).toBeUndefined();
 	await f.runtime.runPromise(sql`UPDATE push_images SET expires=0`);
 	expect(await f.runtime.runPromise(f.service.image(f.actor, 'fixture'))).toBeUndefined();
+});
+
+it('limits default delivery and captures to the initiating account across multiple devices', async () => {
+	const f = await fixture();
+	await f.register('second', 'owner', { ...defaultNoticePreferences, snapshot: true });
+	await f.register('other', 'other', { ...defaultNoticePreferences, snapshot: true });
+	const printing = await f.runtime.runPromise(SubscriptionRef.get(f.state));
+	await f.runtime.runPromise(
+		SubscriptionRef.set(f.state, {
+			...printing,
+			job: { ...printing.job, state: 'complete' as const }
+		})
+	);
+	await vi.waitFor(() => expect(f.send).toHaveBeenCalledTimes(2));
+	expect(f.capture).toHaveBeenCalledTimes(1);
+	expect(f.send.mock.calls.map((c) => (c[0] as typeof subscription).endpoint)).not.toContain(
+		subscription.endpoint + 'other'
+	);
+	const sql = await f.runtime.runPromise(SqlClient);
+	expect(await f.runtime.runPromise(sql`SELECT DISTINCT owner FROM push_images`)).toEqual([
+		{ owner: 'owner' }
+	]);
+});
+it('skips unattributed prints without taking a capture unless a device opts in to all prints', async () => {
+	const f = await fixture();
+	await f.manage('save', { ...defaultNoticePreferences, snapshot: true });
+	const printing = await f.runtime.runPromise(SubscriptionRef.get(f.state));
+	const unknown = { ...printing, job: { ...printing.job, runId: 'external' } };
+	await f.runtime.runPromise(SubscriptionRef.set(f.state, unknown));
+	await f.runtime.runPromise(
+		SubscriptionRef.set(f.state, {
+			...unknown,
+			job: { ...unknown.job, state: 'complete' as const }
+		})
+	);
+	await new Promise((resolve) => setTimeout(resolve, 80));
+	expect(f.send).not.toHaveBeenCalled();
+	expect(f.capture).not.toHaveBeenCalled();
+	await f.register('all', 'other', {
+		...defaultNoticePreferences,
+		allPrints: true,
+		snapshot: true
+	});
+	const second = { ...unknown, job: { ...unknown.job, runId: 'external-two' } };
+	await f.runtime.runPromise(SubscriptionRef.set(f.state, second));
+	await f.runtime.runPromise(
+		SubscriptionRef.set(f.state, { ...second, job: { ...second.job, state: 'complete' as const } })
+	);
+	await vi.waitFor(() => expect(f.send).toHaveBeenCalledTimes(1));
+	expect(f.capture).toHaveBeenCalledTimes(1);
+	expect((f.send.mock.calls[0]![0] as typeof subscription).endpoint).toBe(
+		subscription.endpoint + 'all'
+	);
+});
+it('requires a separate opt-in for shared printer errors without an active job', async () => {
+	const f = await fixture();
+	await f.register('shared', 'other', { ...defaultNoticePreferences, sharedErrors: true });
+	const initial = await f.runtime.runPromise(SubscriptionRef.get(f.state));
+	const idle = { ...initial, job: { ...initial.job, state: 'complete' as const } };
+	await f.runtime.runPromise(SubscriptionRef.set(f.state, idle));
+	await vi.waitFor(() => expect(f.send).toHaveBeenCalledTimes(1));
+	f.send.mockClear();
+	await f.runtime.runPromise(SubscriptionRef.set(f.state, { ...idle, klippy: 'error' }));
+	await vi.waitFor(() => expect(f.send).toHaveBeenCalledTimes(1));
+	expect((f.send.mock.calls[0]![0] as typeof subscription).endpoint).toBe(
+		subscription.endpoint + 'shared'
+	);
 });

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { dev } from '$app/env';
-	import { defaultNoticePreferences } from '#lib/domain/notifications.js';
+	import { defaultNoticePreferences, checkNoticePreferences } from '#lib/domain/notifications.js';
 	import { installation } from '#lib/client/install.svelte.js';
 	let installed = $state(false);
 	let supported = $state(false);
@@ -59,7 +59,8 @@
 						const result = await request('status');
 						if (active) {
 							subscribed = Boolean(result.id);
-							if (result.preferences && !edited) preferences = result.preferences;
+							if (result.preferences && !edited)
+								preferences = checkNoticePreferences(result.preferences);
 						}
 					}
 				})
@@ -174,6 +175,18 @@
 			</p>{/if}
 		<fieldset disabled={pending} oninput={() => (edited = true)}>
 			<legend>Notify me about</legend>
+			<p class="help">
+				By default, notices follow prints started by your account, including your slicer
+				integrations. Unattributed prints are skipped.
+			</p>
+			<label
+				><input type="checkbox" bind:checked={preferences.allPrints} />Include prints started by
+				anyone</label
+			>
+			<label
+				><input type="checkbox" bind:checked={preferences.sharedErrors} />Include printer errors
+				when I have no active print</label
+			>
 			<label><input type="checkbox" bind:checked={preferences.complete} />Completed prints</label>
 			<label><input type="checkbox" bind:checked={preferences.failed} />Failed prints</label>
 			<label><input type="checkbox" bind:checked={preferences.printerError} />Printer errors</label>

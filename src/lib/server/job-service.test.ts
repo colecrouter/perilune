@@ -1,3 +1,4 @@
+import { jobOwner } from './job-attribution.js';
 import { createServer } from 'node:http';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -33,7 +34,7 @@ async function create(
 	);
 	const layer = JobServiceLive.pipe(
 		Layer.provideMerge(printer),
-		Layer.provide(SqliteClient.layer({ filename })),
+		Layer.provideMerge(SqliteClient.layer({ filename })),
 		Layer.provide(Layer.succeed(JobsConfig, { moonrakerUrl: url, checkUser, liveFiles }))
 	);
 	const runtime = ManagedRuntime.make(layer);
@@ -135,14 +136,19 @@ it('starts a shared simulated print once, protects its file, and records cancell
 	await expect.poll(async () => (await snapshot()).job.state).toBe('cancelled');
 	const request = { id: randomUUID(), command: { type: 'start' as const, fileId: file.id } };
 	await Promise.all([
-		runtime.runPromise(printer.submit(request)),
-		runtime.runPromise(printer.submit(request))
+		runtime.runPromise(
+			printer.submit(request, { id: 'initiator', name: 'Initiator', role: 'owner' })
+		),
+		runtime.runPromise(
+			printer.submit(request, { id: 'initiator', name: 'Initiator', role: 'owner' })
+		)
 	]);
 	await expect(
 		runtime.runPromise(printer.submit({ ...request, id: randomUUID() }))
 	).rejects.toThrow('pending');
 	await expect.poll(async () => (await snapshot()).job.filename).toBe('next.gcode');
 	expect((await snapshot()).job.runId).toBe(request.id);
+	expect(await runtime.runPromise(jobOwner(request.id))).toBe('initiator');
 	await expect(runtime.runPromise(jobs.remove(file.id))).rejects.toThrow('active');
 	await expect.poll(async () => (await snapshot()).job.progress).toBeGreaterThan(0);
 	await runtime.runPromise(

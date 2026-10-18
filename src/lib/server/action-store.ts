@@ -7,11 +7,13 @@ import { SqlClient } from 'effect/sql/SqlClient';
 import type { SqlError } from 'effect/sql/SqlError';
 import type { ActionRecord, ActionStatus, PrinterCommand } from '#lib/domain/printer.js';
 import type { JobFile, JobMetadata } from '#lib/domain/jobs.js';
+import { recordJobOwner } from './job-attribution.js';
 import { migrate } from './migrations.js';
 
 export class ActionStore extends Context.Service<
 	ActionStore,
 	{
+		commitStart: (id: string, owner: string) => Effect.Effect<void, SqlError>;
 		pid: Effect.Effect<PidState, SqlError>;
 		commitPid: (
 			id: string,
@@ -102,6 +104,15 @@ export const ActionStoreLive = Layer.effect(
 				Effect.asVoid
 			);
 		return {
+			commitStart: (id, owner) =>
+				sql
+					.withTransaction(
+						Effect.gen(function* () {
+							yield* recordJobOwner(id, id, owner);
+							yield* sql`UPDATE actions SET status='completed',message=NULL WHERE id=${id}`;
+						})
+					)
+					.pipe(Effect.provideService(SqlClient, sql)),
 			pid: sql<{ state: string }>`SELECT state FROM pid_state WHERE target='simulator'`.pipe(
 				Effect.map((rows) =>
 					rows[0] ? (JSON.parse(rows[0].state) as PidState) : { enabled: true, run: null }

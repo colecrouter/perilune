@@ -12,6 +12,8 @@ import {
 	SubscriptionRef
 } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
+import { receivesNotice, type NoticeAudience } from '#lib/domain/notice-audience.js';
+import { jobOwner } from './job-attribution.js';
 import { migrate } from './migrations.js';
 import { PrinterService } from './printer-service.js';
 import { CameraService } from './camera.js';
@@ -144,7 +146,8 @@ export const NotificationServiceLive = Layer.effect(
 			notice: Notice,
 			test = false,
 			captured?: Capture,
-			created = Date.now()
+			created = Date.now(),
+			audience: NoticeAudience = { type: 'printer' }
 		) =>
 			Effect.gen(function* () {
 				const [current] = yield* sql<PushDevice>`SELECT * FROM push_devices WHERE id=${device.id}`;
@@ -158,7 +161,8 @@ export const NotificationServiceLive = Layer.effect(
 				const preferences = checkNoticePreferences(JSON.parse(device.preferences));
 				if (
 					!test &&
-					(!preferences[notice.kind] ||
+					(!receivesNotice(device.owner, notice.kind, audience, preferences) ||
+						!preferences[notice.kind] ||
 						quietNow(preferences, new Date(created)) ||
 						quietNow(preferences) ||
 						Date.now() - created > 60_000)
@@ -209,22 +213,37 @@ export const NotificationServiceLive = Layer.effect(
 			Effect.repeat(Schedule.spaced('1 minute')),
 			Effect.forkScoped
 		);
-		const events = yield* Queue.dropping<{ notice: Notice; created: number }>(16);
+		const events = yield* Queue.dropping<{
+			notice: Notice;
+			created: number;
+			audience: NoticeAudience;
+		}>(16);
 		yield* Effect.addFinalizer(() => Queue.shutdown(events));
 		let previous: PrinterSnapshot | undefined = yield* SubscriptionRef.get(printer.state);
 		yield* SubscriptionRef.changes(printer.state).pipe(
 			Stream.runForEach((next) =>
 				Effect.gen(function* () {
 					const notice = noticeTransition(previous, next);
-					// Live telemetry lacks a durable job ID: do not infer a completion across a reconnect.
+					const active = previous && ['printing', 'paused'].includes(previous.job.state);
+					const audience: NoticeAudience =
+						notice && active
+							? {
+									type: 'job',
+									owner: yield* jobOwner(previous!.job.runId, previous!.job.historyKey).pipe(
+										Effect.provideService(SqlClient, sql),
+										Effect.catch(() => Effect.succeed(null))
+									)
+								}
+							: { type: 'printer' };
+					// Do not infer a completion across a reconnect.
 					previous = next.connection === 'connected' ? next : undefined;
-					if (notice) yield* Queue.offer(events, { notice, created: Date.now() });
+					if (notice) yield* Queue.offer(events, { notice, created: Date.now(), audience });
 				})
 			),
 			Effect.forkScoped
 		);
 		yield* Effect.gen(function* () {
-			const { notice, created } = yield* Queue.take(events);
+			const { notice, created, audience } = yield* Queue.take(events);
 			if (Date.now() - created > 60_000) return;
 			const devices =
 				yield* sql<PushDevice>`SELECT * FROM push_devices ORDER BY updated DESC LIMIT 200`;
@@ -232,6 +251,7 @@ export const NotificationServiceLive = Layer.effect(
 				const p = checkNoticePreferences(JSON.parse(device.preferences));
 				return (
 					settings.valid({ id: device.owner, epoch: device.epoch }) &&
+					receivesNotice(device.owner, notice.kind, audience, p) &&
 					p.snapshot &&
 					p[notice.kind] &&
 					!quietNow(p, new Date(created))
@@ -241,7 +261,7 @@ export const NotificationServiceLive = Layer.effect(
 			yield* Effect.forEach(
 				devices,
 				(device) =>
-					deliver(device, notice, false, captured, created).pipe(
+					deliver(device, notice, false, captured, created, audience).pipe(
 						Effect.catch(() => Effect.logWarning('A device notification could not be delivered.'))
 					),
 				{ concurrency: 4, discard: true }
@@ -272,7 +292,9 @@ export const NotificationServiceLive = Layer.effect(
 						if (body.action === 'status')
 							return {
 								id: existing?.id,
-								preferences: existing ? JSON.parse(existing.preferences) : null
+								preferences: existing
+									? checkNoticePreferences(JSON.parse(existing.preferences))
+									: null
 							};
 						if (body.action === 'remove') {
 							yield* sql`DELETE FROM push_devices WHERE id=${id} AND owner=${actor.id}`;

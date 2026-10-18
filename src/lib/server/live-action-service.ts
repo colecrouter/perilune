@@ -1,3 +1,4 @@
+import { recordJobOwner } from './job-attribution.js';
 import { pidActive, pidReason, samePid, type PidState } from '#lib/domain/pid.js';
 import { liveConsoleScript, consoleReason } from '#lib/domain/console.js';
 import { zProbePlan } from './live-z.js';
@@ -409,6 +410,7 @@ export const LiveActionServiceLive = Layer.effect(
 			Effect.gen(function* () {
 				let sent = false;
 				let remainsPaused = false;
+				let startRun: string | undefined, startHistory: string | undefined;
 				let pidResult: PidState | undefined;
 				let zResult: LiveZState | undefined,
 					zBefore: LiveZState | undefined,
@@ -684,7 +686,22 @@ export const LiveActionServiceLive = Layer.effect(
 																			(operations[0] as Extract<ControlOperation, { type: 'job' }>)
 																				.filename
 																	: false;
-						if (matches) return;
+						if (matches) {
+							if (c.type === 'start') {
+								if (!observed.job.runId || observed.job.runId === fresh.job.runId)
+									return yield* Effect.fail(
+										reject('The new print identity could not be verified.')
+									);
+								startRun = observed.job.runId;
+								startHistory =
+									fresh.historyCursor !== undefined &&
+									observed.historyCursor === observed.job.historyKey &&
+									observed.job.historyKey !== fresh.historyCursor
+										? observed.job.historyKey
+										: undefined;
+							}
+							return;
+						}
 						// A staged RESUME can acknowledge a purge and intentionally remain paused.
 						// Only accept fresh same-run idle telemetry after acknowledgement; never resend.
 						if (
@@ -756,6 +773,10 @@ export const LiveActionServiceLive = Layer.effect(
 					.withTransaction(
 						Effect.gen(function* () {
 							yield* store.setStatus(job.action.id, status, message);
+							if (status === 'completed' && startRun)
+								yield* recordJobOwner(startRun, job.action.id, job.actor.id, startHistory).pipe(
+									Effect.provideService(SqlClient, sql)
+								);
 							if (finalFilament) yield* writeFilament(finalFilament);
 							if (finalZ) yield* writeZ(finalZ);
 							if (finalPid) yield* writePid(finalPid);

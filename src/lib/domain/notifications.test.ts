@@ -39,3 +39,10 @@ it('handles overnight quiet hours in the device timezone and equal boundaries', 
 	expect(() => checkNoticePreferences({ ...preferences, timezone: 'invalid-zone' })).toThrow();
 	expect(() => checkNoticePreferences({ ...preferences, quietStart: '25:00' })).toThrow();
 });
+
+it('migrates old device preferences to account-only notices and rejects malformed opt-ins', () => {
+	const { allPrints: _all, sharedErrors: _shared, ...old } = defaultNoticePreferences;
+	expect(checkNoticePreferences(old)).toMatchObject({ allPrints: false, sharedErrors: false });
+	expect(() => checkNoticePreferences({ ...old, allPrints: 'true' })).toThrow();
+	expect(() => checkNoticePreferences({ ...old, sharedErrors: null })).toThrow();
+});

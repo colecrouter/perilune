@@ -243,6 +243,12 @@ export const makePrinterService = (
 							if (request.command.type === 'meshProbeBegin') probeActor = request.actor;
 						} else if (status === 'completed' && request?.command.type.startsWith('calibration'))
 							yield* store.commitCalibration(action.id, status, message, next.calibration);
+						else if (
+							status === 'completed' &&
+							request?.command.type === 'start' &&
+							request.actor?.id
+						)
+							yield* store.commitStart(action.id, request.actor.id);
 						else yield* store.setStatus(action.id, status, message);
 						pending.delete(action.id);
 						return [
