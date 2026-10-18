@@ -254,7 +254,8 @@ export const NotificationServiceLive = Layer.effect(
 					receivesNotice(device.owner, notice.kind, audience, p) &&
 					p.snapshot &&
 					p[notice.kind] &&
-					!quietNow(p, new Date(created))
+					!quietNow(p, new Date(created)) &&
+					!quietNow(p)
 				);
 			});
 			const captured = needsCapture ? yield* capture : undefined;
