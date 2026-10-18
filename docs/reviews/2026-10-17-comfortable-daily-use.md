@@ -19,7 +19,7 @@ Focused domain/browser and production Jobs/console/live-action checks passed.
 Headless visual QA exercised a 320px start dialog, Help anchor navigation, compact
 Jobs, and direct console submission without overflow or page errors. The T3 preview
 snapshot path timed out twice; the repository’s headless Playwright workflow supplied
-the rendered evidence. Full validation and Docker CI remain merge requirements.
+the rendered evidence. The final independent review reported no remaining actionable findings. Full validation and Docker CI remain merge requirements.
 
 No real printer movement, heating, firmware writes, or print-start commands were
 issued by these tests. Deposited-print and actual iOS/Android installation/delivery
