@@ -1043,9 +1043,9 @@ receipts are available on `/safety/history`, server-rendered for operators with
 live updates and links to their full receipts. This is presentation work; no
 physical command, permission, retry, or acknowledgement policy was relaxed.
 
-Remaining overview work includes identifying planned filament changes from file
-contents (#78), customizable layouts if the default proves insufficient, and
-owner acceptance of the revised layout during an actual print.
+Planned filament changes are now inspected from file contents and surfaced in
+file/start reviews. Remaining overview work includes customizable layouts if the
+default proves insufficient and owner acceptance during an actual print.
 
 The everyday-overview follow-up shares the job card with the Jobs workspace,
 including its control-readiness reasons and finished-job summary. Enhanced job,
