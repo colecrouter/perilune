@@ -14,7 +14,9 @@
 		fields: Record<string, string>;
 		action?: string;
 		receiptBase?: string;
-		children: Snippet<[{ pending: boolean; uncertain: boolean; executing: boolean }]>;
+		children: Snippet<
+			[{ pending: boolean; uncertain: boolean; executing: boolean; outcome: ActionRecord | null }]
+		>;
 		receipts?: ActionRecord[];
 		onAccepted?: (receipt: ActionRecord, submitted: FormData) => void;
 	} = $props();
@@ -80,7 +82,8 @@
 	{@render children({
 		pending: pending || executing,
 		executing,
-		uncertain
+		uncertain,
+		outcome: currentReceipt
 	})}
 	{#if currentReceipt}<ActionFeedback receipt={currentReceipt} {receiptBase} />{/if}
 	{#if message}<p role="status" class="action-message">

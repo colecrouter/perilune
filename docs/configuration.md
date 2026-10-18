@@ -171,3 +171,19 @@ The handoff stays in memory in the current tab for 30 minutes and clears on refr
 or account change. It does not save/apply automatically. The ordinary review,
 export, conflict checks and opt-in application/recovery flow still apply. Z-offset
 and mesh persistence remain in their existing dedicated calibration workflows.
+
+## Finding files and macros
+
+The file browser searches paths, groups folders and scrolls independently of the
+editor. Klipper `SAVE_CONFIG` revisions named `name-YYYYMMDD_HHMMSS.cfg` are grouped
+under an existing `name.cfg`, newest first. This convention follows [Klipper’s
+save implementation](https://github.com/Klipper3d/klipper/blob/master/klippy/configfile.py).
+It is a navigation aid, not a claim that a file is active. Revision files open
+read-only; opening one does not restore it. Export or copy reviewed changes into
+the current source, then use the normal diff and recovery workflow.
+
+Files with no explained settings open directly in raw source. Explicit editor-mode
+choices stay with each file instead of carrying to every file you open. Macro
+headers in the current draft provide source shortcuts; choosing a shortcut moves
+the cursor to the definition without executing or rewriting it. Includes, macro
+bodies, comments, and the protected generated suffix retain their existing semantics.

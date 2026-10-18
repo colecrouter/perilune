@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { configFileIndex, configMacros, configRevision } from '#lib/domain/config-browser.js';
 	import type { ConfigSources } from '#lib/domain/config-sources.js';
 	import { untrack, onMount } from 'svelte';
 	import CalibrationDraft from './CalibrationDraft.svelte';
@@ -66,7 +67,11 @@
 		mounted = true;
 	});
 	let reference = $state<ReferenceCatalogue | null>(null);
-	let mode = $state<'guided' | 'raw'>('guided');
+	let modes = $state<Record<string, 'guided' | 'raw'>>({});
+	let fileQuery = $state('');
+	let jump = $state<{ line: number; token: number } | null>(null);
+	const fileIndex = $derived(configFileIndex(files, fileQuery));
+	const revisionOf = $derived(configRevision(source.path, files));
 	let busy = $state(false),
 		failure = $state(''),
 		notice = $state(''),
@@ -83,6 +88,10 @@
 	const referenceContext = $derived(current ? referenceInventory(current.text).kinematics : null);
 	const parts = $derived(configParts(current?.text ?? source.text));
 	const fields = $derived(configFields(current?.text ?? source.text));
+	const macros = $derived(configMacros(parts.editable));
+	const mode = $derived(
+		revisionOf ? 'raw' : fields.length ? (modes[source.path] ?? 'guided') : 'raw'
+	);
 	const dirty = $derived(Boolean(current && current.text !== current.base.text));
 	const anyDirty = $derived(Object.values(drafts).some((d) => d.text !== d.base.text));
 	const conflict = $derived(Boolean(current && current.latest.version !== current.base.version));
@@ -94,11 +103,13 @@
 	);
 	$effect(() => {
 		const doc = source;
+		if (!modes[doc.path]) modes[doc.path] = configFields(doc.text).length ? 'guided' : 'raw';
 		if (!drafts[doc.path]) drafts[doc.path] = { base: doc, text: doc.text, latest: doc };
 		else drafts[doc.path].latest = doc;
 	});
 	$effect(() => {
 		void source.path;
+		jump = null;
 		failure = '';
 		notice = '';
 		invalidField = false;
@@ -114,7 +125,13 @@
 		text: string;
 		sources?: { root: string; fingerprint: string };
 	}) {
-		if (busy || source.path !== change.path || !current || current.text !== change.expectedText)
+		if (
+			revisionOf ||
+			busy ||
+			source.path !== change.path ||
+			!current ||
+			current.text !== change.expectedText
+		)
 			throw new Error('The draft changed. Review the current file before adding the option.');
 		checkConfigChange(current.text, change.text);
 		current.text = change.text;
@@ -125,7 +142,7 @@
 	}
 
 	function rawEdit(value: string) {
-		if (!current) return;
+		if (!current || revisionOf) return;
 		current.text = rawConfigEdit(parts.editable, value) + parts.generated;
 		failure = '';
 		notice = '';
@@ -311,17 +328,32 @@
 		<p class="muted">
 			{source.source === 'simulator' ? 'Simulator examples' : 'Private · owner access'}
 		</p>
+		<label class="file-search"
+			>Find a file<input type="search" bind:value={fileQuery} placeholder="Name or folder" /></label
+		>
 		<nav aria-label="Configuration files">
-			{#each files as file}<a
+			{#snippet fileLink(file: ConfigFile)}<a
 					href={`?file=${encodeURIComponent(file.path)}`}
 					data-sveltekit-reset="false"
 					aria-current={file.path === source.path ? 'page' : undefined}
-					><span>{file.path}</span
+				>
+					<span>{file.path}</span
 					>{#if drafts[file.path] && drafts[file.path]!.text !== drafts[file.path]!.base.text}<span
 							class="draft-dot"
 							aria-label="Unsaved draft">●</span
 						>{/if}</a
-				>{/each}
+				>{/snippet}
+			{#each fileIndex.folders as folder}<section class="file-group">
+					<h3>{folder.path || 'Configuration'}</h3>
+					{#each folder.files as file}{@render fileLink(file)}{/each}
+				</section>{/each}
+			{#each fileIndex.revisions as group}<details
+					open={group.files.some((file) => file.path === source.path) || !!fileQuery}
+				>
+					<summary>Saved revisions · {group.current} ({group.files.length})</summary
+					>{#each group.files as file}{@render fileLink(file)}{/each}
+				</details>{/each}
+			{#if !fileIndex.folders.length && !fileIndex.revisions.length}<p>No matching files.</p>{/if}
 		</nav>
 		<p class="muted small">
 			Includes stay separate. Perilune never flattens files or rewrites unknown settings.
@@ -335,7 +367,7 @@
 						path={source.path}
 						source={source.source}
 						includesPresent={files.length > 1}
-						disabled={busy || !mounted || conflict}
+						disabled={busy || !mounted || conflict || !!revisionOf}
 						onAdd={addFromReference}
 						onDismiss={() => onDismissProposal?.()}
 					/>{/key}{/if}
@@ -360,9 +392,15 @@
 						><button disabled={busy || !mounted} onclick={exportDraft}>Export draft</button>
 					</div>
 				</header>
-				{#if source.source === 'moonraker'}<p class="notice">
-						Live files can be inspected and edited as local drafts here. Export for review; saving
-						to the printer and restarting it are not enabled yet.
+				{#if revisionOf}<p class="notice">
+						Read-only saved revision of <a
+							href={`?file=${encodeURIComponent(revisionOf)}`}
+							data-sveltekit-reset="false">{revisionOf}</a
+						>. Opening it does not restore or activate it. Export or copy the changes you need into
+						the current file for review.
+					</p>{:else if source.source === 'moonraker' && !applicationEnabled}<p class="notice">
+						Live file edits remain local drafts. Export for review; printer writes are disabled on
+						this server.
 					</p>{/if}
 				{#if failure}<p class="notice error" role="alert">{failure}</p>{/if}{#if notice}<p
 						class="notice"
@@ -386,13 +424,26 @@
 					</section>{/if}
 				<div class="mode-switch" role="group" aria-label="Editor mode">
 					<button
-						disabled={!mounted}
+						disabled={!mounted || !fields.length || !!revisionOf}
 						aria-pressed={mode === 'guided'}
-						onclick={() => (mode = 'guided')}>Explained settings</button
-					><button disabled={!mounted} aria-pressed={mode === 'raw'} onclick={() => (mode = 'raw')}
-						>Raw source</button
+						onclick={() => (modes[source.path] = 'guided')}>Explained settings</button
+					><button
+						disabled={!mounted}
+						aria-pressed={mode === 'raw'}
+						onclick={() => (modes[source.path] = 'raw')}>Raw source</button
 					>
 				</div>
+				{#if macros.length}<section class="macro-index" aria-label="Macros in this file">
+						<h3>Macros in this file</h3>
+						<p class="muted small">Edit definitions in source; selecting one does not run it.</p>
+						{#each macros as macro}<button
+								disabled={!mounted}
+								onclick={() => {
+									modes[source.path] = 'raw';
+									jump = { line: macro.line, token: Date.now() };
+								}}>Edit {macro.name} · line {macro.line}</button
+							>{/each}
+					</section>{/if}
 				{#if includes.length}<div class="includes">
 						<strong>Includes</strong
 						>{#each includes as include}{#if files.some((file) => file.path === include)}<a
@@ -472,13 +523,6 @@
 											</p>{/if}
 									</div>
 								</div>{/each}
-						</div>{:else}<div class="empty">
-							<h3>Keep the full flexibility of the source</h3>
-							<p>
-								This file has no supported scalar fields. Macros, YAML, includes, and unfamiliar
-								directives remain available in raw source without conversion.
-							</p>
-							<button onclick={() => (mode = 'raw')}>Open raw source</button>
 						</div>{/if}
 				{:else}<p class="raw-label">
 						Editable source <span class="muted small"
@@ -487,9 +531,10 @@
 					</p>
 					{#key source.path}<ConfigurationSource
 							value={parts.editable}
+							{jump}
 							{reference}
 							path={source.path}
-							disabled={busy || !mounted}
+							disabled={busy || !mounted || !!revisionOf}
 							onChange={rawEdit}
 						/>{/key}{/if}
 				{#if parts.generated || parts.warning}<section class="generated">
@@ -634,7 +679,35 @@
 		font-family: inherit;
 		font-size: 1rem;
 	}
+	.file-search {
+		display: grid;
+		gap: 0.4rem;
+		font-size: 0.8rem;
+	}
+	.file-search input {
+		width: 100%;
+		box-sizing: border-box;
+		min-width: 0;
+		padding: 0.6rem;
+		color: var(--text);
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 0.5rem;
+	}
+	.file-group h3,
+	.file-list summary {
+		font-size: 0.8rem;
+		color: var(--muted);
+		margin: 0.7rem 0 0.35rem;
+		overflow-wrap: anywhere;
+	}
+	.macro-index button {
+		margin: 0.3rem 0.4rem 0.3rem 0;
+	}
 	.file-list nav {
+		max-height: 55dvh;
+		overflow: auto;
+		overscroll-behavior: contain;
 		display: grid;
 		gap: 0.35rem;
 		margin: 1rem -0.5rem;
@@ -835,9 +908,6 @@
 		max-width: 450px;
 		margin-bottom: 1rem;
 	}
-	.empty {
-		padding: 1rem 0;
-	}
 	.confirmation {
 		display: flex;
 		gap: 0.7rem;
@@ -876,7 +946,35 @@
 		.file-list {
 			position: static;
 		}
+		.file-search {
+			display: grid;
+			gap: 0.4rem;
+			font-size: 0.8rem;
+		}
+		.file-search input {
+			width: 100%;
+			box-sizing: border-box;
+			min-width: 0;
+			padding: 0.6rem;
+			color: var(--text);
+			background: var(--surface);
+			border: 1px solid var(--border);
+			border-radius: 0.5rem;
+		}
+		.file-group h3,
+		.file-list summary {
+			font-size: 0.8rem;
+			color: var(--muted);
+			margin: 0.7rem 0 0.35rem;
+			overflow-wrap: anywhere;
+		}
+		.macro-index button {
+			margin: 0.3rem 0.4rem 0.3rem 0;
+		}
 		.file-list nav {
+			max-height: 55dvh;
+			overflow: auto;
+			overscroll-behavior: contain;
 			display: flex;
 			flex-wrap: wrap;
 			margin: 0.5rem 0;

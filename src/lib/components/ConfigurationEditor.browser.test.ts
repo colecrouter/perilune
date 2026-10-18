@@ -200,3 +200,56 @@ test('calibration staging preserves other edits and uses the existing reviewed s
 		})
 	);
 });
+
+test('unsupported files open as source and explicit editor choices stay with each file', async () => {
+	const printer = file();
+	const macro = file('macros.cfg', '[gcode_macro LOAD]\ngcode:\n  M105\n');
+	const other = file('machine.cfg');
+	const screen = await render(ConfigurationEditor, {
+		document: printer,
+		files: [printer, macro, other],
+		...callbacks(printer)
+	});
+	await screen.getByRole('button', { name: 'Raw source', exact: true }).click();
+	await screen.rerender({ document: macro });
+	await expect
+		.element(screen.getByRole('button', { name: 'Raw source', exact: true }))
+		.toHaveAttribute('aria-pressed', 'true');
+	await expect
+		.element(screen.getByRole('button', { name: 'Explained settings', exact: true }))
+		.toBeDisabled();
+	await screen.getByRole('button', { name: 'Edit LOAD · line 1', exact: true }).click();
+	await expect
+		.element(screen.getByRole('textbox', { name: 'Editable configuration source', exact: true }))
+		.toBeVisible();
+	await screen.rerender({ document: other });
+	await expect
+		.element(screen.getByRole('button', { name: 'Explained settings', exact: true }))
+		.toHaveAttribute('aria-pressed', 'true');
+	await screen.rerender({ document: printer });
+	await expect
+		.element(screen.getByRole('button', { name: 'Raw source', exact: true }))
+		.toHaveAttribute('aria-pressed', 'true');
+});
+
+test('saved Klipper revisions open read-only and file search keeps the current editor', async () => {
+	const printer = file();
+	const revision = file('printer-20261018_123456.cfg');
+	const other = file('macros/tool.cfg');
+	const calls = callbacks(revision);
+	const screen = await render(ConfigurationEditor, {
+		document: revision,
+		files: [printer, revision, other],
+		...calls
+	});
+	await expect.element(screen.getByText(/Read-only saved revision of/)).toBeVisible();
+	await expect
+		.element(screen.getByRole('textbox', { name: 'Editable configuration source', exact: true }))
+		.toHaveAttribute('contenteditable', 'false');
+	await screen.getByRole('searchbox', { name: 'Find a file' }).fill('no matching file');
+	await expect.element(screen.getByText('No matching files.', { exact: true })).toBeVisible();
+	await expect
+		.element(screen.getByRole('heading', { name: revision.path, exact: true }))
+		.toBeVisible();
+	expect(calls.onSave).not.toHaveBeenCalled();
+});

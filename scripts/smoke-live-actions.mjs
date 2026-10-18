@@ -245,11 +245,12 @@ try {
 		.filter({ has: page.getByRole('spinbutton', { name: 'Bed target' }) })
 		.getByRole('button', { name: 'Set', exact: true })
 		.click();
-	await page.waitForFunction(() =>
-		Array.from(document.querySelectorAll('.activity-list .action-status')).some(
-			(e) => e.textContent === 'completed'
-		)
-	);
+	await page.goto(base + '/activity');
+	await page
+		.locator('article')
+		.filter({ has: page.getByRole('link', { name: 'Set bed to 40°C', exact: true }) })
+		.getByText('completed', { exact: true })
+		.waitFor();
 	assert.equal(status.heater_bed.target, 40);
 	await page.goto(base + '/jobs');
 	await page.getByRole('link', { name: /fixture.gcode/ }).click();
@@ -285,11 +286,12 @@ try {
 	assert.equal(await stop.getByRole('checkbox', { name: /nozzle/i }).isDisabled(), true);
 	await stop.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('heading', { name: 'Print stopped', exact: true }).waitFor();
-	await page.waitForFunction(() =>
-		Array.from(document.querySelectorAll('.activity-list .action-status')).some(
-			(e) => e.textContent === 'completed'
-		)
-	);
+	await page.goto(base + '/activity');
+	await page
+		.locator('article')
+		.filter({ has: page.getByRole('link', { name: 'Stop print', exact: true }) })
+		.getByText('completed', { exact: true })
+		.waitFor();
 	assert.equal(status.heater_bed.target, 40);
 	assert.equal(status.extruder.target, 0);
 	const native = await browser.newContext({
@@ -436,7 +438,9 @@ try {
 		.getByRole('dialog')
 		.getByRole('button', { name: 'Disengage motors', exact: true })
 		.click();
-	await page.getByText('Check the printer before continuing', { exact: true }).waitFor();
+	await page
+		.getByRole('link', { name: 'Check the printer and review recovery →', exact: true })
+		.waitFor();
 
 	drop = false;
 	// Recovery safety is a separate workflow, never a replay of the lost motor command.
@@ -453,8 +457,8 @@ try {
 	const safetyDialog = page.getByRole('dialog');
 	await safetyDialog.getByRole('button', { name: 'Stop job', exact: true }).click();
 	await safetyDialog.waitFor({ state: 'hidden' });
-	await page.getByRole('link', { name: 'Safety activity', exact: true }).click();
-	await page.getByRole('heading', { name: 'Safety activity', exact: true }).waitFor();
+	await page.getByRole('link', { name: 'Activity', exact: true }).click();
+	await page.getByRole('heading', { name: 'Printer activity', exact: true }).waitFor();
 	await page
 		.locator('article')
 		.filter({
@@ -479,6 +483,7 @@ try {
 		recoveryBefore
 	);
 	assert.deepEqual(safetyRequests, ['/printer/print/cancel', '/printer/gcode/script']);
+	await page.goto(base + '/activity#recovery');
 	await page.getByRole('button', { name: 'Review recovery', exact: true }).click();
 	await page
 		.getByRole('dialog')
@@ -501,7 +506,7 @@ try {
 		0,
 		'Emergency shutdown has no blocking confirmation dialog'
 	);
-	await page.getByRole('link', { name: 'Safety activity', exact: true }).click();
+	await page.getByRole('link', { name: 'Activity', exact: true }).click();
 	await page
 		.locator('article')
 		.filter({ has: page.getByRole('link', { name: 'Emergency stop', exact: true }) })
@@ -509,6 +514,7 @@ try {
 		.waitFor();
 	await page.getByRole('link', { name: '← Return to overview', exact: true }).click();
 	assert.equal(safetyRequests.filter((p) => p === '/printer/emergency_stop').length, 1);
+	await page.getByRole('link', { name: 'Review hazard and recover →', exact: true }).click();
 	const recoveryPanel = page.getByRole('region', { name: 'Emergency recovery', exact: true });
 	await recoveryPanel
 		.getByRole('checkbox', {
@@ -579,9 +585,12 @@ try {
 	await page.goto(base);
 	drop = true;
 	await page.getByRole('button', { name: 'Resume print', exact: true }).click();
-	await page.getByText('Check the printer before continuing', { exact: true }).waitFor();
+	await page
+		.getByRole('link', { name: 'Check the printer and review recovery →', exact: true })
+		.waitFor();
 	drop = false;
 	await page.reload();
+	await page.goto(base + '/activity#recovery');
 	await page.getByRole('button', { name: 'Review recovery', exact: true }).click();
 	const pausedReview = page.getByRole('dialog');
 	const unlock = pausedReview.getByRole('button', {

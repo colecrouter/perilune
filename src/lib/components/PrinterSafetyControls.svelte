@@ -2,7 +2,6 @@
 	import { page } from '$app/state';
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
 	import SafetyButton from './SafetyButton.svelte';
-	import EmergencyRecovery from './EmergencyRecovery.svelte';
 	let { snapshot }: { snapshot?: PrinterSnapshot } = $props();
 	const owner = $derived(page.data.user?.role === 'owner');
 	const operator = $derived(owner || page.data.user?.role === 'operator');
@@ -19,7 +18,6 @@
 {#if snapshot && safety?.enabled && operator}
 	<aside aria-label="Printer safety" class:locked={safety.halted}>
 		<div class="buttons">
-			<a class="activity-link" href="/safety/history">Safety activity</a>
 			<SafetyButton {snapshot} />
 			{#if owner && snapshot.liveRecovery && !safety.halted}
 				<SafetyButton
@@ -42,18 +40,16 @@
 				/>{/if}
 		</div>
 		{#if safety.halted}<p role="alert">
-				Emergency interlock active. Review the hazard before restarting firmware. Ordinary controls
-				remain locked.
+				Emergency interlock active. Ordinary controls remain locked.
+				<a href="/activity#emergency">Review hazard and recover →</a>
+			</p>{:else if snapshot.liveRecovery}<p role="status">
+				Controls locked after an uncertain action.
+				<a href="/activity#recovery">Check the printer and review recovery →</a>
+			</p>{:else if active.some((a) => a.status === 'unknown')}<p role="status">
+				A safety outcome needs review. <a href="/activity#safety">Review safety outcome →</a>
+			</p>{:else if active.length}<p role="status">
+				Safety action in progress. <a href="/activity#safety">View progress →</a>
 			</p>{/if}
-		{#if safety.halted && owner}{#key safety.recovery?.token}<EmergencyRecovery
-					{snapshot}
-				/>{/key}{/if}
-		{#each active as action (action.id)}<p role="status">
-				<a href={`/safety/${action.id}`}>{action.label}: {action.status}</a>{action.acknowledged &&
-				!action.observed
-					? ' · acknowledged; result not yet verified'
-					: ''}{action.reviewedAt ? ' · reviewed' : ''}
-			</p>{/each}
 	</aside>
 {/if}
 
@@ -68,11 +64,6 @@
 		flex-wrap: wrap;
 		align-items: center;
 		justify-content: flex-end;
-	}
-	.activity-link {
-		margin-right: auto;
-		font-size: 0.8rem;
-		color: var(--muted);
 	}
 	p {
 		font-size: 0.85rem;

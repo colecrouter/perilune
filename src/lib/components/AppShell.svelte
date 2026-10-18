@@ -18,11 +18,15 @@
 		{ label: 'Controls', icon: 'calibration', href: '/controls' },
 		{ label: 'Jobs', icon: 'jobs', href: '/jobs' },
 		{ label: 'Console', icon: 'console', href: '/console' },
+		{ label: 'Activity', icon: 'activity', href: '/activity' },
 		{ label: 'Calibration', icon: 'calibration', href: '/calibration' },
 		{ label: 'Configuration', icon: 'configuration', href: '/configuration' },
 		{ label: 'Account', icon: 'account', href: '/account' },
 		{ label: 'Help', icon: 'help', href: '/help' }
 	] as const;
+	const visibleNavigation = $derived(
+		navigation.filter((item) => item.label !== 'Activity' || page.data.user?.role !== 'viewer')
+	);
 </script>
 
 <div class="app-shell">
@@ -32,7 +36,7 @@
 			<span>Perilune</span>
 		</a>
 		<nav aria-label="Main navigation">
-			{#each navigation as item}
+			{#each visibleNavigation as item}
 				{#if item.label === 'Calibration'}
 					<DropdownMenu.Root
 						><DropdownMenu.Trigger

@@ -6,13 +6,15 @@
 		path,
 		disabled = false,
 		onChange,
-		reference = null
+		reference = null,
+		jump = null
 	}: {
 		value: string;
 		path: string;
 		disabled?: boolean;
 		onChange: (value: string) => void;
 		reference?: ReferenceCatalogue | null;
+		jump?: { line: number; token: number } | null;
 	} = $props();
 	let host: HTMLDivElement;
 	let ready = $state(false),
@@ -55,6 +57,17 @@
 	$effect(() => {
 		const next = reference;
 		if (ready) editor?.setReference(next);
+	});
+	$effect(() => {
+		const target = jump;
+		if (ready && target && editor) {
+			const line = editor.view.state.doc.line(
+				Math.max(1, Math.min(target.line, editor.view.state.doc.lines))
+			);
+			editor.view.dispatch({ selection: { anchor: line.from }, scrollIntoView: true });
+			editor.view.focus();
+			host.scrollIntoView({ block: 'nearest' });
+		}
 	});
 </script>
 
