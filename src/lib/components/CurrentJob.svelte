@@ -53,21 +53,25 @@
 		</div>
 		{#if reason}<p class="control-reason" role="status">{reason}</p>{/if}
 		<div class="job-actions">
-			<ActionForm
-				receipts={snapshot.actions}
-				fields={{ intent: job.state === 'paused' ? 'resume' : 'pause', ...identity }}
-				>{#snippet children({ pending, uncertain, executing })}<button
-						class="button primary"
-						disabled={!!reason || pending || uncertain}
-						><Icon name={job.state === 'paused' ? 'play' : 'pause'} size={18} />{pending
-							? executing
-								? 'Waiting for printer…'
-								: 'Submitting…'
-							: job.state === 'paused'
-								? 'Resume print'
-								: 'Pause print'}</button
-					>{/snippet}</ActionForm
-			>
+			{#key job.runId}<ActionForm
+					receipts={snapshot.actions}
+					fields={{ intent: job.state === 'paused' ? 'resume' : 'pause', ...identity }}
+					>{#snippet children({ pending, uncertain, executing, outcome })}<button
+							class="button primary"
+							disabled={!!reason || pending || uncertain}
+							><Icon name={job.state === 'paused' ? 'play' : 'pause'} size={18} />{pending
+								? executing
+									? 'Waiting for printer…'
+									: 'Submitting…'
+								: job.state === 'paused'
+									? 'Resume print'
+									: 'Pause print'}</button
+						>{#if job.state === 'paused' && outcome?.status === 'completed' && outcome.label === 'Resume print' && outcome.message}<p
+								role="status"
+							>
+								{outcome.message}
+							</p>{/if}{/snippet}</ActionForm
+				>{/key}
 			<a
 				role="button"
 				class="button danger-outline"

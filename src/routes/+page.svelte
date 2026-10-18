@@ -337,33 +337,6 @@
 								.availableObjects.length} available objects{/if}</small
 					>
 				</details>
-				<section class="panel activity-panel">
-					<div class="section-header">
-						<h2>Activity</h2>
-						{#if pending}<span class="tag">Pending</span>{/if}
-					</div>
-					<div class="activity-list" aria-live="polite">
-						{#each snapshot.actions.slice(0, 5) as action (action.id)}<div class="activity-row">
-								<Icon name="jobs" />
-								<div>
-									<strong><a href={`/actions/${action.id}`}>{action.label}</a></strong><small
-										>{action.message ??
-											new Date(action.createdAt).toLocaleTimeString([], {
-												hour: '2-digit',
-												minute: '2-digit'
-											})}</small
-									>
-								</div>
-								<span
-									class="action-status"
-									class:failed={action.status === 'failed' || action.status === 'unknown'}
-									>{action.status}</span
-								>
-							</div>{:else}<p class="muted">
-								No recent actions. Commands from all operators appear here.
-							</p>{/each}
-					</div>
-				</section>
 			</div>
 		</div>
 		<footer class="page-footer">Development preview <a href="/roadmap">What’s next</a></footer>
@@ -392,13 +365,5 @@
 		font-size: 0.75rem;
 		font-weight: normal;
 		margin-top: 0.35rem;
-	}
-	.activity-row a {
-		color: inherit;
-		text-decoration-color: var(--border);
-		text-underline-offset: 0.2rem;
-	}
-	.activity-row a:hover {
-		color: var(--accent);
 	}
 </style>

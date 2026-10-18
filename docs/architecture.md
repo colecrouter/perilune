@@ -1052,8 +1052,8 @@ including its control-readiness reasons and finished-job summary. Enhanced job,
 overview heater/cooldown, and safety-dialog forms follow live receipts rather
 than leaving a submission permanently labelled queued. Queue/execution prevents
 implicit duplicate submission as well as disabling buttons. Routine completed
-feedback clears after six seconds; failures and uncertain outcomes remain
-visible, and durable receipts remain available through activity links. Receipt
+feedback is quiet; failures and uncertain outcomes remain actionable, and durable
+receipts remain available on the explicit Activity page. Receipt
 state survives eviction from bounded recent-action lists. Repeated telemetry
 snapshots do not extend the success timer. Connection diagnostics are collapsed
 by default, without hiding the reconnect banners or changing initial SSR
@@ -1180,3 +1180,25 @@ artifact, while checks and the real Docker build/smoke run independently. A fina
 `validate` gate requires every dependency to succeed, including the container.
 Pull requests and main pushes run CI; feature pushes no longer duplicate PR runs.
 No physical commands are retried to hide test failures.
+
+## Clearer action feedback and configuration navigation
+
+Routine enhanced-action feedback shows admission/execution while pending, hides
+completed proof, and keeps failures and unknown outcomes actionable. The current
+job retains the meaningful staged-Resume message when Klipper deliberately stays
+paused. Recent failed execution surfaces a dismissible global notice even if its
+original dialog closed on admission. Per-tab dismissals survive navigation and
+reset when account identity changes; receipt status and printer locks are not changed.
+
+`/activity` lists ordinary and safety actions and hosts full emergency/unknown-action
+recovery. The global utility strip retains urgent controls and concise links to
+required review rather than repeating historical receipts and recovery forms on
+every page. `/safety/history` redirects to its safety section. Physical dispatch,
+acknowledgement, hazard review and no-replay policies are unchanged.
+
+The configuration browser groups folders and Klipper-named saved revisions, provides
+path search with bounded scrolling, and exposes source shortcuts for macros in the
+current draft. Recognized revisions require an existing base file and open read-only.
+Mode defaults are file-specific; unsupported files start in raw source, and explicit
+choices remain with that file. Raw bytes, per-file drafts, save reviews, conflicts,
+include precedence and protected generated values retain their existing guarantees.

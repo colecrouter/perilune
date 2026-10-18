@@ -158,11 +158,18 @@ try {
 			await route.fulfill({ response });
 		};
 		await app.route('**/actions', handler);
+		const oldId = await form.locator('[name="id"]').inputValue();
 		await button.click();
 		await intercepted;
 		await input.fill(edit);
 		release();
-		await form.getByRole('link', { name: 'Check receipt' }).waitFor();
+		await app.waitForFunction(
+			(id) =>
+				!Array.from(document.querySelectorAll('input[name="id"]')).some(
+					(input) => input.value === id
+				),
+			oldId
+		);
 		await app.unroute('**/actions', handler);
 		assert.equal(await input.inputValue(), edit, 'Acknowledgement must preserve newer draft');
 	}
@@ -238,16 +245,17 @@ try {
 		.filter({ has: feedbackPage.getByRole('spinbutton', { name: 'Bed target', exact: true }) });
 	await feedbackForm.locator('[name="target"]').fill('45');
 	await feedbackForm.getByRole('button', { name: 'Set', exact: true }).click();
-	await feedbackForm.getByRole('link', { name: 'Check receipt' }).waitFor();
+	await feedbackForm.locator('.action-feedback').waitFor();
 	await feedbackForm.evaluate((form) => form.requestSubmit());
 	await idle();
-	await feedbackForm.locator('.action-feedback').filter({ hasText: 'Completed' }).waitFor();
+
 	assert.equal(
 		feedbackPosts,
 		1,
 		'Implicit resubmission must not admit a second command while the first is queued/sending'
 	);
 	await feedbackForm.locator('.action-feedback').waitFor({ state: 'detached', timeout: 10_000 });
+	assert.equal(await feedbackForm.getByRole('link').count(), 0, 'Routine success stays quiet');
 	assert.equal(
 		await feedbackPage.getByRole('spinbutton', { name: 'Bed target', exact: true }).inputValue(),
 		'45'

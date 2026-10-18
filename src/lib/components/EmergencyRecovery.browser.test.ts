@@ -81,3 +81,37 @@ test('externally restarted firmware requires inspection before read-only verific
 	await inspection.click();
 	await expect.element(inspection).toBeChecked();
 });
+
+test('a new emergency resets inspection acknowledgement and submission identity while the page remains mounted', async () => {
+	const snapshot = initialSnapshot();
+	snapshot.klippy = 'shutdown';
+	snapshot.safety = {
+		enabled: true,
+		halted: true,
+		actions: [],
+		recovery: { token: crypto.randomUUID(), reviewedAt: null, restartId: null }
+	};
+	const screen = await render(EmergencyRecovery, { snapshot });
+	const acknowledgement = screen.getByRole('checkbox', {
+		name: 'I have inspected the printer and resolved the hazard',
+		exact: true
+	});
+	await acknowledgement.click();
+	await expect.element(acknowledgement).toBeChecked();
+	const oldId = (
+		document.querySelector('form[action="/safety"] input[name="id"]') as HTMLInputElement
+	).value;
+	await screen.rerender({
+		snapshot: {
+			...snapshot,
+			safety: {
+				...snapshot.safety,
+				recovery: { ...snapshot.safety.recovery!, token: crypto.randomUUID() }
+			}
+		}
+	});
+	await expect.element(acknowledgement).not.toBeChecked();
+	expect(
+		(document.querySelector('form[action="/safety"] input[name="id"]') as HTMLInputElement).value
+	).not.toBe(oldId);
+});
