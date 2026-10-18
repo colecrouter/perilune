@@ -20,7 +20,7 @@
 		"lint": "vp lint",
 		"format": "vp fmt && prettier --write \"src/**/*.svelte\"",
 		"format:check": "vp fmt --check && prettier --check \"src/**/*.svelte\"",
-		"validate": "vp run format:check && vp run lint && vp run check && vp run test && vp run test:backup && vp run build && vp run test:smoke && vp run test:smoke:live && vp run test:smoke:camera && vp run test:smoke:auth && vp run test:smoke:jobs && vp run test:smoke:calibration && vp run test:smoke:mesh-probe && vp run test:smoke:live-mesh && vp run test:smoke:extrusion && vp run test:smoke:configuration && vp run test:smoke:console && vp run test:smoke:progressive && vp run test:smoke:live-actions",
+		"validate": "pnpm run validate:checks && vp run build && node scripts/smoke-suite.mjs",
 		"test:smoke": "node scripts/smoke.mjs",
 		"test:backup": "node --test scripts/backup.test.mjs",
 		"test:compose": "node scripts/check-compose.mjs",
@@ -35,7 +35,8 @@
 		"test:smoke:configuration": "node scripts/smoke-configuration.mjs",
 		"test:smoke:console": "node scripts/smoke-console.mjs",
 		"test:smoke:progressive": "node scripts/smoke-progressive.mjs",
-		"test:smoke:live-actions": "node scripts/smoke-live-actions.mjs"
+		"test:smoke:live-actions": "node scripts/smoke-live-actions.mjs",
+		"validate:checks": "vp run format:check && vp run lint && vp run check && vp run test && vp run test:backup && node scripts/smoke-suite.mjs --check"
 	},
 	"dependencies": {
 		"@better-auth/passkey": "1.7.7",

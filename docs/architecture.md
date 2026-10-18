@@ -1168,3 +1168,15 @@ delivery; notification-setting reads use a bounded finite body reader.
 The implementation is reviewable independently of owner hardware acceptance. A completed
 deposited print, actual iOS/Android installation/background delivery, and an off-host
 backup destination remain owner checks in issues #52/#35 and docs/daily-use.md.
+
+## Validation and CI execution
+
+`pnpm validate` retains formatting, lint, type checks, unit/browser tests, backup
+checks, a production build and every production smoke suite. The smoke inventory
+is centralized in `scripts/smoke-suite.mjs`; validation rejects a new, missing or
+duplicated suite until it is assigned to exactly one group. Local execution remains
+serial. CI uses separate runners for the four groups, sharing one production-build
+artifact, while checks and the real Docker build/smoke run independently. A final
+`validate` gate requires every dependency to succeed, including the container.
+Pull requests and main pushes run CI; feature pushes no longer duplicate PR runs.
+No physical commands are retried to hide test failures.
