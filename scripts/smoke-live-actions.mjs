@@ -127,7 +127,7 @@ protocol.on('connection', (socket) => {
 				result = { status, eventtime: Date.now() };
 				break;
 			case 'printer.gcode.help':
-				result = {};
+				result = { PID_CALIBRATE: 'native', TURN_OFF_HEATERS: 'native' };
 				break;
 			case 'printer.gcode.script': {
 				operations.push({ method: req.method, ...req.params });
@@ -155,7 +155,14 @@ protocol.on('connection', (socket) => {
 					status[m[1]].target = Number(m[2]);
 				if (script === 'M84') status.toolhead.homed_axes = '';
 				if (script.startsWith('G28')) status.toolhead.homed_axes = 'xyz';
-				if (script === 'TURN_OFF_HEATERS') {
+				if (script.startsWith('PID_CALIBRATE')) {
+					assert.equal(script, 'PID_CALIBRATE HEATER=extruder TARGET=200\nTURN_OFF_HEATERS');
+					status.configfile.save_config_pending = true;
+					status.configfile.save_config_pending_items = {
+						extruder: { control: 'pid', pid_kp: '20', pid_ki: '1.2', pid_kd: '80' }
+					};
+				}
+				if (script.endsWith('TURN_OFF_HEATERS')) {
 					status.heater_bed.target = 0;
 					status.extruder.target = 0;
 				}
@@ -200,6 +207,7 @@ const app = spawn(process.execPath, ['scripts/server.mjs'], {
 		PERILUNE_DATABASE: filename,
 		PERILUNE_MOONRAKER_URL: `ws://127.0.0.1:${upstream.address().port}/websocket`,
 		PERILUNE_LIVE_CONTROLS: 'true',
+		PERILUNE_LIVE_PID: 'true',
 		PERILUNE_LIVE_CONSOLE: 'true',
 		PERILUNE_LIVE_FILAMENT: 'true',
 		PERILUNE_LIVE_Z_CALIBRATION: 'true',
@@ -239,6 +247,28 @@ try {
 	page.setDefaultTimeout(15000);
 	await page.goto(base);
 	await page.getByText(/Live controls enabled · shared across operators/).waitFor();
+	await page.goto(base + '/calibration/pid');
+	await page.getByRole('checkbox', { name: /I am attending/ }).check();
+	await page.getByRole('button', { name: 'Start heater calibration', exact: true }).click();
+	await page
+		.getByRole('heading', { name: 'Review the proposed PID settings', exact: true })
+		.waitFor();
+	assert.equal(status.extruder.target, 0);
+	assert.equal(operations.filter((op) => op.script?.startsWith('PID_CALIBRATE')).length, 1);
+	await page.reload();
+	await page
+		.getByRole('heading', { name: 'Review the proposed PID settings', exact: true })
+		.waitFor();
+	await page.setViewportSize({ width: 320, height: 800 });
+	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+	await mkdir('test-results', { recursive: true });
+	await page.screenshot({ path: 'test-results/pid-result-mobile.png', fullPage: true });
+	status.configfile.save_config_pending = false;
+	status.configfile.save_config_pending_items = {};
+	publish();
+	await page.getByRole('heading', { name: 'Pending settings changed', exact: true }).waitFor();
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await page.goto(base);
 	await page.getByRole('spinbutton', { name: 'Bed target' }).fill('40');
 	await page
 		.locator('.heater')

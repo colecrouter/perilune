@@ -1,3 +1,4 @@
+import { pidActive } from '#lib/domain/pid.js';
 import {
 	advanceExtrusion,
 	emptyExtrusion,
@@ -64,6 +65,7 @@ export class PrinterService extends Context.Service<
 				Partial<
 					Pick<
 						PrinterSnapshot,
+						| 'pidTelemetry'
 						| 'zProbe'
 						| 'filament'
 						| 'motion'
@@ -115,6 +117,7 @@ export const makePrinterService = (
 						)
 					: emptyExtrusion();
 			if (mode === 'simulator') yield* store.writeExtrusion(extrusion);
+			const pid = mode === 'simulator' ? yield* store.pid : { enabled: false, run: null };
 			const bedMesh =
 				mode === 'simulator'
 					? {
@@ -122,8 +125,9 @@ export const makePrinterService = (
 							profiles: [...initialSnapshot().bedMesh.profiles, ...meshProbe.savedProfiles]
 						}
 					: initialLiveSnapshot().bedMesh;
-			const state = yield* SubscriptionRef.make({
+			const state = yield* SubscriptionRef.make<PrinterSnapshot>({
 				...(mode === 'moonraker' ? initialLiveSnapshot() : initialSnapshot()),
+				pid,
 				actions: mode === 'moonraker' ? [] : history,
 				calibration,
 				extrusion,
@@ -206,7 +210,7 @@ export const makePrinterService = (
 											throw new CommandRejected({
 												message: 'The operator account is no longer authorized.'
 											});
-										return applyCommand(current, request.command, file, request.actor);
+										return applyCommand(current, request.command, file, request.actor, request.id);
 									},
 									catch: (cause) =>
 										cause instanceof CommandRejected
@@ -232,6 +236,8 @@ export const makePrinterService = (
 								request.command.type === 'extrusionFeed'
 							)
 								extrusionActor = request.actor;
+						} else if (status === 'completed' && request?.command.type === 'pidCalibrate') {
+							yield* store.commitPid(action.id, status, message, next.pid!);
 						} else if (status === 'completed' && request?.command.type.startsWith('meshProbe')) {
 							yield* store.commitMeshProbe(action.id, status, message, next.meshProbe);
 							if (request.command.type === 'meshProbeBegin') probeActor = request.actor;
@@ -843,7 +849,8 @@ export const makePrinterService = (
 									calibration: Boolean(
 										telemetry.motion?.calibration ||
 										meshProbeActive(snapshot.meshProbe) ||
-										extrusionActive(snapshot.extrusion)
+										extrusionActive(snapshot.extrusion) ||
+										pidActive(snapshot.pid)
 									)
 								},
 								connectionGeneration:
@@ -862,11 +869,13 @@ export const makePrinterService = (
 									snapshot.storage === 'degraded' ||
 									calibrationActive(snapshot.calibration) ||
 									meshProbeActive(snapshot.meshProbe) ||
-									extrusionActive(snapshot.extrusion)
+									extrusionActive(snapshot.extrusion) ||
+									pidActive(snapshot.pid)
 										? snapshot
 										: {
 												...initialSnapshot(),
 												calibration: snapshot.calibration,
+												pid: snapshot.pid,
 												meshProbe: snapshot.meshProbe,
 												extrusion: snapshot.extrusion,
 												bedMesh: snapshot.bedMesh,

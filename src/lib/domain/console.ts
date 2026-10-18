@@ -164,6 +164,7 @@ export function liveConsoleScript(input: string): string {
 		'RESTART',
 		'FIRMWARE_RESTART',
 		'SAVE_CONFIG',
+		'PID_CALIBRATE',
 		'PROBE_CALIBRATE',
 		'Z_ENDSTOP_CALIBRATE',
 		'MANUAL_PROBE',

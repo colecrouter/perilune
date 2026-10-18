@@ -1202,3 +1202,19 @@ current draft. Recognized revisions require an existing base file and open read-
 Mode defaults are file-specific; unsupported files start in raw source, and explicit
 choices remain with that file. Raw bytes, per-file drafts, save reviews, conflicts,
 include precedence and protected generated values retain their existing guarantees.
+
+## Guided PID heater tuning
+
+`/calibration/pid` adds owner-only, default-off live PID tuning for the primary
+nozzle and bed. It reuses the process-owned live action worker, shared admission
+and emergency interlock, durable reservations, expiry, idempotency, dispatch-time
+validation and unknown-outcome recovery. Migration 019 persists a target-scoped
+PID checkpoint; interrupted or restarted work is never replayed. Native command
+capability checks reject overridden PID/cooldown commands. A long-running RPC is
+followed by fresh pending-gain, idle-state and targets-off verification.
+
+Staged gains link to the existing all-pending configuration review and separate
+save/restart workflow. Synthetic simulator gains are labelled examples and cannot
+be applied to hardware. The separate `PERILUNE_LIVE_PID` opt-in stays false until
+owner-coordinated heater acceptance. See [PID calibration](pid-calibration.md) for
+implemented behavior and the outstanding physical acceptance checklist.

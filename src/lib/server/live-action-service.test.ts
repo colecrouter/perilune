@@ -31,7 +31,12 @@ afterEach(async () => {
 	for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 const owner = { id: 'owner', name: 'Owner', role: 'owner', authorized: () => true };
-async function fixture(filename = ':memory:', filamentEnabled = true, consoleEnabled = false) {
+async function fixture(
+	filename = ':memory:',
+	filamentEnabled = true,
+	consoleEnabled = false,
+	pidEnabled = false
+) {
 	let printKeyValid = true;
 	const state = await Effect.runPromise(
 		SubscriptionRef.make<MoonrakerSnapshot>({
@@ -48,6 +53,11 @@ async function fixture(filename = ':memory:', filamentEnabled = true, consoleEna
 				'extruder',
 				'virtual_sdcard'
 			],
+			pidTelemetry: {
+				available: true,
+				limits: { nozzle: { min: 0, max: 280 }, bed: { min: 0, max: 130 } },
+				pending: {}
+			},
 			filament: {
 				canExtrude: true,
 				position: 100,
@@ -113,6 +123,15 @@ async function fixture(filename = ':memory:', filamentEnabled = true, consoleEna
 					(behavior === 'stagedResume' && op.type === 'job' && op.method === 'resume')
 				)
 					return;
+				if (op.type === 'pidCalibrate')
+					yield* SubscriptionRef.update(state, (s) => ({
+						...s,
+						liveMesh: { ...s.liveMesh!, pendingConfig: true },
+						pidTelemetry: {
+							...s.pidTelemetry!,
+							pending: { [op.heater]: { kp: 20, ki: 1.2, kd: 80 } }
+						}
+					}));
 				if (op.type === 'controlScript')
 					yield* SubscriptionRef.update(state, (s): MoonrakerSnapshot => {
 						const heaters = structuredClone(s.heaters);
@@ -245,6 +264,7 @@ async function fixture(filename = ':memory:', filamentEnabled = true, consoleEna
 				zEnabled: true,
 				filamentEnabled,
 				consoleEnabled,
+				pidEnabled,
 				target: 'fixture',
 				observationMs: 10
 			})
@@ -1231,4 +1251,106 @@ it('restores the durable resume filename and requires owner attestation against 
 	expect((await next.snapshot()).liveRecovery).toBeNull();
 	expect((await next.snapshot()).actions[0].status).toBe('unknown');
 	expect(next.operations).toHaveLength(0);
+});
+
+const pidCommand = {
+	type: 'pidCalibrate',
+	heater: 'nozzle',
+	target: 200,
+	confirmed: true
+} as const;
+it('requires owner opt-in for PID and stages verified parameters without saving configuration', async () => {
+	const disabled = await fixture();
+	await expect(disabled.submit(pidCommand)).rejects.toThrow();
+	const f = await fixture(':memory:', true, false, true);
+	await expect(f.submit(pidCommand, { ...owner, role: 'operator' })).rejects.toThrow();
+	const id = crypto.randomUUID();
+	await f.submit(pidCommand, owner, id);
+	await f.submit(pidCommand, owner, id);
+	await f.finished();
+	expect(f.operations).toEqual([{ type: 'pidCalibrate', heater: 'nozzle', target: 200 }]);
+	expect((await f.snapshot()).pid?.run).toMatchObject({
+		id,
+		stage: 'staged',
+		parameters: { kp: 20, ki: 1.2, kd: 80 }
+	});
+	expect((await f.snapshot()).liveMesh?.pendingConfig).toBe(true);
+});
+it('rechecks PID readiness at dispatch and does not heat after targets change', async () => {
+	const f = await fixture(':memory:', true, false, true);
+	f.setRefresh(async () => {
+		await f.runtime.runPromise(
+			SubscriptionRef.update(f.state, (s) => ({
+				...s,
+				heaters: { ...s.heaters, bed: { current: 25, target: 60 } }
+			}))
+		);
+	});
+	await f.submit(pidCommand);
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('failed');
+	expect(f.operations).toHaveLength(0);
+});
+it('retains unknown PID outcomes without replaying heating after a lost acknowledgement', async () => {
+	const f = await fixture(':memory:', true, false, true);
+	f.setBehavior('drop');
+	const id = crypto.randomUUID();
+	await f.submit(pidCommand, owner, id);
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('unknown');
+	expect((await f.snapshot()).pid?.run?.stage).toBe('interrupted');
+	await f.submit(pidCommand, owner, id);
+	expect(f.operations).toHaveLength(1);
+	await expect(f.submit(pidCommand)).rejects.toThrow();
+});
+
+it('interrupts the PID checkpoint after an unexpected transport defect', async () => {
+	const f = await fixture(':memory:', true, false, true);
+	f.setBehavior('defect');
+	await f.submit(pidCommand);
+	await f.finished();
+	expect((await f.snapshot()).pid?.run?.stage).toBe('interrupted');
+	expect((await f.snapshot()).motion.calibration).toBe(false);
+	expect((await f.snapshot()).liveRecovery).not.toBeNull();
+	expect(f.operations).toHaveLength(1);
+});
+
+it('restores interrupted PID state after restart without reheating and permits inspected recovery', async () => {
+	const directory = await mkdtemp(join(tmpdir(), 'perilune-pid-'));
+	cleanup.push(() => rm(directory, { recursive: true, force: true }));
+	const filename = join(directory, 'test.sqlite');
+	const first = await fixture(filename, true, false, true);
+	first.setBehavior('defect');
+	await first.submit(pidCommand);
+	await first.finished();
+	const id = (await first.snapshot()).liveRecovery!.id;
+	await first.runtime.dispose();
+	const second = await fixture(filename, true, false, true);
+	expect((await second.snapshot()).pid?.run?.stage).toBe('interrupted');
+	expect(second.operations).toHaveLength(0);
+	await second.runtime.runPromise(second.service.recover(id, owner));
+	expect((await second.snapshot()).liveRecovery).toBeNull();
+	await second.submit({ type: 'temperature', heater: 'bed', target: 40 });
+	await second.finished();
+	expect(second.operations).toHaveLength(1);
+	expect(second.operations[0].type).toBe('controlScript');
+});
+it('fences a late PID completion after emergency stop without saving or replaying', async () => {
+	const f = await fixture(':memory:', true, false, true);
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	f.setAfterControl(() => held);
+	const id = crypto.randomUUID();
+	await f.submit(pidCommand, owner, id);
+	await expect.poll(async () => (await f.snapshot()).pid?.run?.stage).toBe('running');
+	await expect(f.submit({ type: 'temperature', heater: 'bed', target: 40 })).rejects.toThrow();
+	printerInterlock(f.printer.state).interrupt();
+	release();
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('unknown');
+	expect((await f.snapshot()).pid?.run).toMatchObject({ stage: 'interrupted', parameters: null });
+	await f.submit(pidCommand, owner, id);
+	expect(f.operations).toHaveLength(1);
 });
