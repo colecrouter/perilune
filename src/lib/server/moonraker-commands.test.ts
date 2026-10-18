@@ -11,7 +11,7 @@ const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
 	for (const fn of cleanup.splice(0).reverse()) await fn();
 });
-async function fixture(controls = false) {
+async function fixture(controls = false, pid = false, shadowCooldown = false) {
 	const server = new WebSocketServer({ port: 0, host: '127.0.0.1' });
 	await new Promise<void>((r) => server.once('listening', r));
 	cleanup.push(
@@ -46,6 +46,7 @@ async function fixture(controls = false) {
 	let behavior: 'normal' | 'slow' | 'drop' = 'normal',
 		query: 'normal' | 'newer' | 'restart' = 'normal';
 	let scripts = 0;
+	const sentScripts: string[] = [];
 	server.on('connection', (socket) =>
 		socket.on('message', (bytes) => {
 			const req = JSON.parse(
@@ -67,7 +68,12 @@ async function fixture(controls = false) {
 					reply({ klippy_state: 'ready' });
 					break;
 				case 'printer.objects.list':
-					reply({ objects: Object.keys(status) });
+					reply({
+						objects: [
+							...Object.keys(status),
+							...(shadowCooldown ? ['gcode_macro TURN_OFF_HEATERS'] : [])
+						]
+					});
 					break;
 				case 'printer.objects.subscribe':
 					reply({ status, eventtime: 1 });
@@ -81,7 +87,11 @@ async function fixture(controls = false) {
 						setTimeout(() => reply({ status, eventtime: 1 }), 5);
 					} else reply({ status, eventtime: 1 });
 					break;
+				case 'printer.gcode.help':
+					reply({ PID_CALIBRATE: 'native', TURN_OFF_HEATERS: 'native' });
+					break;
 				case 'printer.gcode.script':
+					sentScripts.push(req.params.script);
 					scripts++;
 					if (behavior === 'drop') {
 						socket.terminate();
@@ -106,6 +116,7 @@ async function fixture(controls = false) {
 					url: `ws://127.0.0.1:${address.port}/websocket`,
 					liveMeshEnabled: !controls,
 					liveControlsEnabled: controls,
+					pidCalibrationEnabled: pid,
 					requestTimeoutMs: 30,
 					heartbeatMs: 1000,
 					reconnectMinMs: 5
@@ -127,6 +138,7 @@ async function fixture(controls = false) {
 		setQuery: (v: typeof query) => {
 			query = v;
 		},
+		sentScripts,
 		scripts: () => scripts
 	};
 }
@@ -194,4 +206,31 @@ it('fences basic controls independently from mesh enablement and never replays a
 	).rejects.toMatchObject({ sent: true });
 	await expect.poll(async () => (await f.snapshot()).generation).toBeGreaterThan(generation);
 	expect(f.scripts()).toBe(2);
+});
+
+it('uses a native PID script with a real cooldown newline and a long-running deadline', async () => {
+	const f = await fixture(true, true);
+	await expect.poll(async () => (await f.snapshot()).pidTelemetry?.available).toBe(true);
+	f.setBehavior('slow');
+	await f.runtime.runPromise(
+		f.transport.control!(
+			{ type: 'pidCalibrate', heater: 'bed', target: 60 },
+			(await f.snapshot()).generation
+		)
+	);
+	expect(f.sentScripts).toEqual(['PID_CALIBRATE HEATER=heater_bed TARGET=60\nTURN_OFF_HEATERS']);
+});
+it('refuses PID before dispatch if cooldown is shadowed by a printer macro', async () => {
+	const f = await fixture(true, true, true);
+	await new Promise((r) => setTimeout(r, 60));
+	expect((await f.snapshot()).pidTelemetry?.available).toBe(false);
+	await expect(
+		f.runtime.runPromise(
+			f.transport.control!(
+				{ type: 'pidCalibrate', heater: 'nozzle', target: 200 },
+				(await f.snapshot()).generation
+			)
+		)
+	).rejects.toThrow();
+	expect(f.scripts()).toBe(0);
 });

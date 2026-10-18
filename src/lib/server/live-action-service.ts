@@ -1,3 +1,4 @@
+import { pidActive, pidReason, samePid, type PidState } from '#lib/domain/pid.js';
 import { liveConsoleScript, consoleReason } from '#lib/domain/console.js';
 import { zProbePlan } from './live-z.js';
 import { liveZActive, interruptLiveZ, type LiveZState } from '#lib/domain/live-z.js';
@@ -29,6 +30,7 @@ export class LiveActionSettings extends Context.Service<
 		filamentEnabled?: boolean;
 		zEnabled?: boolean;
 		consoleEnabled?: boolean;
+		pidEnabled?: boolean;
 		target: string;
 		observationMs?: number;
 	}
@@ -80,6 +82,7 @@ const authorized = (actor: CalibrationActor) =>
 const recoveryMessage =
 	'A live action has an unknown outcome. Inspect the printer, then review recovery in Controls. No command was replayed.';
 const supported = new Set([
+	'pidCalibrate',
 	'console',
 	'zProbeBegin',
 	'zProbeAdjust',
@@ -125,7 +128,8 @@ function checked(snapshot: PrinterSnapshot, fresh: MoonrakerSnapshot): PrinterSn
 		job: fresh.job,
 		bedMesh: fresh.bedMesh,
 		filament: fresh.filament,
-		zProbe: fresh.zProbe
+		zProbe: fresh.zProbe,
+		pidTelemetry: fresh.pidTelemetry
 	};
 }
 export const LiveActionServiceLive = Layer.effect(
@@ -154,7 +158,8 @@ export const LiveActionServiceLive = Layer.effect(
 								hardware.motion.calibration ||
 								liveZActive(next.liveZ) ||
 								meshProbeActive(next.meshProbe) ||
-								extrusionActive(next.extrusion)
+								extrusionActive(next.extrusion) ||
+								pidActive(next.pid)
 						},
 						revision: s.revision + 1,
 						updatedAt: Date.now()
@@ -212,6 +217,31 @@ export const LiveActionServiceLive = Layer.effect(
 			);
 		yield* writeZ(restoredZ);
 		yield* update((s) => ({ ...s, liveZ: restoredZ }));
+		const pidRows = yield* sql<{
+			state: string;
+		}>`SELECT state FROM pid_state WHERE target=${target}`;
+		const priorPid = pidRows[0]
+			? (JSON.parse(pidRows[0].state) as PidState)
+			: { enabled: false, run: null };
+		const restoredPid: PidState = {
+			enabled: settings.enabled && settings.pidEnabled === true,
+			run:
+				priorPid.run?.stage === 'running'
+					? {
+							...priorPid.run,
+							stage: 'interrupted',
+							parameters: null,
+							message:
+								'Backend restarted. PID calibration was not replayed. Inspect the printer and review recovery.'
+						}
+					: priorPid.run
+		};
+		const writePid = (state: PidState) =>
+			sql`INSERT INTO pid_state(target,state) VALUES(${target},${JSON.stringify(state)}) ON CONFLICT(target) DO UPDATE SET state=excluded.state`.pipe(
+				Effect.asVoid
+			);
+		yield* writePid(restoredPid);
+		yield* update((s) => ({ ...s, pid: restoredPid }));
 		let zActor: CalibrationActor | undefined, zCheckpoint: LiveZState | undefined;
 
 		let filamentActor: CalibrationActor | undefined;
@@ -228,6 +258,16 @@ export const LiveActionServiceLive = Layer.effect(
 			| undefined;
 		let working = false;
 		const validate = (s: PrinterSnapshot, request: ActionRequest, actor: CalibrationActor) => {
+			if (pidActive(s.pid))
+				throw reject(
+					'PID calibration owns the printer. Use the independent emergency control to stop it.'
+				);
+			if (request.command.type === 'pidCalibrate') {
+				if (!settings.pidEnabled || actor.role !== 'owner')
+					throw reject('An owner and explicit PID calibration opt-in are required.');
+				const reason = pidReason(s, request.command.heater, request.command.target, true, false);
+				if (reason) throw reject(reason);
+			}
 			if (interlock.halted || safetyReason(s.safety))
 				throw reject(safetyReason(s.safety) ?? 'Emergency stop interlock is active.');
 			if (!settings.enabled) throw reject('Live controls are disabled on this server.');
@@ -267,6 +307,13 @@ export const LiveActionServiceLive = Layer.effect(
 		const plan = (request: ActionRequest, s: PrinterSnapshot, fresh: MoonrakerSnapshot) =>
 			Effect.gen(function* () {
 				const c = request.command;
+				if (c.type === 'pidCalibrate') {
+					const reason = pidReason(s, c.heater, c.target, true, false);
+					if (reason) return yield* Effect.fail(reject(reason));
+					return [
+						{ type: 'pidCalibrate', heater: c.heater, target: c.target }
+					] satisfies ControlOperation[];
+				}
 				if (c.type === 'console') {
 					const reason = consoleReason({
 						...s,
@@ -362,6 +409,7 @@ export const LiveActionServiceLive = Layer.effect(
 			Effect.gen(function* () {
 				let sent = false;
 				let remainsPaused = false;
+				let pidResult: PidState | undefined;
 				let zResult: LiveZState | undefined,
 					zBefore: LiveZState | undefined,
 					zExpected: number | undefined;
@@ -400,6 +448,25 @@ export const LiveActionServiceLive = Layer.effect(
 						return yield* Effect.fail(reject('The operator account is no longer authorized.'));
 					if (Date.now() - job.action.createdAt >= 30000)
 						return yield* Effect.fail(reject('Action expired before dispatch.'));
+					if (job.request.command.type === 'pidCalibrate') {
+						const c = job.request.command;
+						pidResult = {
+							enabled: true,
+							run: {
+								id: job.action.id,
+								ownerId: job.actor.id,
+								heater: c.heater,
+								target: c.target,
+								startedAt: Date.now(),
+								stage: 'running',
+								parameters: null,
+								message:
+									'Klipper is heating and cycling this heater. Stay with the printer; leaving this page does not stop calibration.'
+							}
+						};
+						yield* writePid(pidResult);
+						yield* update((s) => ({ ...s, pid: pidResult! }));
+					}
 					yield* store.setStatus(job.action.id, 'sending', null);
 					yield* update((s) => ({
 						...s,
@@ -469,6 +536,37 @@ export const LiveActionServiceLive = Layer.effect(
 						if (!interlock.allows(job.epoch))
 							return yield* Effect.fail(reject('Emergency stop interrupted action verification.'));
 						const c = job.request.command;
+						if (c.type === 'pidCalibrate') {
+							const parameters = observed.pidTelemetry?.pending[c.heater];
+							if (
+								parameters &&
+								observed.liveMesh.pendingConfig &&
+								observed.heaters.bed.target === 0 &&
+								observed.heaters.nozzle.target === 0 &&
+								observed.motion.busy === false &&
+								['standby', 'complete', 'cancelled', 'error'].includes(observed.job.state)
+							) {
+								pidResult = {
+									...pidResult!,
+									run: {
+										...pidResult!.run!,
+										stage: 'staged',
+										parameters,
+										message:
+											'Klipper completed tuning and staged these parameters. Review all pending settings before saving and restarting; the previous control settings remain active.'
+									}
+								};
+								return;
+							}
+							if (Date.now() >= deadline)
+								return yield* Effect.fail(
+									reject(
+										'PID completion could not be matched to pending parameters and heater targets off.'
+									)
+								);
+							yield* Effect.sleep('250 millis');
+							continue;
+						}
 
 						if (zResult) {
 							const c = job.request.command,
@@ -624,6 +722,19 @@ export const LiveActionServiceLive = Layer.effect(
 								: job.request.command.type === 'console'
 									? 'Klipper acknowledged the script and motion barrier; fresh ready state observed. Verify macro-specific effects in telemetry.'
 									: null;
+				const finalPid: PidState | undefined = pidResult
+					? result._tag === 'Success'
+						? pidResult
+						: {
+								...pidResult,
+								run: {
+									...pidResult.run!,
+									stage: sent ? 'interrupted' : 'failed',
+									parameters: null,
+									message
+								}
+							}
+					: undefined;
 				const finalZ = zResult
 					? result._tag === 'Success'
 						? zResult
@@ -647,6 +758,7 @@ export const LiveActionServiceLive = Layer.effect(
 							yield* store.setStatus(job.action.id, status, message);
 							if (finalFilament) yield* writeFilament(finalFilament);
 							if (finalZ) yield* writeZ(finalZ);
+							if (finalPid) yield* writePid(finalPid);
 							if (status !== 'unknown')
 								yield* sql`DELETE FROM live_action_reservation WHERE target=${target} AND action_id=${job.action.id}`;
 						})
@@ -654,6 +766,19 @@ export const LiveActionServiceLive = Layer.effect(
 					.pipe(Effect.result);
 				yield* update((s) => ({
 					...s,
+					pid: finalPid
+						? persisted._tag === 'Failure'
+							? {
+									...finalPid,
+									run: {
+										...finalPid.run!,
+										stage: 'interrupted',
+										parameters: null,
+										message: recoveryMessage
+									}
+								}
+							: finalPid
+						: s.pid,
 					liveZ: finalZ
 						? persisted._tag === 'Failure'
 							? interruptLiveZ(finalZ, recoveryMessage)
@@ -697,6 +822,29 @@ export const LiveActionServiceLive = Layer.effect(
 					return;
 				}
 				const zs = yield* SubscriptionRef.get(printer.state);
+				if (
+					zs.pid?.run?.stage === 'staged' &&
+					zs.telemetryReady &&
+					zs.connection === 'connected' &&
+					zs.klippy === 'ready' &&
+					!samePid(zs.pid.run.parameters, zs.pidTelemetry?.pending[zs.pid.run.heater])
+				) {
+					const next: PidState = {
+						...zs.pid,
+						run: {
+							...zs.pid.run,
+							stage: 'resolved',
+							message:
+								'Pending parameters changed or were cleared. They may have been saved or discarded externally; inspect active configuration before another test.'
+						}
+					};
+					const saved = yield* writePid(next).pipe(Effect.result);
+					yield* update((s) => ({
+						...s,
+						pid: next,
+						storage: saved._tag === 'Failure' ? 'degraded' : s.storage
+					}));
+				}
 				if (
 					zs.liveZ?.session?.stage === 'staged' &&
 					zs.zProbe &&
@@ -787,11 +935,30 @@ export const LiveActionServiceLive = Layer.effect(
 			yield* run(job).pipe(
 				Effect.catchCause(() =>
 					Effect.gen(function* () {
-						const persisted = yield* store
-							.setStatus(job.action.id, 'unknown', recoveryMessage)
+						const snapshot = yield* SubscriptionRef.get(printer.state);
+						const interruptedPid: PidState | undefined =
+							job.request.command.type === 'pidCalibrate' && snapshot.pid?.run?.id === job.action.id
+								? {
+										...snapshot.pid,
+										run: {
+											...snapshot.pid.run,
+											stage: 'interrupted',
+											parameters: null,
+											message: recoveryMessage
+										}
+									}
+								: undefined;
+						const persisted = yield* sql
+							.withTransaction(
+								Effect.gen(function* () {
+									if (interruptedPid) yield* writePid(interruptedPid);
+									yield* store.setStatus(job.action.id, 'unknown', recoveryMessage);
+								})
+							)
 							.pipe(Effect.result);
 						yield* update((s) => ({
 							...s,
+							pid: interruptedPid ?? s.pid,
 							storage: persisted._tag === 'Failure' ? 'degraded' : s.storage,
 							liveRecovery: {
 								id: job.action.id,

@@ -70,6 +70,8 @@ const moonrakerConfigLayer = Layer.succeed(MoonrakerConfig, {
 	discoverWebcams: Boolean(cameraBaseUrl && !cameraSource),
 	liveMeshEnabled: process.env.PERILUNE_LIVE_MESH === 'true',
 	liveControlsEnabled: process.env.PERILUNE_LIVE_CONTROLS === 'true',
+	pidCalibrationEnabled:
+		process.env.PERILUNE_LIVE_PID === 'true' && process.env.PERILUNE_LIVE_CONTROLS === 'true',
 	...(process.env.PERILUNE_MOONRAKER_API_KEY
 		? { apiKey: process.env.PERILUNE_MOONRAKER_API_KEY }
 		: {})
@@ -142,6 +144,7 @@ const liveActionsLayer = moonrakerUrl
 					filamentEnabled: process.env.PERILUNE_LIVE_FILAMENT === 'true',
 					zEnabled: process.env.PERILUNE_LIVE_Z_CALIBRATION === 'true',
 					consoleEnabled: process.env.PERILUNE_LIVE_CONSOLE === 'true',
+					pidEnabled: process.env.PERILUNE_LIVE_PID === 'true',
 					target: moonrakerUrl
 				})
 			),

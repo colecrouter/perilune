@@ -1,3 +1,4 @@
+import type { PidState } from '#lib/domain/pid.js';
 import { emptyExtrusion, type ExtrusionState } from '#lib/domain/extrusion.js';
 import { emptyMeshProbe, type MeshProbeState } from '#lib/domain/mesh-probe.js';
 import { emptyCalibration, type CalibrationState } from '#lib/domain/calibration.js';
@@ -11,6 +12,13 @@ import { migrate } from './migrations.js';
 export class ActionStore extends Context.Service<
 	ActionStore,
 	{
+		pid: Effect.Effect<PidState, SqlError>;
+		commitPid: (
+			id: string,
+			status: ActionStatus,
+			message: string | null,
+			state: PidState
+		) => Effect.Effect<void, SqlError>;
 		extrusion: Effect.Effect<ExtrusionState, SqlError>;
 		writeExtrusion: (state: ExtrusionState) => Effect.Effect<void, SqlError>;
 		commitExtrusion: (
@@ -94,6 +102,18 @@ export const ActionStoreLive = Layer.effect(
 				Effect.asVoid
 			);
 		return {
+			pid: sql<{ state: string }>`SELECT state FROM pid_state WHERE target='simulator'`.pipe(
+				Effect.map((rows) =>
+					rows[0] ? (JSON.parse(rows[0].state) as PidState) : { enabled: true, run: null }
+				)
+			),
+			commitPid: (id, status, message, state) =>
+				sql.withTransaction(
+					Effect.gen(function* () {
+						yield* sql`INSERT INTO pid_state(target,state) VALUES('simulator',${JSON.stringify(state)}) ON CONFLICT(target) DO UPDATE SET state=excluded.state`;
+						yield* sql`UPDATE actions SET status=${status}, message=${message} WHERE id=${id}`;
+					})
+				),
 			extrusion: sql<{ state: string }>`SELECT state FROM simulator_extrusion WHERE id=1`.pipe(
 				Effect.map((rows) =>
 					rows[0] ? (JSON.parse(rows[0].state) as ExtrusionState) : emptyExtrusion()

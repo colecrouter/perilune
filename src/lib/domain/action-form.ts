@@ -15,6 +15,16 @@ export function parseActionForm(data: FormData): ActionRequest {
 	const type = field('intent');
 	let command: PrinterCommand;
 	switch (type) {
+		case 'pidCalibrate': {
+			if (field('confirmed') !== 'true') throw new Error('Confirm attended heater calibration.');
+			command = {
+				type,
+				heater: field('heater') as 'bed' | 'nozzle',
+				target: Number(field('target')),
+				confirmed: true
+			};
+			break;
+		}
 		case 'temperature': {
 			const raw = field('target');
 			if (!raw.trim()) throw new Error('Enter a heater target.');

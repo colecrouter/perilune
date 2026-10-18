@@ -1,3 +1,4 @@
+import { PidCommand, pidReason, type PidState, type PidTelemetry } from './pid.js';
 import { LiveZCommand, type LiveZState, type ZProbeCapability } from './live-z.js';
 import { safetyReason, type SafetySnapshot } from './safety.js';
 import {
@@ -43,6 +44,7 @@ const expectedJob = Schema.optional(
 	Schema.Struct({ filename: Schema.String, runId: Schema.NullOr(Schema.String) })
 );
 export const PrinterCommand = Schema.Union([
+	PidCommand,
 	Schema.Struct({
 		type: Schema.Literal('console'),
 		script: Schema.String.check(Schema.isMaxLength(2048))
@@ -104,6 +106,8 @@ export interface ActionRecord {
 	message: string | null;
 }
 export interface PrinterSnapshot {
+	pid?: PidState;
+	pidTelemetry?: PidTelemetry;
 	safety?: SafetySnapshot;
 	configurationBusy?: boolean;
 	liveControls?: boolean;
@@ -153,6 +157,12 @@ export interface PrinterSnapshot {
 	actions: ActionRecord[];
 }
 export const initialSnapshot = (): PrinterSnapshot => ({
+	pid: { enabled: true, run: null },
+	pidTelemetry: {
+		available: true,
+		limits: { nozzle: { min: 0, max: 300 }, bed: { min: 0, max: 130 } },
+		pending: {}
+	},
 	revision: 0,
 	updatedAt: Date.now(),
 	mode: 'simulator',
@@ -183,6 +193,8 @@ export const initialSnapshot = (): PrinterSnapshot => ({
 	actions: []
 });
 export function actionLabel(command: PrinterCommand): string {
+	if (command.type === 'pidCalibrate')
+		return `PID calibration · ${command.heater} at ${command.target}°C`;
 	switch (command.type) {
 		case 'zProbeBegin':
 			return 'Begin live Z calibration';
@@ -249,12 +261,38 @@ export function applyCommand(
 	state: PrinterSnapshot,
 	command: PrinterCommand,
 	file?: JobFile,
-	actor?: CalibrationActor
+	actor?: CalibrationActor,
+	actionId?: string
 ): PrinterSnapshot {
 	if (command.type === 'console')
 		throw new CommandRejected({
 			message: 'Console commands require their dedicated reviewed workflow.'
 		});
+	if (command.type === 'pidCalibrate') {
+		const reason = pidReason(state, command.heater, command.target, actor?.role === 'owner', false);
+		if (reason) throw new CommandRejected({ message: reason });
+		if (state.mode !== 'simulator')
+			throw new CommandRejected({
+				message: 'Live PID calibration requires the physical action worker.'
+			});
+		return {
+			...state,
+			pid: {
+				enabled: true,
+				run: {
+					id: actionId ?? crypto.randomUUID(),
+					ownerId: actor!.id,
+					heater: command.heater,
+					target: command.target,
+					startedAt: Date.now(),
+					stage: 'staged',
+					parameters: { kp: 20, ki: 1.2, kd: 80 },
+					message:
+						'Simulator example only. No heater was used and these values must not be applied to a printer.'
+				}
+			}
+		};
+	}
 	const safety = safetyReason(state.safety);
 	if (safety) throw new CommandRejected({ message: safety });
 	if (state.configurationBusy)
@@ -367,6 +405,8 @@ export function applyCommand(
 export const initialLiveSnapshot = (): PrinterSnapshot => ({
 	...initialSnapshot(),
 	mode: 'moonraker',
+	pid: { enabled: false, run: null },
+	pidTelemetry: { available: false, limits: {}, pending: {} },
 	bedMesh: emptyBedMesh(),
 	additionalTemperatures: [],
 	motion: emptyMotion(),

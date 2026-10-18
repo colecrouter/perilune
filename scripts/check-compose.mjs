@@ -8,6 +8,7 @@ const output = execFileSync('docker', ['compose', 'config', '--format', 'json'],
 		PERILUNE_LIVE_MESH: 'true',
 		PERILUNE_KLIPPER_WORKING_DIRECTORY: '/example/klipper',
 		PERILUNE_LIVE_FILAMENT: 'true',
+		PERILUNE_LIVE_PID: 'true',
 		PERILUNE_LIVE_Z_CALIBRATION: 'true',
 		PERILUNE_MOONRAKER_URL: 'ws://printer.example.invalid:7125/websocket',
 		PERILUNE_MOONRAKER_API_KEY: 'example-test-key',
@@ -20,6 +21,7 @@ const config = JSON.parse(output);
 assert.equal(config.services.perilune.environment.PERILUNE_ORIGIN, origin);
 assert.equal(config.services.perilune.environment.PERILUNE_LIVE_MESH, 'true');
 assert.equal(config.services.perilune.environment.PERILUNE_LIVE_FILAMENT, 'true');
+assert.equal(config.services.perilune.environment.PERILUNE_LIVE_PID, 'true');
 assert.equal(config.services.perilune.environment.PERILUNE_LIVE_Z_CALIBRATION, 'true');
 assert.equal(
 	config.services.perilune.environment.PERILUNE_MOONRAKER_URL,

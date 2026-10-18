@@ -1,3 +1,4 @@
+import { pidParameters, type PidTelemetry } from '#lib/domain/pid.js';
 import {
 	discoverMacros,
 	cleanConsoleText,
@@ -20,12 +21,14 @@ export interface MoonrakerSettings {
 	discoverWebcams?: boolean;
 	liveMeshEnabled?: boolean;
 	liveControlsEnabled?: boolean;
+	pidCalibrationEnabled?: boolean;
 }
 export class MoonrakerConfig extends Context.Service<MoonrakerConfig, MoonrakerSettings>()(
 	'perilune/MoonrakerConfig'
 ) {}
 export type KlippyState = 'unknown' | 'ready' | 'startup' | 'shutdown' | 'error' | 'disconnected';
 export interface MoonrakerSnapshot {
+	pidTelemetry?: PidTelemetry;
 	zProbe?: import('#lib/domain/live-z.js').ZProbeCapability;
 	filament?: import('#lib/domain/printer.js').PrinterSnapshot['filament'];
 	/** Operator-only data; never forwarded into PrinterSnapshot/dashboard. */
@@ -88,6 +91,7 @@ export function meshScript(operation: MeshOperation): string {
 }
 export type ControlOperation =
 	| { type: 'controlScript'; script: string }
+	| { type: 'pidCalibrate'; heater: 'nozzle' | 'bed'; target: number }
 	| { type: 'job'; method: 'start' | 'pause' | 'resume' | 'cancel'; filename?: string };
 export class MoonrakerService extends Context.Service<
 	MoonrakerService,
@@ -163,23 +167,39 @@ export function normalizeMoonrakerStatus(
 	)
 		? (print.state as MoonrakerSnapshot['job']['state'])
 		: 'unknown';
+	const heaterLimits = Object.fromEntries(
+		(['bed', 'nozzle'] as const).flatMap((heater) => {
+			const config = record(
+				record(status.configfile?.config)[heater === 'bed' ? 'heater_bed' : 'extruder']
+			);
+			const min = Number(config.min_temp),
+				max = Number(config.max_temp);
+			return Number.isFinite(min) && Number.isFinite(max) && min < max
+				? [[heater, { min, max }]]
+				: [];
+		})
+	);
+
 	return {
 		...previous,
 		updatedAt: Date.now(),
 		telemetryReady: true,
 		motion: normalizeMotion(status),
-		heaterLimits: Object.fromEntries(
-			(['bed', 'nozzle'] as const).flatMap((heater) => {
-				const config = record(
-					record(status.configfile?.config)[heater === 'bed' ? 'heater_bed' : 'extruder']
-				);
-				const min = Number(config.min_temp),
-					max = Number(config.max_temp);
-				return Number.isFinite(min) && Number.isFinite(max) && min < max
-					? [[heater, { min, max }]]
-					: [];
-			})
-		),
+		heaterLimits,
+		pidTelemetry: {
+			available: previous.pidTelemetry?.available === true,
+			limits: heaterLimits,
+			pending: Object.fromEntries(
+				(['nozzle', 'bed'] as const).flatMap((heater) => {
+					const parameters = pidParameters(
+						record(status.configfile?.save_config_pending_items)[
+							heater === 'bed' ? 'heater_bed' : 'extruder'
+						]
+					);
+					return parameters ? [[heater, parameters]] : [];
+				})
+			)
+		},
 		zProbe: normalizeZProbe(status),
 
 		filament: {
@@ -545,18 +565,32 @@ export const MoonrakerServiceLive = Layer.effect(
 								normalizeMoonrakerStatus(status, {
 									...current,
 									availableObjects: objects,
+									pidTelemetry: { available: false, limits: {}, pending: {} },
 									console: {
 										macros: discoverMacros(objects, {}),
 										responses: current.console?.responses ?? []
 									}
 								})
 							);
-							if (current.console?.macros.length)
+							if (current.console?.macros.length || config.pidCalibrationEnabled)
 								void request('printer.gcode.help', undefined, timeout, false)
 									.then((help) => {
 										if (closed || signal.aborted || version !== readinessVersion) return;
 										return publish({
 											...current,
+											pidTelemetry: {
+												limits: current.heaterLimits ?? {},
+												pending: current.pidTelemetry?.pending ?? {},
+												available:
+													config.pidCalibrationEnabled === true &&
+													Object.hasOwn(record(help), 'PID_CALIBRATE') &&
+													Object.hasOwn(record(help), 'TURN_OFF_HEATERS') &&
+													!objects.some((name) =>
+														['GCODE_MACRO PID_CALIBRATE', 'GCODE_MACRO TURN_OFF_HEATERS'].includes(
+															name.toUpperCase()
+														)
+													)
+											},
 											console: {
 												macros: discoverMacros(objects, help),
 												responses: current.console?.responses ?? []
@@ -581,7 +615,20 @@ export const MoonrakerServiceLive = Layer.effect(
 						};
 						dispatch = async (operation, generation, permit) => {
 							fence(generation);
-							const basic = operation.type === 'controlScript' || operation.type === 'job';
+							const basic =
+								operation.type === 'controlScript' ||
+								operation.type === 'job' ||
+								operation.type === 'pidCalibrate';
+							if (
+								operation.type === 'pidCalibrate' &&
+								(!config.pidCalibrationEnabled ||
+									!current.pidTelemetry?.available ||
+									!Number.isInteger(operation.target) ||
+									operation.target < 30 ||
+									operation.target > 300 ||
+									!['nozzle', 'bed'].includes(operation.heater))
+							)
+								throw new MoonrakerCommandError({ sent: false });
 							if (basic ? !config.liveControlsEnabled : !config.liveMeshEnabled)
 								throw new MoonrakerCommandError({ sent: false });
 							const method =
@@ -597,14 +644,20 @@ export const MoonrakerServiceLive = Layer.effect(
 											script:
 												operation.type === 'controlScript'
 													? operation.script
-													: meshScript(operation)
+													: operation.type === 'pidCalibrate'
+														? `PID_CALIBRATE HEATER=${operation.heater === 'bed' ? 'heater_bed' : 'extruder'} TARGET=${operation.target}\nTURN_OFF_HEATERS`
+														: meshScript(operation)
 										};
 							if (permit && !permit()) throw new MoonrakerCommandError({ sent: false });
 							try {
 								await request(
 									method,
 									params,
-									operation.type === 'save' || basic ? 120_000 : 10 * 60 * 1000
+									operation.type === 'pidCalibrate'
+										? 30 * 60 * 1000
+										: operation.type === 'save' || basic
+											? 120_000
+											: 10 * 60 * 1000
 								);
 							} catch {
 								throw new MoonrakerCommandError({ sent: true });
