@@ -63,6 +63,9 @@
 						{intent}
 						snapshot={captured}
 						receipts={snapshot.safety?.actions}
+						onAccepted={() => {
+							open = false;
+						}}
 						>{#snippet dismiss()}<Dialog.Close bind:ref={back} class="button secondary"
 								>Back</Dialog.Close
 							>{/snippet}</SafetyConfirmation

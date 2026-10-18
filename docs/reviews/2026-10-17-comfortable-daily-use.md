@@ -15,6 +15,8 @@ Resolved findings:
 - Command-prefix inspection handles malformed parenthesized comments linearly and
   bounds retained locations instead of expanding macros or retaining arbitrary text.
 
+The dialog audit also verified success closure across all primary-action dialogs; safety confirmation now closes after accepted submission and retains execution feedback in shared activity.
+
 Focused domain/browser and production Jobs/console/live-action checks passed.
 Headless visual QA exercised a 320px start dialog, Help anchor navigation, compact
 Jobs, and direct console submission without overflow or page errors. The T3 preview

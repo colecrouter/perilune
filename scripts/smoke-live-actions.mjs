@@ -452,8 +452,7 @@ try {
 	await page.getByRole('link', { name: 'Stop current job', exact: true }).click();
 	const safetyDialog = page.getByRole('dialog');
 	await safetyDialog.getByRole('button', { name: 'Stop job', exact: true }).click();
-	await safetyDialog.getByRole('link', { name: 'Check receipt', exact: true }).waitFor();
-	await safetyDialog.getByRole('button', { name: 'Back', exact: true }).click();
+	await safetyDialog.waitFor({ state: 'hidden' });
 	await page.getByRole('link', { name: 'Safety activity', exact: true }).click();
 	await page.getByRole('heading', { name: 'Safety activity', exact: true }).waitFor();
 	await page

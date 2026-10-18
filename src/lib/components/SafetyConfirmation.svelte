@@ -6,9 +6,15 @@
 		intent,
 		snapshot,
 		receipts,
-		dismiss
-	}: { intent: string; snapshot: PrinterSnapshot; receipts?: ActionRecord[]; dismiss?: Snippet } =
-		$props();
+		dismiss,
+		onAccepted = () => {}
+	}: {
+		intent: string;
+		snapshot: PrinterSnapshot;
+		receipts?: ActionRecord[];
+		dismiss?: Snippet;
+		onAccepted?: (receipt: ActionRecord) => void;
+	} = $props();
 	const title = $derived(
 		intent === 'restart'
 			? 'Restart firmware after safety review?'
@@ -46,6 +52,7 @@
 		This does not clear the original uncertain action.
 	</p>
 	<ActionForm
+		{onAccepted}
 		{receipts}
 		action="/safety"
 		receiptBase="/safety"
@@ -80,7 +87,7 @@
 	{#if intent !== 'emergency'}<p>
 			The original uncertain action stays locked and will never be replayed.
 		</p>{/if}
-	<ActionForm {receipts} action="/safety" receiptBase="/safety" {fields}>
+	<ActionForm {onAccepted} {receipts} action="/safety" receiptBase="/safety" {fields}>
 		{#snippet children({ pending, uncertain })}
 			{#if intent === 'restart'}<label
 					><input type="checkbox" name="confirmed" value="true" required /> I have inspected the printer,

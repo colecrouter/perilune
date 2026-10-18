@@ -1152,7 +1152,8 @@ It still requires the validated explicit POST, current authorization, idempotent
 and independent safety worker. Recovery stop/cooldown/probe-abort confirmations use
 one submit action without a redundant checkbox. Hazard reviews and firmware restart
 retain explicit inspection acknowledgement. Shared dialog sizing/actions fit short
-and narrow viewports. No real printer action is part of automated verification.
+and narrow viewports. Successful safety submissions close their dialog, matching other
+primary-action dialogs; ongoing execution and outcomes stay visible in shared safety activity. No real printer action is part of automated verification.
 
 Jobs defaults to ten compact rows, truncates long filenames in the list (full names
 remain in detail/accessibility text), and initially shows five recent runs with an
