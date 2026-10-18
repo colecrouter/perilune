@@ -14,12 +14,11 @@ unsupported commands fail clearly instead of pretending to execute. These
 read-only examples can run during a simulated print, but calibration/configuration
 ownership, pending printer controls, disconnects and storage problems block them.
 
-Type up to eight lines/2,048 characters and choose **Review command…**. Inspect the
-exact text, then **Run in simulator**. Macro buttons open the same review without
-overwriting another command you are composing. Pin shortcuts with the star;
-shortcuts are per account and shared across that account's devices. Search names
-and descriptions, show internal macros when needed, and filter log errors or
-submitted commands. **Follow latest** controls whether output scrolls automatically.
+Type up to eight lines/2,048 characters and choose **Send command**. The explicit
+submission runs the script once; there is no additional review dialog. A macro’s
+**Run** button submits it directly while preserving an unrelated command draft.
+Read the inline live-printer warning and check the macro configuration before sending.
+Pending and unknown outcomes still block another submission until reconciled.
 
 Receipts show queued, sending, completed, failed or unknown. Execution belongs to
 the backend and continues through navigation. Inputs remain intact through incoming
@@ -58,3 +57,11 @@ Console interaction details:
 
 - Up/Down at the first/last input line recalls distinct recent submitted commands. Returning past the newest command restores the unfinished draft; editing a recalled command starts a new draft. History is frozen while browsing so incoming commands do not shift the selection.
 - “Group repeated responses” combines adjacent identical responses or adjacent temperature reports with gaps of at most 30 seconds. Expand a group to see every original sample and timestamp, or disable grouping. Commands and differing probe samples remain separate; grouping never changes retained backend data.
+
+## Reading retained output
+
+Follow latest responds to actual log activity rather than ordinary printer-state
+refreshes. Scrolling up or expanding grouped responses pauses following. Use the
+sticky **Collapse messages** button from within a long group, or its summary, to
+collapse it. Re-enable **Follow latest** explicitly to jump back to the newest output.
+Grouping only affects display; original responses and submission receipts are retained.

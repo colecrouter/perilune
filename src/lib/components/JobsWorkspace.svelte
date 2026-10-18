@@ -2,6 +2,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page, navigating } from '$app/state';
+	import JobInterventions from './JobInterventions.svelte';
 	import CurrentJob from './CurrentJob.svelte';
 	import { liveConnection } from '#lib/client/live-connection.svelte.js';
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
@@ -59,6 +60,7 @@
 		material = params.get('material') ?? '';
 	});
 	const listHref = $derived(resolve('/jobs') + jobQueryString(catalog.query));
+	let historyExpanded = $state(false);
 	let message = $state('');
 	let failure = $state('');
 	let stale = $state(false);
@@ -372,6 +374,7 @@
 							<p>No slicer thumbnail</p>{/if}
 					</div>
 
+					<JobInterventions inspection={selected.metadata?.manualInterventions} />
 					<dl>
 						<div>
 							<dt>Estimated time</dt>
@@ -478,7 +481,9 @@
 					Print history storage is unavailable. Updates will retry automatically.
 				</p>{/if}
 			<div class="run-list">
-				{#each catalog.runs as run (run.id)}<div class="run">
+				{#each historyExpanded ? catalog.runs : catalog.runs.slice(0, 5) as run (run.id)}<div
+						class="run"
+					>
 						<span
 							><strong>{run.filename}</strong><small>{new Date(run.started).toLocaleString()}</small
 							></span
@@ -487,6 +492,15 @@
 						>
 					</div>{:else}<p>No recorded prints yet.</p>{/each}
 			</div>
+			{#if catalog.runs.length > 5}<button
+					class="button secondary"
+					onclick={() => {
+						historyExpanded = !historyExpanded;
+					}}
+					>{historyExpanded
+						? 'Show recent five'
+						: `Show all ${catalog.runs.length} retained prints`}</button
+				>{/if}
 		</section>
 		{#if canOperate}<p class="panel">
 				<a href="/account#integrations">Connect your slicer in Account → Integrations</a>
@@ -516,16 +530,17 @@
 				>{selected?.name}. {live
 					? 'This starts the job on your physical printer. Check that the bed and toolhead path are clear.'
 					: 'This changes simulator state only. It will not move or heat your real printer.'}</Dialog.Description
-			>{#if reason}<p class="error-text">{reason}</p>{/if}{#if failure}<p
-					role="alert"
+			><JobInterventions inspection={selected?.metadata?.manualInterventions} />{#if reason}<p
 					class="error-text"
 				>
+					{reason}
+				</p>{/if}{#if failure}<p role="alert" class="error-text">
 					{failure}
 				</p>{/if}
 			<div class="dialog-actions">
 				<Dialog.Close class="button secondary" disabled={submitting}>Keep reviewing</Dialog.Close
 				><button
-					class="button"
+					class="button primary"
 					disabled={Boolean(reason) || submitting || missing}
 					onclick={() => void start()}
 					>{submitting ? 'Submitting…' : live ? 'Start print' : 'Start simulated print'}</button
@@ -539,7 +554,9 @@
 		><Dialog.Overlay class="dialog-overlay" /><Dialog.Content class="dialog-content"
 			><Dialog.Title class="dialog-title">Remove this file?</Dialog.Title><Dialog.Description
 				class="muted"
-				>Remove {selected?.name} from the simulator library. Its print history will remain.</Dialog.Description
+				>Remove {selected?.name} from {live
+					? 'the printer’s G-code library'
+					: 'the simulator library'}. Its print history will remain.</Dialog.Description
 			>{#if failure}<p role="alert" class="error-text">{failure}</p>{/if}
 			<div class="dialog-actions">
 				<Dialog.Close class="button secondary" disabled={submitting}>Keep file</Dialog.Close><button
@@ -772,7 +789,7 @@
 		display: flex;
 		gap: 1rem;
 		justify-content: space-between;
-		padding: 1rem 0;
+		padding: 0.55rem 0;
 		border-bottom: 1px solid var(--border);
 		align-items: center;
 		font-size: 0.85rem;

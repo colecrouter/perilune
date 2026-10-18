@@ -215,6 +215,8 @@ it('reads live files and sanitized metadata without exposing upstream URLs or al
 					]
 				})
 			);
+		else if (request.url?.startsWith('/server/files/gcodes/'))
+			response.end('G1 X1\nM600\nPAUSE\nM600 ; change\n');
 		else
 			response.end(
 				JSON.stringify({
@@ -246,7 +248,8 @@ it('reads live files and sanitized metadata without exposing upstream URLs or al
 	expect(file.metadata).toMatchObject({
 		material: 'PETG',
 		estimatedSeconds: 1800,
-		thumbnail: null
+		thumbnail: null,
+		manualInterventions: { filamentChanges: 2, pauses: 1 }
 	});
 	expect(JSON.stringify(file)).not.toContain('private');
 	await expect(runtime.runPromise(jobs.upload('test.gcode', bytes))).rejects.toThrow('Live');
@@ -541,4 +544,95 @@ it('defaults keys to no expiration, records use, and enforces optional expiry an
 	} finally {
 		clock.mockRestore();
 	}
+});
+
+it('retries unknown live intervention scans after a cooldown, skips oversized files, and closes abandoned bodies', async () => {
+	let mode: 'fail' | 'ok' | 'oversize' | 'stall' = 'fail';
+	let modified = 1,
+		size = 100,
+		downloads = 0,
+		metadataRequests = 0,
+		closed = false;
+	const server = createServer((request, response) => {
+		if (request.url?.startsWith('/server/files/list'))
+			response.end(JSON.stringify({ result: [{ path: 'part.gcode', size, modified }] }));
+		else if (request.url?.startsWith('/server/files/metadata')) {
+			metadataRequests++;
+			response.end(JSON.stringify({ result: { filament_type: 'PLA' } }));
+		} else if (request.url?.startsWith('/server/files/gcodes/')) {
+			downloads++;
+			if (mode === 'fail') {
+				response.statusCode = 503;
+				response.end();
+			} else if (mode === 'ok') response.end('G1 X1\nM600\nPAUSE\n');
+			else if (mode === 'oversize') {
+				response.setHeader('Content-Length', 20 * 1024 * 1024 + 1);
+				response.write('G1 X1\n');
+			} else {
+				response.on('close', () => {
+					closed = true;
+				});
+				response.write('G1 X1\n');
+			}
+		} else {
+			response.statusCode = 404;
+			response.end();
+		}
+	});
+	await new Promise<void>((accept) => server.listen(0, '127.0.0.1', accept));
+	cleanup.push(
+		() =>
+			new Promise<void>((accept) => {
+				server.closeAllConnections();
+				server.close(() => accept());
+			})
+	);
+	const address = server.address() as { port: number };
+	const { runtime, jobs, catalog } = await create(
+		':memory:',
+		`ws://127.0.0.1:${address.port}/websocket`
+	);
+	await expect.poll(async () => (await catalog()).files.length).toBe(1);
+	const id = (await catalog()).files[0]!.id;
+	expect((await runtime.runPromise(jobs.inspect(id))).metadata?.manualInterventions).toBeNull();
+	mode = 'ok';
+	expect((await runtime.runPromise(jobs.inspect(id))).metadata?.manualInterventions).toBeNull();
+	expect(downloads).toBe(1);
+	const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 31_000);
+	try {
+		expect(
+			(await runtime.runPromise(jobs.inspect(id))).metadata?.manualInterventions
+		).toMatchObject({ filamentChanges: 1, pauses: 1 });
+	} finally {
+		clock.mockRestore();
+	}
+	expect(metadataRequests).toBe(1);
+	size = 20 * 1024 * 1024 + 1;
+	modified++;
+	await runtime.runPromise(jobs.refresh!);
+	expect(
+		(await runtime.runPromise(jobs.inspect((await catalog()).files[0]!.id))).metadata
+			?.manualInterventions
+	).toBeNull();
+	expect(downloads).toBe(2);
+	size = 100;
+	modified++;
+	mode = 'oversize';
+	await runtime.runPromise(jobs.refresh!);
+	expect(
+		(await runtime.runPromise(jobs.inspect((await catalog()).files[0]!.id))).metadata
+			?.manualInterventions
+	).toBeNull();
+	modified++;
+	mode = 'stall';
+	await runtime.runPromise(jobs.refresh!);
+	const controller = new AbortController();
+	const before = downloads;
+	const pending = runtime
+		.runPromise(jobs.inspect((await catalog()).files[0]!.id), { signal: controller.signal })
+		.catch(() => null);
+	await expect.poll(() => downloads).toBe(before + 1);
+	controller.abort();
+	await pending;
+	await expect.poll(() => closed).toBe(true);
 });

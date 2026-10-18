@@ -7,6 +7,7 @@ import {
 	MAX_GCODE_BYTES,
 	emptyMetadata,
 	parseGcode,
+	inspectManualInterventions,
 	safeRelativePath,
 	validGcodeName,
 	type JobFile,
@@ -117,7 +118,7 @@ async function boundedBody(
 	const chunks: Uint8Array[] = [];
 	let size = 0;
 	const abort = () => {
-		void reader.cancel();
+		void reader.cancel().catch(() => {});
 	};
 	signal.addEventListener('abort', abort, { once: true });
 	try {
@@ -179,6 +180,7 @@ export const JobServiceLive = Layer.effect(
 		let activeUploads = 0;
 		const controllers = new Set<AbortController>();
 		const metadataCache = new Map<string, JobFile>();
+		const inspectionAttempts = new Map<string, number>();
 		const thumbnailPaths = new Map<string, string>();
 		yield* Effect.addFinalizer(() =>
 			Effect.sync(() => {
@@ -266,6 +268,7 @@ export const JobServiceLive = Layer.effect(
 						metadataCache.delete(id);
 						thumbnailPaths.delete(id);
 					}
+				for (const id of inspectionAttempts.keys()) if (!ids.has(id)) inspectionAttempts.delete(id);
 			} else {
 				const rows = yield* sql<
 					Omit<FileRow, 'content'>
@@ -604,44 +607,74 @@ export const JobServiceLive = Layer.effect(
 								return yield* Effect.fail(failure('This file is no longer in the library.'));
 							if (!live) return file;
 							const cached = metadataCache.get(id);
-							if (cached) return cached;
-							const bytes = yield* upstream(
-								`/server/files/metadata?filename=${encodeURIComponent(file.name)}`,
-								512 * 1024
-							);
-							const body = yield* Effect.try({
-								try: () =>
-									JSON.parse(new TextDecoder().decode(bytes)) as {
-										result: Record<string, unknown>;
-									},
-								catch: () => failure('File metadata is unavailable.')
-							});
-							const m = body.result;
-							if (!m || typeof m !== 'object')
-								return yield* Effect.fail(failure('File metadata is unavailable.'));
-							const metadata: JobMetadata = {
-								...emptyMetadata(),
-								slicer: text(m.slicer),
-								material: text(m.filament_type),
-								estimatedSeconds: number(m.estimated_time),
-								layerHeight: number(m.layer_height),
-								layers: number(m.layer_count),
-								filamentGrams: number(m.filament_weight_total)
-							};
-							if (Array.isArray(m.thumbnails)) {
-								const thumb = m.thumbnails.find(
-									(t: Record<string, unknown>) =>
-										typeof t.relative_path === 'string' &&
-										safeRelativePath(t.relative_path) &&
-										t.relative_path.endsWith('.png')
+							if (
+								cached &&
+								(cached.metadata?.manualInterventions ||
+									file.size > MAX_GCODE_BYTES ||
+									Date.now() - (inspectionAttempts.get(id) ?? 0) < 30_000)
+							)
+								return cached;
+							let metadata: JobMetadata;
+							if (cached?.metadata) metadata = { ...cached.metadata };
+							else {
+								const bytes = yield* upstream(
+									`/server/files/metadata?filename=${encodeURIComponent(file.name)}`,
+									512 * 1024
 								);
-								if (thumb) {
-									const path = posix.join(posix.dirname(file.name), thumb.relative_path as string);
-									if (safeRelativePath(path)) {
-										thumbnailPaths.set(id, path);
-										metadata.thumbnail = `/api/jobs/thumbnail?id=${id}`;
+								const body = yield* Effect.try({
+									try: () =>
+										JSON.parse(new TextDecoder().decode(bytes)) as {
+											result: Record<string, unknown>;
+										},
+									catch: () => failure('File metadata is unavailable.')
+								});
+								const m = body.result;
+								if (!m || typeof m !== 'object')
+									return yield* Effect.fail(failure('File metadata is unavailable.'));
+								metadata = {
+									...emptyMetadata(),
+									slicer: text(m.slicer),
+									material: text(m.filament_type),
+									estimatedSeconds: number(m.estimated_time),
+									layerHeight: number(m.layer_height),
+									layers: number(m.layer_count),
+									filamentGrams: number(m.filament_weight_total)
+								};
+								if (Array.isArray(m.thumbnails)) {
+									const thumb = m.thumbnails.find(
+										(t: Record<string, unknown>) =>
+											typeof t.relative_path === 'string' &&
+											safeRelativePath(t.relative_path) &&
+											t.relative_path.endsWith('.png')
+									);
+									if (thumb) {
+										const path = posix.join(
+											posix.dirname(file.name),
+											thumb.relative_path as string
+										);
+										if (safeRelativePath(path)) {
+											thumbnailPaths.set(id, path);
+											metadata.thumbnail = `/api/jobs/thumbnail?id=${id}`;
+										}
 									}
 								}
+							}
+							// Never download an unbounded print to inspect it. Missing/large files stay unknown.
+							metadata.manualInterventions = null;
+							if (file.size <= MAX_GCODE_BYTES) {
+								inspectionAttempts.set(id, Date.now());
+								metadata.manualInterventions = yield* upstream(
+									`/server/files/gcodes/${file.name.split('/').map(encodeURIComponent).join('/')}`,
+									MAX_GCODE_BYTES
+								).pipe(
+									Effect.flatMap((bytes) =>
+										Effect.try({
+											try: () => inspectManualInterventions(bytes),
+											catch: () => failure('Manual changes could not be inspected.')
+										})
+									),
+									Effect.catch(() => Effect.succeed(null))
+								);
 							}
 							const inspected = { ...file, metadata };
 							metadataCache.set(id, inspected);

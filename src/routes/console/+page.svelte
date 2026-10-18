@@ -10,7 +10,7 @@
 		<header>
 			<p class="eyebrow">A direct line to the printer</p>
 			<h1>Macros & console</h1>
-			<p>Understand a command. Review it. Follow the response.</p>
+			<p>Understand a command. Send it. Follow the response.</p>
 		</header>
 		{#if ['owner', 'operator'].includes(data.user?.role ?? '')}<ConsoleWorkspace />{:else}<section
 				class="panel"

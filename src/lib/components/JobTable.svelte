@@ -119,6 +119,7 @@
 					>{#each row.getVisibleCells() as cell}<td
 							>{#if cell.column.id === 'name'}<a
 									class="file-link"
+									data-sveltekit-reset="false"
 									href={fileHref(row.id)}
 									aria-current={row.id === selectedId ? 'page' : undefined}
 									><span class="mini-preview"
@@ -127,7 +128,7 @@
 												alt=""
 												loading="lazy"
 											/>{:else}<Icon name="jobs" size={20} />{/if}</span
-									><span>{row.original.name}</span></a
+									><span class="filename" title={row.original.name}>{row.original.name}</span></a
 								>{:else}{value(row.original, cell.column.id)}{/if}</td
 						>{/each}</tr
 				>{/each}</tbody
@@ -166,7 +167,7 @@
 						loading="lazy"
 					/>{:else}<Icon name="jobs" size={22} />{/if}</span
 			><span
-				><strong>{file.name}</strong><small
+				><strong title={file.name}>{file.name}</strong><small
 					>{file.metadata?.material ?? 'Material not reported'} · {durationLabel(
 						file.metadata?.estimatedSeconds ?? null
 					)}<br />{value(file, 'size')} · {value(file, 'uploaded')}</small
@@ -184,18 +185,21 @@
 				? 'Try another filename or material.'
 				: 'Upload a sliced G-code file to see its details here.'}
 		</p>
-		{#if catalog.query.q || catalog.query.material}<a href={href({ q: '', material: '', page: 1 })}
-				>Clear filters</a
+		{#if catalog.query.q || catalog.query.material}<a
+				data-sveltekit-reset="false"
+				href={href({ q: '', material: '', page: 1 })}>Clear filters</a
 			>{/if}
 	</div>{/if}
 <nav class="pagination" aria-label="Library pages">
 	{#if table.getCanPreviousPage()}<a
 			class="button secondary"
+			data-sveltekit-reset="false"
 			href={href({ page: catalog.query.page - 1 })}>Previous</a
 		>{:else}<span class="button secondary disabled" aria-disabled="true">Previous</span>{/if}
 	<span>Page {catalog.query.page} of {catalog.pages}</span>
 	{#if table.getCanNextPage()}<a
 			class="button secondary"
+			data-sveltekit-reset="false"
 			href={href({ page: catalog.query.page + 1 })}>Next</a
 		>{:else}<span class="button secondary disabled" aria-disabled="true">Next</span>{/if}
 </nav>
@@ -270,7 +274,7 @@
 	}
 	td {
 		border-bottom: 1px solid var(--border);
-		padding: 0.7rem 0.6rem;
+		padding: 0.35rem 0.6rem;
 	}
 	td:not(:first-child) {
 		white-space: nowrap;
@@ -291,6 +295,12 @@
 		overflow-wrap: anywhere;
 		font-weight: 600;
 	}
+	.filename {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 	.file-link:hover,
 	.mobile-file:hover strong {
 		color: var(--accent);
@@ -299,8 +309,8 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 38px;
-		height: 38px;
+		width: 32px;
+		height: 32px;
 		border-radius: 8px;
 		background: var(--surface);
 		color: var(--accent);
@@ -404,7 +414,7 @@
 			display: flex;
 			align-items: center;
 			gap: 0.7rem;
-			padding: 0.9rem 0.5rem;
+			padding: 0.55rem 0.5rem;
 			color: var(--text);
 			text-decoration: none;
 			border-bottom: 1px solid var(--border);
@@ -416,6 +426,11 @@
 		}
 		strong {
 			display: block;
+			overflow: hidden;
+			display: -webkit-box;
+			-webkit-line-clamp: 2;
+			line-clamp: 2;
+			-webkit-box-orient: vertical;
 			overflow-wrap: anywhere;
 			font-size: 0.9rem;
 		}

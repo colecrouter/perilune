@@ -11,9 +11,13 @@ without throwing away inputs.
 ## Jobs
 
 Browse and inspect G-code files, upload with visible progress, and start shared
-prints with explicit confirmation. Slicer upload-only keys and persistent
-print observations are available under Jobs. Live file changes and printing require the live-controls opt-in.
+prints with explicit confirmation. Persistent print observations are available under Jobs. Slicer keys and browser pairing are managed under Account → Integrations. Live file changes and printing require the live-controls opt-in.
 See [Jobs and OrcaSlicer setup](docs/jobs.md).
+
+## Get started
+
+Already have a hosted panel? Open its address and sign in—no local installation is needed.
+For a new installation, printer connection, and updates, follow the [step-by-step guide](docs/getting-started.md). The panel’s **Help** page covers everyday use.
 
 ## Run locally
 
@@ -30,7 +34,7 @@ shared demo state. Stop the demo print to try the XY bed map, destination shortc
 fine jogging, and separate Z controls at `/controls`. Live connections default to read-only; opt-in physical controls are described below. Overview includes temperature history, inferred heater state, and simulator target/
 cooldown controls. Shared history survives page reloads and disconnects, retaining
 up to one hour until the backend restarts. Additional live sensors are read-only.
-The header toggle compares serif and sans-serif headings.
+Serif headings, warm neutrals, and teal are the established visual direction.
 
 For a production build:
 
@@ -49,8 +53,7 @@ docker compose up --build
 ```
 
 Compose binds to localhost:3000 and persists the SQLite database in a volume.
-Built-in login protects printer state, controls, and media. Physical printer controls
-are not implemented yet. Use an HTTPS reverse proxy when exposing Perilune remotely.
+Built-in login protects printer state, controls, and media. Physical printer controls require explicit live-workflow options and attended acceptance. Use an HTTPS reverse proxy when exposing Perilune remotely.
 
 ## Accounts and first setup
 

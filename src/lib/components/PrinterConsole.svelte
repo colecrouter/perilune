@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { Dialog } from 'bits-ui';
 	import { isHttpError } from '@sveltejs/kit';
 	import type { ConsoleSnapshot, ConsoleReceipt } from '#lib/domain/console.js';
 	import { groupConsoleLines, type ConsoleDisplayLine } from '#lib/domain/console-display.js';
@@ -25,8 +24,7 @@
 		follow = $state(true);
 	let message = $state(''),
 		pending = $state(false),
-		pinPending = $state(''),
-		reviewOpen = $state(false);
+		pinPending = $state('');
 	let request = $state<{ id: string; script: string } | null>(null),
 		uncertain = $state<{ id: string; script: string } | null>(null);
 	let historyIndex = $state(-1),
@@ -90,7 +88,7 @@
 				at: r.createdAt,
 				kind: r.status === 'failed' || r.status === 'unknown' ? 'error' : 'command',
 				text: r.script,
-				detail: `Simulator · ${r.status}`,
+				detail: `${snapshot.mode === 'simulator' ? 'Simulator' : 'Printer'} · ${r.status}`,
 				receipt: r
 			}))
 		].sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
@@ -102,11 +100,35 @@
 				(filter === 'errors' ? group.latest.kind === 'error' : group.latest.kind === 'command')
 		)
 	);
+	const activity = $derived(
+		lines
+			.map(
+				(line) =>
+					`${line.id}:${line.text}:${line.receipt?.status ?? ''}:${line.receipt?.output.join('\n') ?? ''}:${line.receipt?.message ?? ''}`
+			)
+			.join('\n')
+	);
 	$effect(() => {
-		void snapshot.revision;
-		void filter;
-		if (follow && log) log.scrollTop = log.scrollHeight;
+		void activity;
+		if (!follow || !log) return;
+		const element = log;
+		const frame = requestAnimationFrame(() => {
+			if (follow && log === element) element.scrollTop = element.scrollHeight;
+		});
+		return () => cancelAnimationFrame(frame);
 	});
+	function pauseFollowing() {
+		follow = false;
+	}
+	function collapseGroup(event: MouseEvent) {
+		const details = (event.currentTarget as HTMLElement).closest('details');
+		if (!details || !log) return;
+		const top =
+			details.getBoundingClientRect().top - log.getBoundingClientRect().top + log.scrollTop;
+		details.open = false;
+		log.scrollTop = Math.max(0, top - 12);
+	}
+
 	$effect(() => {
 		if (!uncertain) return;
 		const found = snapshot.receipts.find((receipt) => receipt.id === uncertain!.id);
@@ -122,12 +144,12 @@
 			historyIndex = -1;
 		}
 	}
-	function review(script = draft) {
+	async function submit(script = draft) {
 		message = '';
 		if (reason || pending || uncertain) return;
 		try {
 			request = { id: crypto.randomUUID(), script: consoleScript(script) };
-			reviewOpen = true;
+			await send();
 		} catch (cause) {
 			message = cause instanceof Error ? cause.message : 'Check the command.';
 		}
@@ -140,7 +162,6 @@
 		try {
 			const receipt = await onSubmit(current);
 			accepted(receipt);
-			reviewOpen = false;
 			request = null;
 		} catch (cause) {
 			if (isHttpError(cause)) {
@@ -153,7 +174,6 @@
 				message =
 					'Submission outcome is uncertain. Check its receipt before sending another command. Nothing will be resent automatically.';
 			}
-			reviewOpen = false;
 		} finally {
 			pending = false;
 		}
@@ -230,8 +250,8 @@
 				<button
 					disabled={!!reason || pending || !!uncertain}
 					onclick={() => {
-						review(macro.name);
-					}}>Review {macro.name}</button
+						void submit(macro.name);
+					}}>Run {macro.name}</button
 				>
 			</article>{:else}<p class="muted">
 				{search
@@ -252,7 +272,7 @@
 					{snapshot.mode === 'simulator'
 						? 'Simulator diagnostics · no physical commands'
 						: snapshot.executionEnabled
-							? 'Live printer · reviewed commands'
+							? 'Live printer · commands run when submitted'
 							: 'Live responses · execution disabled'}
 				</p>
 			</div>
@@ -274,13 +294,27 @@
 			>
 		</div>
 		<!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users must be able to focus and scroll retained output.) -->
-		<div class="log" bind:this={log} role="region" aria-label="Console history" tabindex="0">
+		<div
+			class="log"
+			bind:this={log}
+			role="region"
+			aria-label="Console history"
+			tabindex="0"
+			onscroll={() => {
+				if (log && log.scrollHeight - log.scrollTop - log.clientHeight > 48) pauseFollowing();
+			}}
+		>
 			{#each groups as group (group.id)}{@const line = group.latest}
 				<div class:error={line.kind === 'error'} class="log-entry">
 					<div class="meta">
 						<time>{new Date(line.at).toLocaleTimeString()}</time><span>{line.detail}</span>
 					</div>
-					{#if group.lines.length > 1}<details class="response-group">
+					{#if group.lines.length > 1}<details
+							class="response-group"
+							ontoggle={(event) => {
+								if (event.currentTarget.open) pauseFollowing();
+							}}
+						>
 							<summary
 								><span
 									>{group.temperature ? 'Temperature updates' : 'Repeated response'} · {group.lines
@@ -288,6 +322,7 @@
 								>
 								<pre>{line.text}</pre></summary
 							>
+							<button class="collapse-group" onclick={collapseGroup}>Collapse messages</button>
 							<ol>
 								{#each group.lines as original (original.id)}<li>
 										<time>{new Date(original.at).toLocaleTimeString()}</time>
@@ -327,7 +362,7 @@
 				maxlength="2048"
 				placeholder={snapshot.mode === 'simulator'
 					? 'Try HELP, M105, or PERILUNE_STATUS'
-					: 'Enter G-code or a macro, then review before sending.'}
+					: 'Enter G-code or a macro to send to the printer.'}
 				spellcheck="false"></textarea></label
 		>
 		<p id="console-history-hint" class="muted small">
@@ -336,12 +371,12 @@
 		<p class="muted small">
 			{snapshot.mode === 'simulator'
 				? 'The simulator supports M105, M114, HELP and the listed example macros. Other commands produce a clear error.'
-				: 'Parameters are not inferred from macro source. Review the printer configuration before using a macro.'}
+				: 'Commands and macros run on the real printer and may move or heat it. Check each command and the printer’s macro configuration before sending.'}
 		</p>
 		<button
 			class="button primary"
 			disabled={!!reason || pending || !!uncertain || !draft.trim()}
-			onclick={() => review()}>Review command…</button
+			onclick={() => void submit()}>{pending ? 'Submitting…' : 'Send command'}</button
 		>
 		{#if uncertain}<div class="notice">
 				<p>Unconfirmed request: <code>{uncertain.id}</code></p>
@@ -353,31 +388,6 @@
 		{#if message}<p role="status" class="notice">{message}</p>{/if}
 	</section>
 </div>
-<Dialog.Root bind:open={reviewOpen}
-	><Dialog.Portal
-		><Dialog.Overlay class="dialog-overlay" /><Dialog.Content class="dialog-content console-review"
-			><Dialog.Title class="dialog-title"
-				>Review {snapshot.mode === 'simulator' ? 'simulator' : 'printer'} command</Dialog.Title
-			><Dialog.Description class="review-description"
-				>{snapshot.mode === 'simulator'
-					? 'The backend runs this diagnostic once. No physical movement or heating is performed.'
-					: 'This runs on the real printer and can move or heat it. Review every line and the macro configuration. Keep other controllers idle. Acknowledgement does not prove every macro-specific effect.'}</Dialog.Description
-			>{#if request}<pre>{request.script}</pre>{/if}{#if reason}<p role="status">{reason}</p>{/if}
-			<div class="review-actions">
-				<Dialog.Close class="button secondary" disabled={pending}>Keep editing</Dialog.Close><button
-					class="button primary"
-					disabled={!!reason || pending || !!uncertain}
-					onclick={send}
-					>{pending
-						? 'Submitting…'
-						: snapshot.mode === 'simulator'
-							? 'Run in simulator'
-							: 'Run on printer'}</button
-				>
-			</div></Dialog.Content
-		></Dialog.Portal
-	></Dialog.Root
->
 
 <style>
 	.console-grid {
@@ -525,8 +535,7 @@
 	.log-entry.error {
 		border-left: 3px solid #b97154;
 	}
-	.log pre,
-	:global(.console-review) pre {
+	.log pre {
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
 		font:
@@ -549,29 +558,11 @@
 		font-size: 0.85rem;
 		overflow-wrap: anywhere;
 	}
-	.review-actions {
-		display: flex;
-		gap: 0.7rem;
-		justify-content: flex-end;
-		margin-top: 1rem;
-	}
-	:global(.console-review) {
-		width: min(36rem, calc(100vw - 32px));
-		max-height: calc(100dvh - 32px);
-		overflow: auto;
-	}
-	:global(.console-review .review-description) {
-		color: var(--muted);
-		line-height: 1.6;
-	}
-	:global(.console-review) pre {
-		padding: 1rem;
-		margin: 1.25rem 0;
-		background: var(--canvas);
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		max-height: 40dvh;
-		overflow: auto;
+	.collapse-group {
+		position: sticky;
+		top: 0;
+		z-index: 1;
+		margin: 0.5rem 0;
 	}
 	.response-group summary {
 		cursor: pointer;
@@ -603,9 +594,6 @@
 		}
 		.panel {
 			padding: 1rem;
-		}
-		.review-actions {
-			flex-direction: column-reverse;
 		}
 		.log-tools > label:first-child {
 			flex-wrap: wrap;

@@ -1043,9 +1043,9 @@ receipts are available on `/safety/history`, server-rendered for operators with
 live updates and links to their full receipts. This is presentation work; no
 physical command, permission, retry, or acknowledgement policy was relaxed.
 
-Remaining overview work includes identifying planned filament changes from file
-contents (#78), customizable layouts if the default proves insufficient, and
-owner acceptance of the revised layout during an actual print.
+Planned filament changes are now inspected from file contents and surfaced in
+file/start reviews. Remaining overview work includes customizable layouts if the
+default proves insufficient and owner acceptance during an actual print.
 
 The everyday-overview follow-up shares the job card with the Jobs workspace,
 including its control-readiness reasons and finished-job summary. Enhanced job,
@@ -1127,3 +1127,44 @@ cover expiry, denial, one-time redemption, recovery epochs, ownership, and cance
 racing session creation. Actual Orca/WebKit cookie retention across a complete macOS
 application quit/relaunch remains an owner-assisted acceptance check; no slicer-specific
 API injection or passkey support is required by this flow.
+
+## Comfortable daily use
+
+Job inspection statically counts recognizable M600 filament changes and PAUSE/M0/M1/M25
+pauses in bounded UTF-8 files up to 20 MiB, retaining at most twelve command locations.
+The scanner only reads an executable line prefix, handles parenthesized comments
+linearly, never expands macros, and distinguishes unknown inspection from a known
+zero. Live inspection fetches through the private bounded/abortable Moonraker file
+client, caches complete results by file identity, and retries unavailable results
+after 30 seconds while retaining ordinary metadata. Removed identities prune both
+metadata and attempt timestamps. Aborted readers close without unhandled cancellation
+rejections. Both enhanced and no-JavaScript start reviews show the summary; execution-time
+printer/file validation is unchanged. Counts are informational and do not certify safety.
+
+The console submits a validated command or macro on one explicit action. Its process
+worker, idempotent IDs, pending guard, and unknown-acknowledgement reconciliation remain
+unchanged. Log following keys off actual output/receipt changes rather than ordinary
+snapshot revisions, pauses when scrolling up or opening a repeated-response group,
+and offers a sticky collapse action within expanded content.
+
+Emergency shutdown has a direct enhanced/progressive form instead of a blocking dialog.
+It still requires the validated explicit POST, current authorization, idempotent receipt,
+and independent safety worker. Recovery stop/cooldown/probe-abort confirmations use
+one submit action without a redundant checkbox. Hazard reviews and firmware restart
+retain explicit inspection acknowledgement. Shared dialog sizing/actions fit short
+and narrow viewports. Successful safety submissions close their dialog, matching other
+primary-action dialogs; ongoing execution and outcomes stay visible in shared safety activity. No real printer action is part of automated verification.
+
+Jobs defaults to ten compact rows, truncates long filenames in the list (full names
+remain in detail/accessibility text), and initially shows five recent runs with an
+explicit expansion. Desktop selection and same-surface pagination retain scroll;
+mobile detail navigation intentionally resets. Existing GET forms already use Kit’s
+client navigation, and stateful POSTs use action enhancement. Help now links setup,
+manual interventions, pairing, phone installation, notifications, updates and backups.
+It distinguishes server deployment from a browser reload. Device notification settings
+show permission/registration status and describe test acceptance without claiming OS
+delivery; notification-setting reads use a bounded finite body reader.
+
+The implementation is reviewable independently of owner hardware acceptance. A completed
+deposited print, actual iOS/Android installation/background delivery, and an off-host
+backup destination remain owner checks in issues #52/#35 and docs/daily-use.md.

@@ -623,8 +623,10 @@ progress::-moz-progress-bar {
 	left: 50%;
 	top: 50%;
 	transform: translate(-50%, -50%);
-	width: min(480px, calc(100vw - 32px));
-	padding: 28px;
+	width: min(34rem, calc(100vw - 32px));
+	max-height: calc(100dvh - 32px);
+	overflow: auto;
+	padding: clamp(20px, 4vw, 28px);
 	background: var(--surface);
 	border: 1px solid var(--border);
 	border-radius: 12px;
@@ -662,8 +664,10 @@ progress::-moz-progress-bar {
 }
 .dialog-actions {
 	display: flex;
-	justify-content: space-between;
-	gap: 16px;
+	justify-content: flex-end;
+	flex-wrap: wrap;
+	gap: 12px;
+	margin-top: 24px;
 }
 .roadmap {
 	max-width: 800px;
@@ -1017,4 +1021,20 @@ progress::-moz-progress-bar {
 
 .job-actions {
 	align-items: flex-start;
+}
+
+.dialog-content [data-dialog-description],
+.dialog-content > p {
+	color: var(--muted);
+	line-height: 1.6;
+}
+@media (max-width: 480px) {
+	.dialog-actions {
+		flex-direction: column-reverse;
+		align-items: stretch;
+	}
+	.dialog-actions > * {
+		width: 100%;
+		justify-content: center;
+	}
 }

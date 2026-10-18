@@ -21,7 +21,7 @@ const receipt: ConsoleReceipt = {
 	message: null,
 	output: []
 };
-test('preserves input on reconnect and macro review, and sends only after explicit review', async () => {
+test('preserves input on reconnect and sends commands or macros only on explicit submission', async () => {
 	const onSubmit = vi.fn(async (input) => ({ ...receipt, ...input }));
 	const screen = await render(PrinterConsole, {
 		snapshot: initial,
@@ -32,20 +32,21 @@ test('preserves input on reconnect and macro review, and sends only after explic
 	});
 	await screen.getByRole('textbox', { name: 'Command', exact: true }).fill('HELP');
 	await screen.rerender({ connected: false });
-	await expect.element(screen.getByRole('button', { name: 'Review command…' })).toBeDisabled();
+	await expect.element(screen.getByRole('button', { name: 'Send command' })).toBeDisabled();
 	await expect
 		.element(screen.getByRole('textbox', { name: 'Command', exact: true }))
 		.toHaveValue('HELP');
 	await screen.rerender({ connected: true });
-	await screen.getByRole('button', { name: 'Review PERILUNE_STATUS', exact: true }).click();
-	expect(onSubmit).not.toHaveBeenCalled();
-	await screen.getByRole('button', { name: 'Keep editing' }).click();
+	await screen.getByRole('button', { name: 'Run PERILUNE_STATUS', exact: true }).click();
+	expect(onSubmit).toHaveBeenCalledExactlyOnceWith(
+		expect.objectContaining({ script: 'PERILUNE_STATUS' })
+	);
 	await expect
 		.element(screen.getByRole('textbox', { name: 'Command', exact: true }))
 		.toHaveValue('HELP');
-	await screen.getByRole('button', { name: 'Review command…' }).click();
-	await screen.getByRole('button', { name: 'Run in simulator' }).click();
-	expect(onSubmit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ script: 'HELP' }));
+	await screen.getByRole('button', { name: 'Send command' }).click();
+	expect(onSubmit).toHaveBeenCalledTimes(2);
+	expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ script: 'HELP' }));
 });
 test('does not resend after uncertain submission and reconciles an observed receipt', async () => {
 	const onSubmit = vi.fn().mockRejectedValue(new Error('lost acknowledgment'));
@@ -57,8 +58,7 @@ test('does not resend after uncertain submission and reconciles an observed rece
 		onPin: vi.fn()
 	});
 	await screen.getByRole('textbox', { name: 'Command', exact: true }).fill('HELP');
-	await screen.getByRole('button', { name: 'Review command…' }).click();
-	await screen.getByRole('button', { name: 'Run in simulator' }).click();
+	await screen.getByRole('button', { name: 'Send command' }).click();
 	await expect.element(screen.getByRole('button', { name: 'Check receipt' })).toBeVisible();
 	await screen.getByRole('button', { name: 'Check receipt' }).click();
 	expect(onSubmit).toHaveBeenCalledOnce();
@@ -90,7 +90,7 @@ test('live mode never exposes an enabled run button and treats response markup a
 		onPin: vi.fn()
 	});
 	await screen.getByRole('textbox', { name: 'Command', exact: true }).fill('G28');
-	await expect.element(screen.getByRole('button', { name: 'Review command…' })).toBeDisabled();
+	await expect.element(screen.getByRole('button', { name: 'Send command' })).toBeDisabled();
 	expect(screen.container.querySelector('img')).toBeNull();
 });
 
@@ -158,9 +158,35 @@ test('an unrelated macro receipt preserves history traversal and its unfinished 
 	await input.fill('unfinished');
 	await userEvent.keyboard('{ArrowUp}');
 	await expect.element(input).toHaveValue('HELP');
-	await screen.getByRole('button', { name: 'Review PERILUNE_STATUS', exact: true }).click();
-	await screen.getByRole('button', { name: 'Run in simulator' }).click();
+	await screen.getByRole('button', { name: 'Run PERILUNE_STATUS', exact: true }).click();
 	await input.click();
 	await userEvent.keyboard('{ArrowDown}');
 	await expect.element(input).toHaveValue('unfinished');
+});
+
+test('expanding a response group pauses following and revision-only updates preserve its scroll position', async () => {
+	const responses = Array.from({ length: 100 }, (_, i) => ({
+		id: `line-${i}`,
+		at: i,
+		kind: 'response' as const,
+		text: `B:${i} /0 T0:26 /0`
+	}));
+	const screen = await render(PrinterConsole, {
+		snapshot: { ...initial, responses },
+		connected: true,
+		onSubmit: vi.fn(),
+		onFind: vi.fn(),
+		onPin: vi.fn()
+	});
+	await screen.getByText('Temperature updates · 100 messages').click();
+	await expect.element(screen.getByRole('checkbox', { name: 'Follow latest' })).not.toBeChecked();
+	const log = screen.container.querySelector('.log') as HTMLElement;
+	log.scrollTop = 150;
+	log.dispatchEvent(new Event('scroll'));
+	await screen.rerender({ snapshot: { ...initial, revision: 2, responses } });
+	expect(log.scrollTop).toBe(150);
+	await screen.getByRole('button', { name: 'Collapse messages' }).click();
+	expect(screen.container.querySelector('details.response-group')?.hasAttribute('open')).toBe(
+		false
+	);
 });

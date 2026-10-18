@@ -1,6 +1,11 @@
 import { safetyReason } from './safety.js';
 import type { PrinterSnapshot } from './printer.js';
 export const MAX_GCODE_BYTES = 20 * 1024 * 1024;
+export interface ManualInterventions {
+	filamentChanges: number;
+	pauses: number;
+	locations: { line: number; command: string }[];
+}
 export interface JobMetadata {
 	slicer: string | null;
 	material: string | null;
@@ -9,6 +14,7 @@ export interface JobMetadata {
 	layers: number | null;
 	filamentGrams: number | null;
 	thumbnail: string | null;
+	manualInterventions?: ManualInterventions | null;
 }
 export interface JobFile {
 	id: string;
@@ -83,7 +89,50 @@ export function startReason(snapshot: PrinterSnapshot, checkPending = true): str
 		return 'Wait for the pending action to finish.';
 	return null;
 }
-/** Inspect comments only. G-code is never executed or passed to a shell. */
+/** Bounded static inspection; never expands or executes printer macros. */
+export function inspectManualInterventions(bytes: Uint8Array): ManualInterventions {
+	if (bytes.byteLength > MAX_GCODE_BYTES) throw new Error('File exceeds the inspection limit.');
+	const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+	if (text.includes('\0')) throw new Error('Binary G-code cannot be inspected.');
+	const result: ManualInterventions = { filamentChanges: 0, pauses: 0, locations: [] };
+	// Match only the first executable command on each line, including numbered G-code.
+	let line = 0;
+	let executable = false;
+	for (const match of text.matchAll(/[^\n]*(?:\n|$)/g)) {
+		const raw = match[0];
+		line++;
+		let prefix = '',
+			depth = 0;
+		// A small command prefix is enough; scan comments linearly even on hostile input.
+		for (const character of raw) {
+			if (character === '(') {
+				depth++;
+				continue;
+			}
+			if (character === ')' && depth) {
+				depth--;
+				continue;
+			}
+			if (depth) continue;
+			if (character === ';') break;
+			if (!prefix && (character === ' ' || character === '\t' || character === '\r')) continue;
+			prefix += character;
+			if (prefix.length >= 256) break;
+		}
+		executable ||= /^(?:N\d+\s+)?[A-Z][A-Z_0-9]*(?=\s|\*|$)/i.test(prefix);
+		const command = prefix
+			.match(/^(?:N\d+\s+)?(M0*600|M0*25|M0*1|M0+|PAUSE)(?=\s|\*|$)/i)?.[1]
+			?.toUpperCase();
+		if (!command) continue;
+		const normalized = command === 'PAUSE' ? command : `M${Number(command.slice(1))}`;
+		if (normalized === 'M600') result.filamentChanges++;
+		else result.pauses++;
+		if (result.locations.length < 12) result.locations.push({ line, command: normalized });
+	}
+	if (!executable) throw new Error('No recognizable G-code commands to inspect.');
+	return result;
+}
+/** Inspect slicer comments and recognizable commands without executing G-code. */
 export function parseGcode(bytes: Uint8Array): JobMetadata {
 	const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 	if (text.includes('\0') || !/^\s*(?:N\d+\s+)?[GMT]\d+/im.test(text))
@@ -91,6 +140,7 @@ export function parseGcode(bytes: Uint8Array): JobMetadata {
 			'Choose a text G-code file containing printer commands. Binary G-code and 3MF are not supported yet.'
 		);
 	const result = emptyMetadata();
+	result.manualInterventions = inspectManualInterventions(bytes);
 	const comments = text
 		.split(/\r?\n/)
 		.filter((line) => line.trimStart().startsWith(';'))

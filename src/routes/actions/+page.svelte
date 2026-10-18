@@ -1,4 +1,5 @@
 <script lang="ts">
+	import JobInterventions from '#lib/components/JobInterventions.svelte';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import ActionForm from '#lib/components/ActionForm.svelte';
 	let { data, form } = $props();
@@ -16,6 +17,9 @@
 				{data.review.intent === 'cancel' ? 'Stop this print?' : 'Start this print?'}
 			</h1>
 			<p>{data.review.intent === 'cancel' ? data.review.filename : data.review.name}</p>
+			{#if data.review.intent === 'start'}<JobInterventions
+					inspection={data.review.manualInterventions}
+				/>{/if}
 			<ActionForm
 				fields={data.review.intent === 'cancel'
 					? { intent: 'cancel', filename: data.review.filename, runId: data.review.runId }

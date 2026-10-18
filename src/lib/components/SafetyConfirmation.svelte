@@ -1,11 +1,20 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import ActionForm from './ActionForm.svelte';
 	import type { ActionRecord, PrinterSnapshot } from '#lib/domain/printer.js';
 	let {
 		intent,
 		snapshot,
-		receipts
-	}: { intent: string; snapshot: PrinterSnapshot; receipts?: ActionRecord[] } = $props();
+		receipts,
+		dismiss,
+		onAccepted = () => {}
+	}: {
+		intent: string;
+		snapshot: PrinterSnapshot;
+		receipts?: ActionRecord[];
+		dismiss?: Snippet;
+		onAccepted?: (receipt: ActionRecord) => void;
+	} = $props();
 	const title = $derived(
 		intent === 'restart'
 			? 'Restart firmware after safety review?'
@@ -43,6 +52,7 @@
 		This does not clear the original uncertain action.
 	</p>
 	<ActionForm
+		{onAccepted}
 		{receipts}
 		action="/safety"
 		receiptBase="/safety"
@@ -55,8 +65,12 @@
 		{#snippet children({ pending, uncertain })}<label
 				><input type="checkbox" name="confirmed" value="true" required /> I have inspected the printer
 				and resolved the hazard</label
-			><button class="button primary" disabled={pending || uncertain}>Review safety</button
-			>{/snippet}
+			>
+			<div class="dialog-actions">
+				{@render dismiss?.()}<button class="button primary" disabled={pending || uncertain}
+					>Review safety</button
+				>
+			</div>{/snippet}
 	</ActionForm>
 {:else}
 	<p>
@@ -73,35 +87,29 @@
 	{#if intent !== 'emergency'}<p>
 			The original uncertain action stays locked and will never be replayed.
 		</p>{/if}
-	<ActionForm {receipts} action="/safety" receiptBase="/safety" {fields}>
+	<ActionForm {onAccepted} {receipts} action="/safety" receiptBase="/safety" {fields}>
 		{#snippet children({ pending, uncertain })}
-			<label
-				><input type="checkbox" name="confirmed" value="true" required /> Confirm {intent ===
-				'restart'
-					? 'I have inspected the printer, resolved the hazard, and want to restart firmware'
-					: intent === 'abortProbe'
-						? 'aborting the current manual probe'
-						: intent === 'emergency'
-							? 'emergency shutdown'
-							: intent === 'stop'
-								? 'stopping this job'
-								: 'turning off all heaters'}</label
-			>
-			<button
-				class={intent === 'emergency' ? 'button danger' : 'button primary'}
-				disabled={pending || uncertain}
-				>{pending
-					? 'Submitting…'
-					: intent === 'restart'
-						? 'Restart firmware'
-						: intent === 'abortProbe'
-							? 'Abort manual probe'
-							: intent === 'emergency'
-								? 'Emergency stop'
-								: intent === 'stop'
-									? 'Stop job'
-									: 'Turn off heaters'}</button
-			>
+			{#if intent === 'restart'}<label
+					><input type="checkbox" name="confirmed" value="true" required /> I have inspected the printer,
+					resolved the hazard, and want to restart firmware</label
+				>{:else}<input type="hidden" name="confirmed" value="true" />{/if}
+			<div class="dialog-actions">
+				{@render dismiss?.()}<button
+					class={intent === 'emergency' ? 'button danger' : 'button primary'}
+					disabled={pending || uncertain}
+					>{pending
+						? 'Submitting…'
+						: intent === 'restart'
+							? 'Restart firmware'
+							: intent === 'abortProbe'
+								? 'Abort manual probe'
+								: intent === 'emergency'
+									? 'Emergency stop'
+									: intent === 'stop'
+										? 'Stop job'
+										: 'Turn off heaters'}</button
+				>
+			</div>
 		{/snippet}</ActionForm
 	>
 {/if}

@@ -85,13 +85,12 @@ try {
 	await second.goto(sim.base + '/console');
 	assert.equal(await page.title(), 'Macros & console · Perilune');
 	await page.getByRole('textbox', { name: 'Command', exact: true }).fill('M105');
-	await page.getByRole('button', { name: 'Review command…' }).click();
 	const submitted = page.waitForRequest(
 		(request) => request.method() === 'POST' && request.url().includes('/_app/remote/')
 	);
 	await mkdir('test-results', { recursive: true });
 	await page.screenshot({ path: 'test-results/console-review-desktop.png' });
-	await page.getByRole('button', { name: 'Run in simulator' }).click();
+	await page.getByRole('button', { name: 'Send command' }).click();
 	const command = await submitted;
 	await page.getByText('Simulator · completed', { exact: true }).waitFor();
 	await second.getByText('Simulator · completed', { exact: true }).waitFor();
@@ -103,8 +102,7 @@ try {
 	assert.equal(await page.locator('.log-entry').count(), 1, 'Retry uses the same command receipt');
 	await page.getByRole('button', { name: 'Pin PERILUNE_STATUS', exact: true }).click();
 	await second.getByRole('button', { name: 'Unpin PERILUNE_STATUS', exact: true }).waitFor();
-	await page.getByRole('button', { name: 'Review SIMULATE_FAILURE', exact: true }).click();
-	await page.getByRole('button', { name: 'Run in simulator' }).click();
+	await page.getByRole('button', { name: 'Run SIMULATE_FAILURE', exact: true }).click();
 	await page.getByText('Simulator · failed', { exact: true }).waitFor();
 	await page.getByRole('combobox', { name: 'Show', exact: true }).selectOption('errors');
 	assert.equal(await page.locator('.log-entry').count(), 1);
@@ -113,7 +111,7 @@ try {
 	await second.goto(sim.base + '/');
 	await second.getByRole('button', { name: 'Disconnect', exact: true }).click();
 	await page.getByText('Wait for a ready printer connection.', { exact: true }).waitFor();
-	assert.equal(await page.getByRole('button', { name: 'Review command…' }).isDisabled(), true);
+	assert.equal(await page.getByRole('button', { name: 'Send command' }).isDisabled(), true);
 	assert.equal(
 		await page.getByRole('textbox', { name: 'Command', exact: true }).inputValue(),
 		'HELP'
@@ -122,7 +120,7 @@ try {
 	await page.waitForFunction(
 		() =>
 			![...document.querySelectorAll('button')].find(
-				(button) => button.textContent.trim() === 'Review command…'
+				(button) => button.textContent.trim() === 'Send command'
 			)?.disabled
 	);
 	assert.equal(
@@ -140,20 +138,13 @@ try {
 	assert.equal(await composer.inputValue(), 'SIMULATE_FAILURE');
 	await composer.press('ArrowDown');
 	assert.equal(await composer.inputValue(), 'unfinished draft');
-	await page.getByRole('button', { name: 'Review PERILUNE_STATUS', exact: true }).click();
-	const dialog = page.getByRole('dialog');
-	await dialog.waitFor();
-	const bounds = await dialog.boundingBox();
-	assert.ok(
-		bounds.x >= 0 &&
-			bounds.x + bounds.width <= 320 &&
-			bounds.y >= 0 &&
-			bounds.y + bounds.height <= 800,
-		'Review fits mobile viewport'
+	await page.getByRole('button', { name: 'Run PERILUNE_STATUS', exact: true }).click();
+	assert.equal(
+		await page.getByRole('dialog').count(),
+		0,
+		'Macros submit without a redundant review dialog'
 	);
-	assert.equal(await dialog.locator('.dialog-title').count(), 1);
-	await page.screenshot({ path: 'test-results/console-review-mobile.png' });
-	await page.getByRole('button', { name: 'Keep editing' }).click();
+	await page.screenshot({ path: 'test-results/console-submit-mobile.png' });
 	assert.equal(await composer.inputValue(), 'unfinished draft');
 	const invitation = await sim.context.request.post(sim.base + '/api/account/invite', {
 		headers: { Origin: sim.base },
@@ -210,11 +201,11 @@ try {
 	await livePage.getByRole('checkbox', { name: 'Group repeated responses' }).uncheck();
 	assert.equal(await livePage.locator('.response-group').count(), 0);
 	assert.equal(
-		await livePage.getByRole('button', { name: 'Review TEST_MACRO', exact: true }).isDisabled(),
+		await livePage.getByRole('button', { name: 'Run TEST_MACRO', exact: true }).isDisabled(),
 		true
 	);
 	await livePage.getByRole('textbox', { name: 'Command', exact: true }).fill('G28');
-	assert.equal(await livePage.getByRole('button', { name: 'Review command…' }).isDisabled(), true);
+	assert.equal(await livePage.getByRole('button', { name: 'Send command' }).isDisabled(), true);
 	const publicPage = await live.context.newPage();
 	await publicPage.goto(live.base + '/');
 	assert.ok(!(await publicPage.content()).includes(privateText));

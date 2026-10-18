@@ -20,7 +20,8 @@
 		{ label: 'Console', icon: 'console', href: '/console' },
 		{ label: 'Calibration', icon: 'calibration', href: '/calibration' },
 		{ label: 'Configuration', icon: 'configuration', href: '/configuration' },
-		{ label: 'Account', icon: 'account', href: '/account' }
+		{ label: 'Account', icon: 'account', href: '/account' },
+		{ label: 'Help', icon: 'help', href: '/help' }
 	] as const;
 </script>
 
