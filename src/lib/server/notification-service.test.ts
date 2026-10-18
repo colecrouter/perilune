@@ -253,3 +253,29 @@ it('requires a separate opt-in for shared printer errors without an active job',
 		subscription.endpoint + 'shared'
 	);
 });
+
+it('rechecks authorization after a pending camera capture before storing images or sending', async () => {
+	const f = await fixture();
+	await f.manage('save', { ...defaultNoticePreferences, snapshot: true });
+	let release!: (response: Response) => void;
+	const pending = new Promise<Response>((resolve) => {
+		release = resolve;
+	});
+	f.capture.mockImplementationOnce(() => Effect.promise(() => pending));
+	const printing = await f.runtime.runPromise(SubscriptionRef.get(f.state));
+	await f.runtime.runPromise(
+		SubscriptionRef.set(f.state, {
+			...printing,
+			job: { ...printing.job, state: 'complete' as const }
+		})
+	);
+	await vi.waitFor(() => expect(f.capture).toHaveBeenCalledTimes(1));
+	f.revoke();
+	release(new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/jpeg' } }));
+	const sql = await f.runtime.runPromise(SqlClient);
+	await vi.waitFor(async () =>
+		expect(await f.runtime.runPromise(sql`SELECT id FROM push_devices`)).toHaveLength(0)
+	);
+	expect(f.send).not.toHaveBeenCalled();
+	expect(await f.runtime.runPromise(sql`SELECT id FROM push_images`)).toHaveLength(0);
+});

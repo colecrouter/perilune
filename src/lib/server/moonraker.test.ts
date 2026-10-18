@@ -449,7 +449,7 @@ it('optional macro help timeouts do not block telemetry and response text stays 
 
 it('reattaches durable history after reconnect and rejects a stale row for another run of the same filename', async () => {
 	const history = {
-		jobs: [{ job_id: '000001', start_time: 1234, filename: 'fixture.gcode', in_progress: true }]
+		jobs: [{ job_id: '000001', start_time: 1234, filename: 'fixture.gcode', status: 'in_progress' }]
 	};
 	const p = await simulator({ history });
 	await expect.poll(async () => (await p.snapshot()).job.historyKey).toMatch(/^[a-f0-9]{64}$/);

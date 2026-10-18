@@ -1262,7 +1262,11 @@ account owner.
 When Moonraker advertises its history component, bounded optional read-only queries
 provide a hashed backend/job-id/start-time identity. A verified start attaches it
 only when history changed from a successfully read pre-dispatch cursor. Stale
-rows cannot attach to a different run in the same connection. Reconnects can
+rows cannot attach to a different run in the same connection. After reconnect or
+process restart, the latest matching `status: in_progress` history row is trusted
+as Moonraker's authoritative active-job identity. The API offers no atomic join
+between object telemetry and history; a faulty or indefinitely stale upstream
+record across that boundary cannot be independently disambiguated. Reconnects can
 resolve an already verified durable claim; missing, conflicting or unavailable
 history leaves restarted jobs unattributed. A history read failure does not fail
 or replay a physical command. There is no inference from a matching filename and

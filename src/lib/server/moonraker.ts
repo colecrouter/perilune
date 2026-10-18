@@ -424,7 +424,7 @@ export const MoonrakerServiceLive = Layer.effect(
 							if (
 								!run ||
 								!['printing', 'paused'].includes(current.job.state) ||
-								latest.in_progress !== true ||
+								latest.status !== 'in_progress' ||
 								latest.filename !== current.job.filename
 							)
 								return;
