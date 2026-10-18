@@ -78,6 +78,13 @@ export async function testPairing(owner, base, directory, filename) {
 		});
 		assert.equal(revoked.status(), 200);
 		assert.equal((await device.request.get(`${base}/api/account/browsers`)).status(), 401);
+		// Isolate cookie replacement from the Overview's background requests.
+		// This subcase deliberately injects/ages another login; delayed renewals from
+		// that page must not race the API-only redemption and revocation assertions.
+		await device.close();
+		device = await chromium.launchPersistentContext(join(directory, 'paired-browser'), {
+			headless: true
+		});
 		const secondGrant = await (
 			await device.request.post(`${base}/api/pairing/start`, {
 				headers: { Origin: base },
@@ -107,10 +114,10 @@ export async function testPairing(owner, base, directory, filename) {
 			data: { token: secondGrant.token }
 		});
 		assert.equal(redeemed.status(), 200);
-		assert.notEqual(
-			(await device.cookies()).find((cookie) => cookie.name.endsWith('.session_token')).value,
-			oldCookie.value
+		const redeemedCookie = (await device.cookies()).find((cookie) =>
+			cookie.name.endsWith('.session_token')
 		);
+		assert.notEqual(redeemedCookie.value, oldCookie.value);
 		assert.equal(
 			(
 				await owner.request.post(`${base}/api/account/disconnect-integration`, {
@@ -119,6 +126,10 @@ export async function testPairing(owner, base, directory, filename) {
 				})
 			).status(),
 			200
+		);
+		assert.equal(
+			(await device.cookies()).find((cookie) => cookie.name.endsWith('.session_token')).value,
+			redeemedCookie.value
 		);
 		assert.equal((await device.request.get(`${base}/api/account/browsers`)).status(), 401);
 		assert.equal(

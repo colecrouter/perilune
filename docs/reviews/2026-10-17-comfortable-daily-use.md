@@ -23,6 +23,13 @@ Jobs, and direct console submission without overflow or page errors. The T3 prev
 snapshot path timed out twice; the repository’s headless Playwright workflow supplied
 the rendered evidence. The final independent review reported no remaining actionable findings. Full validation and Docker CI remain merge requirements.
 
+CI subsequently exposed a pairing-fixture race: a running Overview could renew an
+artificially injected/aged owner cookie after API-only redemption. The replacement
+subcase now restarts its context before cookie manipulation, asserts that the
+redeemed cookie stays current, and retains the strict post-disconnect 401 check.
+Focused pairing/auth smoke passed and independent review approved the isolation.
+Potential real concurrent old-session renewal is tracked separately in #95.
+
 No real printer movement, heating, firmware writes, or print-start commands were
 issued by these tests. Deposited-print and actual iOS/Android installation/delivery
 acceptance remain in #52/#35 and docs/daily-use.md for the owner’s milestone review.
