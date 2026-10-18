@@ -119,6 +119,14 @@
 	$effect(() => {
 		onDirty?.(anyDirty);
 	});
+	$effect(() => {
+		if (revisionOf) {
+			reviewOpen = false;
+			confirmed = false;
+			restartConfirmed = false;
+		}
+	});
+
 	function addFromReference(change: {
 		path: string;
 		expectedText: string;
@@ -209,6 +217,10 @@
 		invalidField = false;
 	}
 	function review() {
+		if (revisionOf) {
+			failure = 'Saved revisions are read-only. Open the current file to make changes.';
+			return;
+		}
 		if (!current) return;
 		try {
 			checkConfigChange(current.base.text, current.text);
@@ -230,6 +242,10 @@
 		}
 	}
 	async function apply() {
+		if (revisionOf) {
+			failure = 'Saved revisions are read-only. Open the current file to make changes.';
+			return;
+		}
 		if (!reviewed || !confirmed || !restartConfirmed || busy || !onApply) return;
 		busy = true;
 		failure = '';
@@ -249,6 +265,10 @@
 		}
 	}
 	async function save() {
+		if (revisionOf) {
+			failure = 'Saved revisions are read-only. Open the current file to make changes.';
+			return;
+		}
 		if (!reviewed || !confirmed || busy) return;
 		const record = reviewed;
 		const draft = drafts[record.request.path]!;
@@ -280,6 +300,10 @@
 		}
 	}
 	async function loadBackup() {
+		if (revisionOf) {
+			failure = 'Saved revisions are read-only. Open the current file to make changes.';
+			return;
+		}
 		if (!current || !selectedBackup) return;
 		if (dirty && !window.confirm('Replace this file’s unsaved draft with the selected backup?'))
 			return;
@@ -289,6 +313,8 @@
 		failure = '';
 		try {
 			const text = await onBackup(path, selectedBackup);
+			if (configRevision(path, files))
+				throw new Error('Saved revisions are read-only. Open the current file to make changes.');
 			draft.text = text;
 			invalidField = false;
 			notice = 'Backup loaded into your draft. Review and save to create a new revision.';
@@ -458,7 +484,7 @@
 					<summary>Klipper reference · Find or add a setting</summary><ConfigurationReference
 						text={current.text}
 						path={source.path}
-						disabled={busy || !mounted}
+						disabled={busy || !mounted || !!revisionOf}
 						onAdd={addFromReference}
 						onCatalogue={(value) => (reference = value)}
 					/>
@@ -554,17 +580,20 @@
 					</section>{/if}
 				<footer>
 					<p class="muted small">
-						{source.source === 'simulator'
-							? 'Saving creates a backup and changes the simulator file only. It does not apply or restart the printer.'
-							: applicationEnabled
-								? 'Reviewed application writes this file and restarts Klipper. A previous-file snapshot is kept for recovery. Syntax and hardware compatibility are not guaranteed.'
-								: 'Drafts stay in this tab until exported. No live file is written.'}
+						{revisionOf
+							? 'Saved revisions are read-only. Export or copy changes into the current file for review.'
+							: source.source === 'simulator'
+								? 'Saving creates a backup and changes the simulator file only. It does not apply or restart the printer.'
+								: applicationEnabled
+									? 'Reviewed application writes this file and restarts Klipper. A previous-file snapshot is kept for recovery. Syntax and hardware compatibility are not guaranteed.'
+									: 'Drafts stay in this tab until exported. No live file is written.'}
 					</p>
 					<div class="toolbar">
-						<button disabled={busy || !mounted || !dirty} onclick={discard}>Discard draft…</button
+						<button disabled={busy || !mounted || !!revisionOf || !dirty} onclick={discard}
+							>Discard draft…</button
 						><button
 							class="primary"
-							disabled={busy || !dirty || invalidField || conflict}
+							disabled={busy || !!revisionOf || !dirty || invalidField || conflict}
 							onclick={review}>Review changes…</button
 						>
 					</div>
@@ -582,8 +611,9 @@
 										>{new Date(backup.createdAt).toLocaleString()} · {backup.actor}</option
 									>{/each}</select
 							></label
-						><button disabled={busy || !mounted || !selectedBackup} onclick={loadBackup}
-							>Load backup into draft…</button
+						><button
+							disabled={busy || !mounted || !!revisionOf || !selectedBackup}
+							onclick={loadBackup}>Load backup into draft…</button
 						>{:else}<p>No backups yet. The first save will create one.</p>{/if}
 				</section>{/if}
 		</div>{/if}
@@ -628,6 +658,7 @@
 				><button
 					class="primary"
 					disabled={busy ||
+						!!revisionOf ||
 						!confirmed ||
 						(applicationEnabled && source.source === 'moonraker' && !restartConfirmed)}
 					onclick={source.source === 'simulator'

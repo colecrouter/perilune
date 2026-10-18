@@ -234,7 +234,10 @@ test('unsupported files open as source and explicit editor choices stay with eac
 
 test('saved Klipper revisions open read-only and file search keeps the current editor', async () => {
 	const printer = file();
-	const revision = file('printer-20261018_123456.cfg');
+	const revision = {
+		...file('printer-20261018_123456.cfg'),
+		backups: [{ id: 'older', createdAt: 1, actor: 'Fixture' }]
+	};
 	const other = file('macros/tool.cfg');
 	const calls = callbacks(revision);
 	const screen = await render(ConfigurationEditor, {
@@ -243,6 +246,11 @@ test('saved Klipper revisions open read-only and file search keeps the current e
 		...calls
 	});
 	await expect.element(screen.getByText(/Read-only saved revision of/)).toBeVisible();
+	await screen.getByRole('combobox', { name: 'Backup', exact: true }).selectOptions('older');
+	await expect
+		.element(screen.getByRole('button', { name: 'Load backup into draft…', exact: true }))
+		.toBeDisabled();
+	expect(calls.onBackup).not.toHaveBeenCalled();
 	await expect
 		.element(screen.getByRole('textbox', { name: 'Editable configuration source', exact: true }))
 		.toHaveAttribute('contenteditable', 'false');
@@ -251,5 +259,27 @@ test('saved Klipper revisions open read-only and file search keeps the current e
 	await expect
 		.element(screen.getByRole('heading', { name: revision.path, exact: true }))
 		.toBeVisible();
+	expect(calls.onSave).not.toHaveBeenCalled();
+});
+
+test('a draft newly recognized as a saved revision cannot retain an open save review', async () => {
+	const revision = file('printer-20261018_123456.cfg');
+	const calls = callbacks(revision);
+	const screen = await render(ConfigurationEditor, {
+		document: revision,
+		files: [revision],
+		...calls
+	});
+	await screen.getByRole('spinbutton', { name: 'Maximum velocity', exact: true }).fill('180');
+	await screen.getByRole('button', { name: 'Review changes…', exact: true }).click();
+	await expect.element(screen.getByRole('dialog')).toBeVisible();
+	await screen.rerender({ files: [revision, file()] });
+	await expect.element(screen.getByRole('dialog')).not.toBeInTheDocument();
+	await expect
+		.element(screen.getByRole('button', { name: 'Review changes…', exact: true }))
+		.toBeDisabled();
+	await expect
+		.element(screen.getByRole('button', { name: 'Export draft', exact: true }))
+		.toBeEnabled();
 	expect(calls.onSave).not.toHaveBeenCalled();
 });
