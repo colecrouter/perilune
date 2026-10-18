@@ -38,7 +38,7 @@
 				></select
 			></label
 		>
-		<p class="muted" role="status">
+		<p class="muted" role={preferences.saving || preferences.error ? 'status' : undefined}>
 			{preferences.saving
 				? 'Saving preferences…'
 				: preferences.error
