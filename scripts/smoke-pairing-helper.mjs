@@ -59,9 +59,12 @@ export async function testPairing(owner, base, directory, filename) {
 			.browsers;
 		assert.equal(browsers.length, 1);
 		assert.equal(browsers[0].integrationId, integration.key.id);
+		assert.equal(browsers[0].current, false);
+		const deviceBrowsers = await (await device.request.get(base + '/api/account/browsers')).json();
+		assert.equal(deviceBrowsers.browsers[0].current, true);
 		const db = new DatabaseSync(filename);
 		try {
-			// Force a renewal on the next ordinary app request, rather than the auth endpoint.
+			// Age the fixed-lifetime session; ordinary reads must not renew its cookie.
 			db.prepare('UPDATE session SET expiresAt=? WHERE id=?').run(
 				Date.now() + 5 * 86400_000,
 				browsers[0].id
@@ -71,7 +74,18 @@ export async function testPairing(owner, base, directory, filename) {
 		}
 		const renewed = await device.request.get(`${base}/api/account/browsers`);
 		assert.equal(renewed.status(), 200);
-		assert.match(renewed.headers()['set-cookie'], /Max-Age=7776000/i);
+		assert.equal(renewed.headers()['set-cookie'], undefined);
+		const expiryDb = new DatabaseSync(filename);
+		try {
+			assert.ok(
+				Number(
+					expiryDb.prepare('SELECT expiresAt FROM session WHERE id=?').get(browsers[0].id).expiresAt
+				) <
+					Date.now() + 6 * 86400_000
+			);
+		} finally {
+			expiryDb.close();
+		}
 		const revoked = await owner.request.post(`${base}/api/account/revoke-browser`, {
 			headers: { Origin: base },
 			data: { id: browsers[0].id }
@@ -170,7 +184,7 @@ export async function testPairing(owner, base, directory, filename) {
 			403
 		);
 		console.log(
-			'Pairing smoke passed: two-browser approval, shared-IP polling, persistent browser restart, cookie renewal, revocation, cancellation, origin checks, 320px layout.'
+			'Pairing smoke passed: two-browser approval, shared-IP polling, persistent browser restart, fixed session expiry, revocation, cancellation, origin checks, 320px layout.'
 		);
 	} finally {
 		await device.close();

@@ -7,7 +7,6 @@
 	import { onMount } from 'svelte';
 	import { liveConnection } from '#lib/client/live-connection.svelte.js';
 	import ActionForm from '#lib/components/ActionForm.svelte';
-	import { Switch } from 'bits-ui';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	let TemperatureHistory = $state<
@@ -70,7 +69,6 @@
 		return () => clearInterval(timer);
 	});
 
-	let serif = $state(true);
 	let cancelOpen = $state(false);
 	let stopJob = $state<{ filename: string; runId: string | null } | undefined>();
 	let submitting = $state(false);
@@ -141,7 +139,7 @@
 	/></svelte:head
 >
 <AppShell {snapshot}>
-	<div class:serif class="dashboard">
+	<div class="dashboard serif">
 		<header class="page-header">
 			<div>
 				<h1>Overview</h1>
@@ -155,11 +153,6 @@
 						: connected
 							? 'Connected'
 							: connectionLabel}</span
-				><label for="serif-switch">Serif headings</label><Switch.Root
-					id="serif-switch"
-					aria-label="Serif headings"
-					bind:checked={serif}
-					class="switch"><Switch.Thumb class="switch-thumb" /></Switch.Root
 				>
 			</div>
 		</header>

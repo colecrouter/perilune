@@ -609,6 +609,15 @@ try {
 		() => document.querySelector('[aria-label="Current job"]').dataset.jobState === 'cancelled'
 	);
 
+	// Telemetry can arrive before the cancel receipt commits. Let that worker finish
+	// before replacing the fixture state with a different paused print.
+	await idle();
+	assert.equal(
+		database.prepare('SELECT count(*) AS n FROM live_action_reservation').get().n,
+		0,
+		'the acknowledged cancel releases its reservation before the next scenario'
+	);
+
 	// A genuine lost acknowledgement stays unknown; paused unlock needs owner attestation.
 	status.print_stats.state = 'paused';
 	publish();

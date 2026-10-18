@@ -1,3 +1,4 @@
+import { PreferenceServiceLive } from './preference-service.js';
 import { SafetyServiceLive, SafetySettings, SafetyDisabled } from './safety-service.js';
 import {
 	LiveActionServiceLive,
@@ -202,7 +203,13 @@ const slicerLayer = SlicerServiceLive.pipe(
 	Layer.provide(databaseLayer),
 	Layer.provideMerge(consoleLayer)
 );
-export const runtime = ManagedRuntime.make(Layer.merge(slicerLayer, configurationLayer));
+export const runtime = ManagedRuntime.make(
+	Layer.mergeAll(
+		slicerLayer,
+		configurationLayer,
+		PreferenceServiceLive.pipe(Layer.provide(databaseLayer))
+	)
+);
 export const shutdownSignal = new AbortController();
 export const integration = createIntegration();
 export const requestEffect = integration.effect;

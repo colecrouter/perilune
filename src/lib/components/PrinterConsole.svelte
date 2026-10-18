@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { preferencesContext } from '#lib/client/preferences.svelte.js';
 	import { isHttpError } from '@sveltejs/kit';
 	import type { ConsoleSnapshot, ConsoleReceipt } from '#lib/domain/console.js';
 	import { groupConsoleLines, type ConsoleDisplayLine } from '#lib/domain/console-display.js';
@@ -22,6 +23,19 @@
 		showInternal = $state(false),
 		compact = $state(true),
 		follow = $state(true);
+	const preferences = preferencesContext();
+	let followedPreference: boolean | undefined;
+	$effect(() => {
+		if (!preferences) return;
+		filter = preferences.values.consoleFilter;
+		showInternal = preferences.values.consoleShowInternal;
+		compact = preferences.values.consoleCompact;
+		const next = preferences.values.consoleFollow;
+		if (next !== followedPreference) {
+			followedPreference = next;
+			follow = next;
+		}
+	});
 	let message = $state(''),
 		pending = $state(false),
 		pinPending = $state('');
@@ -233,7 +247,12 @@
 			/></label
 		>
 		<label class="check"
-			><input type="checkbox" bind:checked={showInternal} />Show internal macros</label
+			><input
+				type="checkbox"
+				bind:checked={showInternal}
+				onchange={(event) =>
+					preferences?.update({ consoleShowInternal: event.currentTarget.checked })}
+			/>Show internal macros</label
 		>
 		{#each macros as macro}<article>
 				<div class="macro-title">
@@ -283,14 +302,29 @@
 		{#if reason}<p class="notice" role="status">{reason}</p>{/if}
 		<div class="log-tools">
 			<label
-				>Show<select bind:value={filter}
+				>Show<select
+					bind:value={filter}
+					onchange={(event) =>
+						preferences?.update({
+							consoleFilter: event.currentTarget.value as 'all' | 'errors' | 'commands'
+						})}
 					><option value="all">All activity</option><option value="errors"
 						>Errors & unknown outcomes</option
 					><option value="commands">Submitted commands</option></select
 				></label
-			><label class="check"><input type="checkbox" bind:checked={follow} />Follow latest</label>
+			><label class="check"
+				><input
+					type="checkbox"
+					bind:checked={follow}
+					onchange={(event) => preferences?.update({ consoleFollow: event.currentTarget.checked })}
+				/>Follow latest</label
+			>
 			<label class="check"
-				><input type="checkbox" bind:checked={compact} />Group repeated responses</label
+				><input
+					type="checkbox"
+					bind:checked={compact}
+					onchange={(event) => preferences?.update({ consoleCompact: event.currentTarget.checked })}
+				/>Group repeated responses</label
 			>
 		</div>
 		<!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users must be able to focus and scroll retained output.) -->

@@ -5,6 +5,7 @@
 		columnVisibilityFeature,
 		rowPaginationFeature
 	} from '@tanstack/svelte-table';
+	import { preferencesContext } from '#lib/client/preferences.svelte.js';
 	import { resolve } from '$app/paths';
 	import Icon from './Icon.svelte';
 	import { durationLabel, type JobFile } from '#lib/domain/jobs.js';
@@ -24,6 +25,17 @@
 		{ id: 'size', accessorFn: (file: JobFile) => file.size },
 		{ id: 'uploaded', accessorFn: (file: JobFile) => file.modified }
 	];
+	const preferences = preferencesContext();
+	let visibility = $state<Record<string, boolean>>({});
+	const currentVisibility = () =>
+		preferences
+			? {
+					material: preferences.values.jobsMaterial,
+					duration: preferences.values.jobsDuration,
+					size: preferences.values.jobsSize,
+					uploaded: preferences.values.jobsUploaded
+				}
+			: visibility;
 	const table = createTable({
 		features: tableFeatures({ columnVisibilityFeature, rowPaginationFeature }),
 		columns,
@@ -35,7 +47,27 @@
 		},
 		getRowId: (file) => file.id,
 		manualPagination: true,
+		onColumnVisibilityChange: (updater) => {
+			const before = currentVisibility();
+			const next = typeof updater === 'function' ? updater(before) : updater;
+			visibility = next;
+			const fields = {
+				material: 'jobsMaterial',
+				duration: 'jobsDuration',
+				size: 'jobsSize',
+				uploaded: 'jobsUploaded'
+			} as const;
+			const patch: Partial<Record<(typeof fields)[keyof typeof fields], boolean>> = {};
+			for (const [column, field] of Object.entries(fields)) {
+				if ((before[column as keyof typeof before] !== false) !== (next[column] !== false))
+					patch[field] = next[column] !== false;
+			}
+			if (Object.keys(patch).length) preferences?.update(patch);
+		},
 		state: {
+			get columnVisibility() {
+				return currentVisibility();
+			},
 			get pagination() {
 				return { pageIndex: catalog.query.page - 1, pageSize: catalog.query.pageSize };
 			}
@@ -207,6 +239,7 @@
 	<span>Rows per page</span>{#each [10, 25, 50] as size}<a
 			data-sveltekit-reset="false"
 			href={href({ pageSize: size, page: 1 })}
+			onclick={() => preferences?.update({ jobsPageSize: size as 10 | 25 | 50 })}
 			aria-current={catalog.query.pageSize === size ? 'true' : undefined}>{size}</a
 		>{/each}
 </div>
