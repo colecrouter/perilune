@@ -168,7 +168,8 @@ const configurationLayer = ConfigurationServiceLive.pipe(
 const applicationLayer = ConfigurationApplicationServiceLive.pipe(
 	Layer.provide(
 		Layer.succeed(ConfigurationApplicationSettings, {
-			enabled: process.env.PERILUNE_LIVE_CONFIGURATION === 'true'
+			enabled: process.env.PERILUNE_LIVE_CONFIGURATION === 'true',
+			discardEnabled: process.env.PERILUNE_LIVE_CONTROLS === 'true'
 		})
 	),
 	Layer.provide(

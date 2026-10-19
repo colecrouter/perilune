@@ -2,6 +2,9 @@
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
 	import { pidActive, pidReason } from '#lib/domain/pid.js';
 	import ActionForm from './ActionForm.svelte';
+	import PendingSettingsDialog from './PendingSettingsDialog.svelte';
+	let reviewOpen = $state(false);
+	let reviewMode = $state<'save' | 'discard'>('save');
 	import SafetyButton from './SafetyButton.svelte';
 	let {
 		snapshot,
@@ -67,15 +70,35 @@
 			</p>
 			<SafetyButton {snapshot} label="Stop calibration" />
 		{:else if run.stage === 'staged' && live}
-			<a class="button primary" href="/configuration/pending">Review pending settings →</a>
+			{#if role === 'owner'}<div class="result-actions">
+					<button
+						class="button primary"
+						onclick={() => {
+							reviewMode = 'save';
+							reviewOpen = true;
+						}}>Save…</button
+					>
+					<button
+						class="button secondary"
+						onclick={() => {
+							reviewMode = 'discard';
+							reviewOpen = true;
+						}}>Discard…</button
+					>
+				</div>{/if}
 			<p class="muted">
-				Next, review all staged settings together. Nothing is saved until you confirm
-				<strong>Save settings &amp; restart</strong> on the review page.
+				These gains are unsaved. Review all pending changes before saving or discarding; either
+				action restarts Klipper.
 			</p>
 		{:else if run.stage === 'interrupted'}<a href="/activity#recovery">Review printer recovery →</a
 			>{/if}
 		<a class="details-link" href={`/actions/${run.id}`}>Calibration details</a>
 	</section>{/if}
+
+{#if live && role === 'owner'}<PendingSettingsDialog
+		bind:open={reviewOpen}
+		mode={reviewMode}
+	/>{/if}
 
 <section class="panel preparation" aria-label="Prepare PID calibration">
 	<h2>Prepare a heater test</h2>
@@ -150,6 +173,12 @@
 </section>
 
 <style>
+	.result-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		margin: 1rem 0;
+	}
 	.panel {
 		padding: clamp(1rem, 3vw, 1.75rem);
 		margin-bottom: 1.25rem;

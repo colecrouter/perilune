@@ -1,11 +1,16 @@
-# PID save handoff review
+# PID save and discard review
 
-Independent reviewer: `review_notification_scope`. Result: approved; no actionable
-findings. Reviewed the focused owner-only route, automatic read-only review,
-explicit disabled/error state, save confirmation and recovery availability gating,
-GET cancellation on unmount, and browser/synthetic production handoff coverage.
-Existing backend pending/source fingerprints and write lifecycle remain in place.
-A subsequent visual pass added established button styling, serif headings and page
-spacing; no lifecycle or save behavior changed. Validation is reported in the PR.
-No real configuration save, printer restart or heater command was used to test
-this UI change.
+Independent reviewer: `review_notification_scope`. Result: approved after one
+recovery finding was resolved. Reviewed inline owner-only dialogs, all-pending
+review, separate save/discard capabilities, unchanged saved bytes on discard,
+execution-time checks, one-shot restart, unknown outcomes, recovery locks,
+idempotency, and browser coverage.
+
+The review found that discard recovery could accept a cleared flag with a
+nonempty pending manifest. Execution and recovery now share a strict predicate
+requiring an explicit false flag and an empty object manifest. A regression test
+verifies contradictory state keeps the lock, then recovery clears it without
+replaying the restart. The reviewer confirmed no remaining actionable findings.
+
+Validation is reported in the PR. Synthetic fixtures were used; no real printer
+configuration write, restart, movement, or heating was performed for this change.

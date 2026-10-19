@@ -2,8 +2,15 @@
 	import { onMount, onDestroy } from 'svelte';
 	let {
 		autoInspect = false,
-		saveEnabled = true
-	}: { autoInspect?: boolean; saveEnabled?: boolean } = $props();
+		saveEnabled = true,
+		mode = 'save',
+		compact = false
+	}: {
+		autoInspect?: boolean;
+		saveEnabled?: boolean;
+		mode?: 'save' | 'discard';
+		compact?: boolean;
+	} = $props();
 	let controller: AbortController | undefined;
 	onMount(() => {
 		if (autoInspect) void inspect();
@@ -53,13 +60,16 @@
 		const id = crypto.randomUUID();
 		try {
 			await request({
-				action: 'savePending',
+				action: mode === 'discard' ? 'discardPending' : 'savePending',
 				id,
 				pending: review.fingerprint,
 				sources: review.sources,
 				confirmedRestart: true
 			});
-			message = 'Submitted. Configuration status will show the saved bytes and startup result.';
+			message =
+				mode === 'discard'
+					? 'Submitted. Configuration status will show whether pending settings cleared and the saved file stayed unchanged.'
+					: 'Submitted. Configuration status will show the saved bytes and startup result.';
 		} catch (cause) {
 			message =
 				(cause instanceof Error ? cause.message : 'Submission is unconfirmed.') +
@@ -70,16 +80,18 @@
 	}
 </script>
 
-<section class="panel pending-settings">
-	<p class="eyebrow">Calibration → configuration</p>
-	<h2>Staged settings</h2>
+<section class="panel pending-settings" class:compact>
+	{#if !compact}
+		<p class="eyebrow">Calibration → configuration</p>
+		<h2>Staged settings</h2>
+	{/if}
 	{#if message && !submitted}<p role="alert">{message}</p>{/if}
-	<p>
-		These changes are staged in Klipper and are not saved yet. Review <strong
-			>every pending setting</strong
-		>, including changes from other calibrations or printer apps. Saving updates the main
-		configuration, keeps a recovery copy, and restarts Klipper.
-	</p>
+	{#if !compact}<p>
+			These changes are staged in Klipper and are not saved yet. Review <strong
+				>every pending setting</strong
+			>, including changes from other calibrations or printer apps. Saving updates the main
+			configuration, keeps a recovery copy, and restarts Klipper.
+		</p>{/if}
 	<button class="button secondary" type="button" onclick={inspect} disabled={busy || submitted}
 		>{busy && !review
 			? 'Loading pending settings…'
@@ -91,7 +103,8 @@
 	>
 	{#if review}
 		<p>
-			These settings will be saved to <strong>{review.path}</strong>.
+			{mode === 'discard' ? 'The saved file stays unchanged:' : 'These settings will be saved to'}
+			<strong>{review.path}</strong>.
 		</p>
 		<dl>
 			{#each Object.entries(review.manifest) as [section, options]}{#each Object.entries(options) as [key, value]}<div
@@ -101,26 +114,37 @@
 					</div>{/each}{/each}
 		</dl>
 		{#if !saveEnabled}<p class="muted">
-				Saving is currently unavailable. Check configuration status before continuing.
+				{mode === 'discard'
+					? 'Discarding is currently unavailable.'
+					: 'Saving is currently unavailable.'} Check configuration status before continuing.
 			</p>{/if}
 		<label
 			><input
 				type="checkbox"
 				bind:checked={confirmed}
 				disabled={busy || submitted || !saveEnabled}
-			/>I reviewed every pending setting and am ready to restart the printer.</label
+			/>I reviewed every pending setting and {mode === 'discard'
+				? 'want to discard them all'
+				: 'am ready to save them all'} and restart the printer.</label
 		>
 		<button
-			class="button primary"
+			class={mode === 'discard' ? 'button danger-outline' : 'button primary'}
 			type="button"
 			onclick={save}
-			disabled={!saveEnabled || !confirmed || busy || submitted}>Save settings & restart</button
+			disabled={!saveEnabled || !confirmed || busy || submitted}
+			>{mode === 'discard' ? 'Discard settings & restart' : 'Save settings & restart'}</button
 		>
 	{/if}
 	{#if message && submitted}<p role="status">{message}</p>{/if}
 </section>
 
 <style>
+	.pending-settings.compact {
+		padding: 0;
+		margin: 0;
+		border: 0;
+		background: transparent;
+	}
 	.pending-settings {
 		margin-bottom: 1.25rem;
 	}

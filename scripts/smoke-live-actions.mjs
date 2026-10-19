@@ -263,18 +263,40 @@ try {
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 	await mkdir('test-results', { recursive: true });
 	await page.screenshot({ path: 'test-results/pid-result-mobile.png', fullPage: true });
-	await page.getByRole('link', { name: 'Review pending settings →', exact: true }).click();
-	await page.waitForURL(base + '/configuration/pending');
-	assert.equal(await page.title(), 'Review pending settings · Perilune');
-	await page.getByRole('heading', { name: 'Review pending settings', exact: true }).waitFor();
-	await page.getByRole('alert').filter({ hasText: 'disabled on this server' }).waitFor();
-	assert.equal(await page.getByRole('button', { name: 'Save settings & restart' }).count(), 0);
+	const pidReviewURL = '**/api/configuration/application?pending';
+	await page.route(pidReviewURL, (route) =>
+		route.fulfill({
+			json: {
+				path: 'printer.cfg',
+				fingerprint: 'fixture-pending',
+				sources: { root: 'printer.cfg', fingerprint: 'fixture-sources' },
+				manifest: { extruder: { pid_Kp: '20', pid_Ki: '1.2', pid_Kd: '80' } }
+			}
+		})
+	);
+	await page.getByRole('button', { name: 'Save…', exact: true }).click();
+	const saveReview = page.getByRole('dialog');
+	await saveReview.getByRole('heading', { name: 'Save pending settings?' }).waitFor();
+	await saveReview.getByText('[extruder] pid_Kp', { exact: true }).waitFor();
+	assert.equal(page.url(), base + '/calibration/pid');
+	assert.equal(
+		await saveReview.getByRole('button', { name: 'Save settings & restart' }).isDisabled(),
+		true
+	);
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-	await page.screenshot({
-		path: '/tmp/perilune-pending-review-disabled-mobile.png',
-		fullPage: true
-	});
-	await page.goto(base + '/calibration/pid');
+	await page.screenshot({ path: '/tmp/perilune-pid-inline-save-mobile.png', fullPage: true });
+	await saveReview.getByRole('button', { name: 'Close', exact: true }).click();
+	await page.getByRole('button', { name: 'Discard…', exact: true }).click();
+	const discardReview = page.getByRole('dialog');
+	await discardReview.getByRole('heading', { name: 'Discard pending settings?' }).waitFor();
+	await discardReview.getByText('[extruder] pid_Kp', { exact: true }).waitFor();
+	assert.equal(
+		await discardReview.getByRole('button', { name: 'Discard settings & restart' }).isDisabled(),
+		true
+	);
+	await page.screenshot({ path: '/tmp/perilune-pid-inline-discard-mobile.png', fullPage: true });
+	await discardReview.getByRole('button', { name: 'Close', exact: true }).click();
+	await page.unroute(pidReviewURL);
 	status.configfile.save_config_pending = false;
 	status.configfile.save_config_pending_items = {};
 	publish();
