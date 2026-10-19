@@ -51,7 +51,10 @@ export const saveFilamentSetup = command(
 		const store = await runtime.runPromise(FilamentChangeStore);
 		requireIdentity(getRequestEvent(), 'owner');
 		if (!(await runtime.runPromise(store.put(target, value))))
-			error(409, 'Setup changed in another tab. Reload before saving.');
+			error(
+				409,
+				'Setup changed or a printer action/guidance session is active. Finish it and reload before saving.'
+			);
 		await getFilamentSetup().refresh();
 	}
 );

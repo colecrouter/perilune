@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { filamentChangeActive } from '#lib/domain/filament-change.js';
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
 	import { jobControlReason, jobDescriptions } from '#lib/domain/current-job.js';
 	import ActionForm from './ActionForm.svelte';
@@ -53,25 +54,31 @@
 		</div>
 		{#if reason}<p class="control-reason" role="status">{reason}</p>{/if}
 		<div class="job-actions">
-			{#key job.runId}<ActionForm
-					receipts={snapshot.actions}
-					fields={{ intent: job.state === 'paused' ? 'resume' : 'pause', ...identity }}
-					>{#snippet children({ pending, uncertain, executing, outcome })}<button
-							class="button primary"
-							disabled={!!reason || pending || uncertain}
-							><Icon name={job.state === 'paused' ? 'play' : 'pause'} size={18} />{pending
-								? executing
-									? 'Waiting for printer…'
-									: 'Submitting…'
-								: job.state === 'paused'
-									? 'Resume print'
-									: 'Pause print'}</button
-						>{#if job.state === 'paused' && outcome?.status === 'completed' && outcome.label === 'Resume print' && outcome.message}<p
-								role="status"
-							>
-								{outcome.message}
-							</p>{/if}{/snippet}</ActionForm
-				>{/key}
+			{#if filamentChangeActive(snapshot.filamentChange)}<a class="button primary" href="/filament"
+					>Continue filament change</a
+				>{:else}{#key job.runId}<ActionForm
+						receipts={snapshot.actions}
+						fields={{ intent: job.state === 'paused' ? 'resume' : 'pause', ...identity }}
+						>{#snippet children({ pending, uncertain, executing, outcome })}<button
+								class="button primary"
+								disabled={!!reason || pending || uncertain}
+								><Icon name={job.state === 'paused' ? 'play' : 'pause'} size={18} />{pending
+									? executing
+										? 'Waiting for printer…'
+										: 'Submitting…'
+									: job.state === 'paused'
+										? 'Resume print'
+										: 'Pause print'}</button
+							>{#if job.state === 'paused' && outcome?.status === 'completed' && outcome.label === 'Resume print' && outcome.message}<p
+									role="status"
+								>
+									{outcome.message}
+								</p>{/if}{/snippet}</ActionForm
+					>{/key}{/if}
+			{#if !filamentChangeActive(snapshot.filamentChange) && operator && snapshot.mode === 'moonraker'}<a
+					class="button secondary"
+					href="/filament">Change filament…</a
+				>{/if}
 			<a
 				role="button"
 				class="button danger-outline"

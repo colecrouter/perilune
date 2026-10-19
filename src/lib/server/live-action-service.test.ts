@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { jobOwner } from './job-attribution.js';
 import { SlicerService, SlicerServiceLive } from './slicer-service.js';
 import { LiveMeshService, LiveMeshServiceLive } from './live-mesh-service.js';
@@ -124,6 +125,19 @@ async function fixture(
 					(behavior === 'stagedResume' && op.type === 'job' && op.method === 'resume')
 				)
 					return;
+				if (op.type === 'controlScript' && ['M600\nM400', 'RESUME\nM400'].includes(op.script)) {
+					if (behavior === 'stagedResume' && op.script.startsWith('RESUME')) return;
+					yield* SubscriptionRef.update(state, (s) => ({
+						...s,
+						paused: op.script.startsWith('M600'),
+						job: {
+							...s.job,
+							state: op.script.startsWith('M600') ? ('paused' as const) : ('printing' as const)
+						},
+						motion: { ...s.motion, busy: !op.script.startsWith('M600') }
+					}));
+					return;
+				}
 				if (op.type === 'pidCalibrate')
 					yield* SubscriptionRef.update(state, (s) => ({
 						...s,
@@ -1382,3 +1396,352 @@ for (const before of [undefined, null, 'previous', 'new-history'] as const) {
 		);
 	});
 }
+
+async function prepareSwap(f: Awaited<ReturnType<typeof fixture>>, paused = false) {
+	const settings = {
+		revision: 7,
+		fingerprint: 'a'.repeat(64),
+		mode: 'printer',
+		changeMacro: 'M600',
+		resumeMacro: 'RESUME',
+		reviewed: true
+	};
+	const sql = await f.runtime.runPromise(SqlClient);
+	const target = createHash('sha256').update('fixture').digest('hex');
+	await f.runtime.runPromise(
+		sql`INSERT INTO filament_change_settings(target,revision,value) VALUES(${target},7,${JSON.stringify(settings)}) ON CONFLICT(target) DO UPDATE SET value=excluded.value,revision=7`
+	);
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			paused,
+			filamentChange: {
+				fingerprint: settings.fingerprint,
+				macros: ['M600'],
+				m600: true,
+				pauseResume: true,
+				findings: []
+			},
+			availableObjects: [...s.availableObjects, 'pause_resume', 'gcode_macro M600'],
+			job: {
+				...s.job,
+				state: paused ? ('paused' as const) : ('printing' as const),
+				filename: 'swap.gcode',
+				runId: 'swap-print'
+			},
+			motion: { ...s.motion, busy: !paused },
+			heaters: { ...s.heaters, nozzle: { current: 200, target: 200 } }
+		}))
+	);
+	await expect.poll(async () => (await f.snapshot()).job.runId).toBe('swap-print');
+	return {
+		expectedJob: { filename: 'swap.gcode', runId: 'swap-print' },
+		settingsRevision: 7,
+		confirmed: true
+	};
+}
+it('runs only the selected change/resume macros, owns the session and deduplicates physical dispatch', async () => {
+	const f = await fixture();
+	const common = await prepareSwap(f);
+	const id = crypto.randomUUID();
+	const begin = { type: 'filamentChangeBegin' as const, ...common, adoptPaused: false };
+	await f.submit(begin, owner, id);
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('completed');
+	const session = (await f.snapshot()).filamentChange!;
+	expect(session).toMatchObject({ id, stage: 'paused', ownerId: owner.id, step: 1 });
+	expect(f.operations).toEqual([{ type: 'controlScript', script: 'M600\nM400' }]);
+	await f.submit(begin, owner, id);
+	expect(f.operations).toHaveLength(1);
+	await expect(f.submit({ type: 'resume', expectedJob: common.expectedJob })).rejects.toThrow(
+		'guidance'
+	);
+	await expect(f.submit({ type: 'home', axes: 'all' })).rejects.toThrow('guidance');
+	const resume = {
+		type: 'filamentChangeResume' as const,
+		sessionId: id,
+		expectedStep: session.step,
+		expectedJob: common.expectedJob,
+		confirmed: true
+	};
+	await f.submit(resume, { ...owner, id: 'other' });
+	await f.finished();
+	expect(f.operations).toHaveLength(1);
+	await f.submit(resume);
+	await f.finished();
+	expect(f.operations).toEqual([
+		{ type: 'controlScript', script: 'M600\nM400' },
+		{ type: 'controlScript', script: 'RESUME\nM400' }
+	]);
+	expect((await f.snapshot()).filamentChange?.stage).toBe('finished');
+	expect((await f.snapshot()).actions[0].status).toBe('completed');
+	expect((await f.snapshot()).liveRecovery).toBeNull();
+});
+it('adopts an existing pause without sending M600, keeps staged resume paused and rejects stale steps', async () => {
+	const f = await fixture();
+	const common = await prepareSwap(f, true);
+	await f.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: true });
+	await f.finished();
+	expect(f.operations).toHaveLength(0);
+	const session = (await f.snapshot()).filamentChange!;
+	f.setBehavior('stagedResume');
+	const resume = {
+		type: 'filamentChangeResume' as const,
+		sessionId: session.id,
+		expectedStep: session.step,
+		expectedJob: common.expectedJob,
+		confirmed: true
+	};
+	await f.submit(resume);
+	await f.finished();
+	expect((await f.snapshot()).filamentChange).toMatchObject({
+		stage: 'paused',
+		step: 2,
+		message: expect.stringContaining('remains paused')
+	});
+	await f.submit(resume);
+	await f.finished();
+	expect(f.operations).toHaveLength(1);
+	await f.submit({
+		type: 'filamentChangeEnd',
+		sessionId: session.id,
+		expectedStep: 2,
+		expectedJob: common.expectedJob,
+		confirmed: true
+	});
+	await f.finished();
+	expect((await f.snapshot()).filamentChange?.stage).toBe('finished');
+	expect(f.operations).toHaveLength(1);
+});
+it('retains unknown filament outcomes without replay and permits explicit paused owner recovery', async () => {
+	const f = await fixture();
+	const common = await prepareSwap(f, true);
+	f.setBehavior('drop');
+	await f.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: false });
+	await f.finished();
+	// The printer was already paused: stale begin is rejected before dispatch.
+	expect(f.operations).toHaveLength(0);
+	await f.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: true });
+	await f.finished();
+	const session = (await f.snapshot()).filamentChange!;
+	const action = await f.submit({
+		type: 'filamentChangeResume',
+		sessionId: session.id,
+		expectedStep: 1,
+		expectedJob: common.expectedJob,
+		confirmed: true
+	});
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('unknown');
+	expect((await f.snapshot()).filamentChange?.stage).toBe('review');
+	expect(f.operations).toHaveLength(1);
+	await f.runtime.runPromise(f.service.recover(action.id, owner, common.expectedJob));
+	await f.submit({
+		type: 'filamentChangeRecover',
+		sessionId: session.id,
+		expectedStep: 2,
+		expectedJob: common.expectedJob,
+		confirmed: true
+	});
+	await f.finished();
+	expect((await f.snapshot()).filamentChange).toMatchObject({ stage: 'paused', step: 3 });
+	expect(f.operations).toHaveLength(1);
+});
+it('invalidates filament continuity after reconnect and lets an owner end guidance with stopped run identity absent', async () => {
+	const f = await fixture();
+	const common = await prepareSwap(f, true);
+	await f.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: true });
+	await f.finished();
+	const session = (await f.snapshot()).filamentChange!;
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			generation: s.generation + 1,
+			job: { ...s.job, runId: undefined, state: 'standby' as const, filename: '' },
+			paused: false
+		}))
+	);
+	await expect.poll(async () => (await f.snapshot()).filamentChange?.stage).toBe('review');
+	await f.submit({
+		type: 'filamentChangeEnd',
+		sessionId: session.id,
+		expectedStep: session.step,
+		expectedJob: { filename: '', runId: '' },
+		confirmed: true
+	});
+	await f.finished();
+	expect((await f.snapshot()).filamentChange?.stage).toBe('finished');
+	expect(f.operations).toHaveLength(0);
+});
+
+it('restores paused filament guidance as review after restart without executing a macro', async () => {
+	const dir = await mkdtemp(join(tmpdir(), 'perilune-swap-restart-'));
+	cleanup.push(() => rm(dir, { recursive: true, force: true }));
+	const file = join(dir, 'state.sqlite');
+	const a = await fixture(file);
+	const common = await prepareSwap(a, true);
+	await a.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: true });
+	await a.finished();
+	const session = (await a.snapshot()).filamentChange!;
+	await a.runtime.dispose();
+	const b = await fixture(file);
+	expect((await b.snapshot()).filamentChange).toMatchObject({ id: session.id, stage: 'review' });
+	expect(b.operations).toHaveLength(0);
+	await b.submit({
+		type: 'filamentChangeEnd',
+		sessionId: session.id,
+		expectedStep: session.step,
+		expectedJob: { filename: '', runId: '' },
+		confirmed: true
+	});
+	await b.finished();
+	expect((await b.snapshot()).filamentChange?.stage).toBe('finished');
+	expect(b.operations).toHaveLength(0);
+});
+it('retries only a failed filament interruption checkpoint after operator revocation', async () => {
+	const f = await fixture();
+	const common = await prepareSwap(f, true);
+	let allowed = true;
+	await f.submit(
+		{ type: 'filamentChangeBegin', ...common, adoptPaused: true },
+		{
+			...owner,
+			authorized: () => {
+				if (!allowed) throw new Error('Authorization storage unavailable');
+				return true;
+			}
+		}
+	);
+	await f.finished();
+	const sql = await f.runtime.runPromise(SqlClient);
+	await f.runtime.runPromise(sql`DROP TABLE filament_change_sessions`);
+	allowed = false;
+	await expect.poll(async () => (await f.snapshot()).storage).toBe('degraded');
+	expect((await f.snapshot()).filamentChange?.stage).toBe('review');
+	await f.runtime.runPromise(
+		sql`CREATE TABLE filament_change_sessions(target TEXT PRIMARY KEY,state TEXT NOT NULL)`
+	);
+	await expect.poll(async () => (await f.snapshot()).storage).toBe('healthy');
+	const rows = await f.runtime.runPromise(
+		sql<{ state: string }>`SELECT state FROM filament_change_sessions`
+	);
+	expect(JSON.parse(rows[0].state).stage).toBe('review');
+	expect(f.operations).toHaveLength(0);
+});
+it('rejects changed settings, cold resume, lost pause telemetry and revoked admission without physical commands', async () => {
+	const f = await fixture();
+	const common = await prepareSwap(f, true);
+	await f.submit({
+		type: 'filamentChangeBegin',
+		...common,
+		settingsRevision: 6,
+		adoptPaused: true
+	});
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('failed');
+	await f.runtime.runPromise(SubscriptionRef.update(f.state, (s) => ({ ...s, paused: null })));
+	await f.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: true });
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('failed');
+	await f.runtime.runPromise(SubscriptionRef.update(f.state, (s) => ({ ...s, paused: true })));
+	await f.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: true });
+	await f.finished();
+	const session = (await f.snapshot()).filamentChange!;
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			filament: { ...s.filament!, canExtrude: false },
+			heaters: { ...s.heaters, nozzle: { current: 25, target: 0 } }
+		}))
+	);
+	await f.submit({
+		type: 'filamentChangeResume',
+		sessionId: session.id,
+		expectedStep: 1,
+		expectedJob: common.expectedJob,
+		confirmed: true
+	});
+	await f.finished();
+	expect((await f.snapshot()).actions[0].message).toContain('cold');
+	await expect(
+		f.submit(
+			{
+				type: 'filamentChangeEnd',
+				sessionId: session.id,
+				expectedStep: 1,
+				expectedJob: common.expectedJob,
+				confirmed: true
+			},
+			{ ...owner, authorized: () => false }
+		)
+	).rejects.toThrow('authorized');
+	expect(f.operations).toHaveLength(0);
+});
+
+it('lets an owner end only guidance offline while retaining unknown-action recovery and deduplicating the receipt', async () => {
+	const f = await fixture();
+	const common = await prepareSwap(f, true);
+	await f.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: true });
+	await f.finished();
+	const session = (await f.snapshot()).filamentChange!;
+	f.setBehavior('drop');
+	await f.submit({
+		type: 'filamentChangeResume',
+		sessionId: session.id,
+		expectedStep: 1,
+		expectedJob: common.expectedJob,
+		confirmed: true
+	});
+	await f.finished();
+	const before = await f.snapshot();
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			connection: 'reconnecting' as const,
+			telemetryReady: false
+		}))
+	);
+	await expect.poll(async () => (await f.snapshot()).connection).toBe('reconnecting');
+	const command = {
+		type: 'filamentChangeEnd' as const,
+		sessionId: session.id,
+		expectedStep: 2,
+		expectedJob: { filename: '', runId: '' },
+		confirmed: true
+	};
+	const id = crypto.randomUUID();
+	await f.submit(command, owner, id);
+	await f.submit(command, owner, id);
+	const after = await f.snapshot();
+	expect(after.filamentChange?.stage).toBe('finished');
+	expect(after.liveRecovery).toEqual(before.liveRecovery);
+	expect(after.safety).toEqual(before.safety);
+	expect(after.storage).toBe(before.storage);
+	expect(after.actions.filter((a) => a.id === id)).toHaveLength(1);
+	expect(f.operations).toHaveLength(1);
+});
+
+it('turns changed macro configuration into review without dispatching another physical command', async () => {
+	const f = await fixture();
+	const common = await prepareSwap(f, true);
+	await f.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: true });
+	await f.finished();
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			filamentChange: { ...s.filamentChange!, fingerprint: 'b'.repeat(64) }
+		}))
+	);
+	await expect.poll(async () => (await f.snapshot()).filamentChange?.stage).toBe('review');
+	const session = (await f.snapshot()).filamentChange!;
+	await f.submit({
+		type: 'filamentChangeResume',
+		sessionId: session.id,
+		expectedStep: session.step,
+		expectedJob: common.expectedJob,
+		confirmed: true
+	});
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('failed');
+	expect(f.operations).toHaveLength(0);
+});

@@ -1,3 +1,4 @@
+import { SqlClient } from 'effect/sql/SqlClient';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -107,5 +108,34 @@ it('retains setup plans through a backend restart', async () => {
 	} finally {
 		await runtime.dispose();
 		await rm(directory, { recursive: true, force: true });
+	}
+});
+
+it('prevents setup replacement while any action reservation or filament session owns the printer', async () => {
+	const runtime = ManagedRuntime.make(
+		FilamentChangeStoreLive.pipe(Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })))
+	);
+	try {
+		const store = await runtime.runPromise(FilamentChangeStore);
+		const sql = await runtime.runPromise(SqlClient);
+		await runtime.runPromise(
+			sql`INSERT INTO live_action_reservation(target,action_id) VALUES('printer','pending')`
+		);
+		expect(await runtime.runPromise(store.put('printer', defaultFilamentChangeSettings))).toBe(
+			false
+		);
+		await runtime.runPromise(sql`DELETE FROM live_action_reservation`);
+		await runtime.runPromise(
+			sql`INSERT INTO filament_change_sessions(target,state) VALUES('printer','{"stage":"review"}')`
+		);
+		expect(await runtime.runPromise(store.put('printer', defaultFilamentChangeSettings))).toBe(
+			false
+		);
+		await runtime.runPromise(sql`UPDATE filament_change_sessions SET state='{"stage":"finished"}'`);
+		expect(await runtime.runPromise(store.put('printer', defaultFilamentChangeSettings))).toBe(
+			true
+		);
+	} finally {
+		await runtime.dispose();
 	}
 });

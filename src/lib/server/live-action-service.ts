@@ -1,3 +1,12 @@
+import {
+	filamentChangeActive,
+	interruptFilamentChange,
+	defaultFilamentChangeSettings,
+	type FilamentChangeSession,
+	type FilamentChangeSettings,
+	type FilamentChangeCommand
+} from '#lib/domain/filament-change.js';
+import { filamentChangePlan } from './filament-change-plan.js';
 import { recordJobOwner } from './job-attribution.js';
 import { pidActive, pidReason, samePid, type PidState } from '#lib/domain/pid.js';
 import { liveConsoleScript, consoleReason } from '#lib/domain/console.js';
@@ -56,7 +65,7 @@ function resumeFilename(payload: string | undefined): string | undefined {
 	try {
 		const command = JSON.parse(payload ?? 'null');
 		if (
-			command?.type === 'resume' &&
+			(command?.type === 'resume' || command?.type?.startsWith('filamentChange')) &&
 			typeof command.expectedJob?.runId === 'string' &&
 			command.expectedJob.runId &&
 			typeof command.expectedJob.filename === 'string' &&
@@ -78,11 +87,20 @@ const check = <A>(f: () => A) =>
 		try: f,
 		catch: (cause) => reject(cause instanceof Error ? cause.message : 'Action validation failed.')
 	});
-const authorized = (actor: CalibrationActor) =>
-	['owner', 'operator'].includes(actor.role ?? '') && actor.authorized?.() === true;
+const authorized = (actor: CalibrationActor) => {
+	try {
+		return ['owner', 'operator'].includes(actor.role ?? '') && actor.authorized?.() === true;
+	} catch {
+		return false;
+	}
+};
 const recoveryMessage =
 	'A live action has an unknown outcome. Inspect the printer, then review recovery in Controls. No command was replayed.';
 const supported = new Set([
+	'filamentChangeBegin',
+	'filamentChangeResume',
+	'filamentChangeEnd',
+	'filamentChangeRecover',
 	'pidCalibrate',
 	'console',
 	'zProbeBegin',
@@ -188,6 +206,37 @@ export const LiveActionServiceLive = Layer.effect(
 					}
 				: null
 		}));
+		const savedSwap = yield* sql<{
+			state: string;
+		}>`SELECT state FROM filament_change_sessions WHERE target=${target}`;
+		const restoredSwap = savedSwap[0]
+			? interruptFilamentChange(
+					JSON.parse(savedSwap[0].state),
+					'Backend restarted. Inspect the paused print and explicitly review guidance. No command was replayed.'
+				)
+			: null;
+		const writeSwap = (state: FilamentChangeSession) =>
+			sql`INSERT INTO filament_change_sessions(target,state) VALUES(${target},${JSON.stringify(state)}) ON CONFLICT(target) DO UPDATE SET state=excluded.state`.pipe(
+				Effect.asVoid
+			);
+		const readSwapSetup = () =>
+			sql<{
+				value: string;
+				revision: number;
+			}>`SELECT value,revision FROM filament_change_settings WHERE target=${target}`.pipe(
+				Effect.map((rows) =>
+					rows[0]
+						? ({
+								...JSON.parse(rows[0].value),
+								revision: rows[0].revision
+							} as FilamentChangeSettings)
+						: defaultFilamentChangeSettings
+				)
+			);
+		yield* update((s) => ({ ...s, filamentChange: restoredSwap }));
+		if (restoredSwap) yield* writeSwap(restoredSwap);
+		let swapActor: CalibrationActor | undefined;
+		let swapCheckpoint: FilamentChangeSession | undefined;
 		const persistedFilament = yield* sql<{
 			state: string;
 		}>`SELECT state FROM live_filament_state WHERE target=${target}`;
@@ -259,6 +308,24 @@ export const LiveActionServiceLive = Layer.effect(
 			| undefined;
 		let working = false;
 		const validate = (s: PrinterSnapshot, request: ActionRequest, actor: CalibrationActor) => {
+			if (
+				filamentChangeActive(s.filamentChange) &&
+				!request.command.type.startsWith('filamentChange') &&
+				!['cancel', 'temperature', 'cooldown'].includes(request.command.type)
+			)
+				throw reject(
+					'Filament-change guidance owns this print. Continue or end it in Filament changes.'
+				);
+			if (
+				filamentChangeActive(s.filamentChange) &&
+				['temperature', 'cooldown'].includes(request.command.type) &&
+				s.filamentChange?.ownerId !== actor.id
+			)
+				throw reject(
+					'The operator handling this filament change controls its heater targets. An owner can explicitly take over guidance.'
+				);
+			if (request.command.type.startsWith('filamentChange') && extrusionActive(s.extrusion))
+				throw reject('Finish or recover extrusion calibration before starting filament guidance.');
 			if (pidActive(s.pid))
 				throw reject(
 					'PID calibration owns the printer. Use the independent emergency control to stop it.'
@@ -408,6 +475,8 @@ export const LiveActionServiceLive = Layer.effect(
 			});
 		const run = (job: NonNullable<typeof work>) =>
 			Effect.gen(function* () {
+				let swapResult: FilamentChangeSession | undefined,
+					swapBefore: FilamentChangeSession | null | undefined;
 				let sent = false;
 				let remainsPaused = false;
 				let startRun: string | undefined, startHistory: string | undefined;
@@ -433,8 +502,30 @@ export const LiveActionServiceLive = Layer.effect(
 					const z = job.request.command.type.startsWith('zProbe')
 						? yield* check(() => zProbePlan(job.request, s, fresh, job.actor))
 						: null;
+					const swapSetup = job.request.command.type.startsWith('filamentChange')
+						? yield* readSwapSetup()
+						: null;
+					const swap = job.request.command.type.startsWith('filamentChange')
+						? yield* check(() =>
+								filamentChangePlan(
+									job.request.command as FilamentChangeCommand,
+									job.action.id,
+									s.filamentChange,
+									swapSetup!,
+									fresh,
+									job.actor
+								)
+							)
+						: null;
 					const operations =
-						z?.operations ?? filament?.operations ?? (yield* plan(job.request, s, fresh));
+						swap?.operations ??
+						z?.operations ??
+						filament?.operations ??
+						(yield* plan(job.request, s, fresh));
+					if (swap) {
+						swapResult = swap.session;
+						swapBefore = s.filamentChange;
+					}
 					if (z) {
 						zResult = z.state;
 						zBefore = s.liveZ ?? { session: null };
@@ -494,6 +585,10 @@ export const LiveActionServiceLive = Layer.effect(
 						yield* writeZ(pendingZ);
 						yield* update((s) => ({ ...s, liveZ: pendingZ }));
 					}
+					if (swapResult) {
+						yield* writeSwap(swapResult);
+						yield* update((s) => ({ ...s, filamentChange: swapResult }));
+					}
 					for (const [index, op] of operations.entries()) {
 						if (index === 0 && Date.now() - job.action.createdAt >= 30000)
 							return yield* Effect.fail(reject('Action expired before dispatch.'));
@@ -530,7 +625,8 @@ export const LiveActionServiceLive = Layer.effect(
 					// Ack is insufficient: observe the intended state through a fresh query.
 					const deadline =
 						Date.now() +
-						(settings.observationMs ?? (job.request.command.type === 'resume' ? 120000 : 10000));
+						(settings.observationMs ??
+							(job.request.command.type === 'resume' || swapResult ? 120000 : 10000));
 					while (true) {
 						if (!interlock.allows(job.epoch))
 							return yield* Effect.fail(reject('Emergency stop interrupted action verification.'));
@@ -538,6 +634,65 @@ export const LiveActionServiceLive = Layer.effect(
 						if (!interlock.allows(job.epoch))
 							return yield* Effect.fail(reject('Emergency stop interrupted action verification.'));
 						const c = job.request.command;
+						if (swapResult) {
+							const command = c as FilamentChangeCommand;
+							if (
+								observed.job.filename !== command.expectedJob.filename ||
+								(observed.job.runId ?? '') !== command.expectedJob.runId
+							)
+								return yield* Effect.fail(
+									reject('Print identity changed during filament verification.')
+								);
+							if (
+								observed.connection !== 'connected' ||
+								observed.klippy !== 'ready' ||
+								!observed.telemetryReady
+							)
+								return yield* Effect.fail(
+									reject('Printer continuity was lost during filament verification.')
+								);
+							if (
+								command.type === 'filamentChangeEnd' &&
+								observed.motion.busy === false &&
+								observed.job.state !== 'printing'
+							)
+								return;
+							if (
+								command.type === 'filamentChangeResume' &&
+								observed.job.state === 'printing' &&
+								observed.paused === false
+							) {
+								swapResult = {
+									...swapResult,
+									stage: 'finished',
+									message: 'The same print is running again. Filament guidance is complete.'
+								};
+								return;
+							}
+							if (!observed.motion.calibration && observed.motion.busy === false) {
+								if (observed.job.state === 'paused' && observed.paused === true) {
+									swapResult = {
+										...swapResult,
+										stage: 'paused',
+										message:
+											command.type === 'filamentChangeResume'
+												? 'Resume macro completed; this print remains paused. Follow the printer instructions and remove purged material before another deliberate Resume.'
+												: command.type === 'filamentChangeRecover'
+													? swapResult.message
+													: 'Print paused and stationary. Follow your printer macro’s unload/load instructions. Perilune has not added any park or extrusion moves.'
+									};
+									return;
+								}
+							}
+							if (Date.now() >= deadline)
+								return yield* Effect.fail(
+									reject(
+										'The filament macro could not be matched to a stationary pause or resumed print.'
+									)
+								);
+							yield* Effect.sleep('250 millis');
+							continue;
+						}
 						if (c.type === 'pidCalibrate') {
 							const parameters = observed.pidTelemetry?.pending[c.heater];
 							if (
@@ -769,6 +924,13 @@ export const LiveActionServiceLive = Layer.effect(
 							? interruptExtrusion(filamentResult, recoveryMessage)
 							: filamentBefore!
 					: undefined;
+				const finalSwap = swapResult
+					? result._tag === 'Success'
+						? swapResult
+						: sent
+							? interruptFilamentChange(swapResult, recoveryMessage)
+							: swapBefore
+					: undefined;
 				const persisted = yield* sql
 					.withTransaction(
 						Effect.gen(function* () {
@@ -777,6 +939,9 @@ export const LiveActionServiceLive = Layer.effect(
 								yield* recordJobOwner(startRun, job.action.id, job.actor.id, startHistory).pipe(
 									Effect.provideService(SqlClient, sql)
 								);
+							if (finalSwap) yield* writeSwap(finalSwap);
+							else if (swapResult)
+								yield* sql`DELETE FROM filament_change_sessions WHERE target=${target}`;
 							if (finalFilament) yield* writeFilament(finalFilament);
 							if (finalZ) yield* writeZ(finalZ);
 							if (finalPid) yield* writePid(finalPid);
@@ -787,6 +952,11 @@ export const LiveActionServiceLive = Layer.effect(
 					.pipe(Effect.result);
 				yield* update((s) => ({
 					...s,
+					filamentChange: swapResult
+						? persisted._tag === 'Failure'
+							? interruptFilamentChange(swapResult, recoveryMessage)
+							: (finalSwap ?? null)
+						: s.filamentChange,
 					pid: finalPid
 						? persisted._tag === 'Failure'
 							? {
@@ -829,11 +999,68 @@ export const LiveActionServiceLive = Layer.effect(
 							: a
 					)
 				}));
+				if (result._tag === 'Success' && swapResult) swapActor = job.actor;
 				if (result._tag === 'Success' && filamentResult) filamentActor = job.actor;
 				if (result._tag === 'Success' && zResult) zActor = job.actor;
 			});
+		const monitorSwap = gate.withPermits(1)(
+			Effect.gen(function* () {
+				if (work || working) return;
+				if (swapCheckpoint) {
+					const saved = yield* writeSwap(swapCheckpoint).pipe(Effect.result);
+					if (saved._tag === 'Success') {
+						swapCheckpoint = undefined;
+						yield* update((s) => ({ ...s, storage: s.liveRecovery ? s.storage : 'healthy' }));
+					}
+					return;
+				}
+				const swapSnapshot = yield* SubscriptionRef.get(printer.state);
+				const activeSwap = swapSnapshot.filamentChange;
+				if (filamentChangeActive(activeSwap) && activeSwap?.stage !== 'review') {
+					const hardware = yield* SubscriptionRef.get(transport.state);
+					const interrupted =
+						!swapActor ||
+						!authorized(swapActor) ||
+						swapSnapshot.liveRecovery ||
+						interlock.halted ||
+						safetyReason(swapSnapshot.safety) ||
+						hardware.connection !== 'connected' ||
+						hardware.klippy !== 'ready' ||
+						!hardware.telemetryReady ||
+						hardware.generation !== activeSwap!.generation ||
+						hardware.filamentChange?.fingerprint !== activeSwap!.fingerprint ||
+						hardware.job.runId !== activeSwap!.runId ||
+						hardware.job.filename !== activeSwap!.filename ||
+						Date.now() >= activeSwap!.expiresAt;
+					const ended =
+						!interrupted &&
+						(['complete', 'cancelled', 'standby', 'error'].includes(hardware.job.state) ||
+							(hardware.job.state === 'printing' && hardware.paused === false));
+					if (interrupted || ended || hardware.job.state !== 'paused' || hardware.paused !== true) {
+						const next = ended
+							? {
+									...activeSwap!,
+									stage: 'finished' as const,
+									message: 'Filament guidance ended. No further filament command was sent.'
+								}
+							: interruptFilamentChange(
+									activeSwap!,
+									'Filament guidance was interrupted or printer continuity changed. An owner must inspect the current print. No command was replayed.'
+								);
+						const saved = yield* writeSwap(next).pipe(Effect.result);
+						if (saved._tag === 'Failure') swapCheckpoint = next;
+						yield* update((s) => ({
+							...s,
+							filamentChange: next,
+							storage: saved._tag === 'Failure' ? 'degraded' : s.storage
+						}));
+					}
+				}
+			})
+		);
 		yield* Effect.gen(function* () {
 			if (!work && !working) {
+				yield* monitorSwap;
 				if (zCheckpoint) {
 					const saved = yield* writeZ(zCheckpoint).pipe(Effect.result);
 					if (saved._tag === 'Success') {
@@ -1018,6 +1245,58 @@ export const LiveActionServiceLive = Layer.effect(
 							return existing.action;
 						}
 						const s = yield* SubscriptionRef.get(printer.state);
+						if (request.command.type === 'filamentChangeEnd' && actor.role === 'owner') {
+							const c = request.command,
+								session = s.filamentChange;
+							if (
+								!c.confirmed ||
+								!session ||
+								!filamentChangeActive(session) ||
+								c.sessionId !== session.id ||
+								c.expectedStep !== session.step
+							)
+								return yield* Effect.fail(
+									reject('Review the current filament session and confirm ending guidance.')
+								);
+							if (
+								work ||
+								working ||
+								swapCheckpoint ||
+								s.storage !== 'healthy' ||
+								s.actions.some((a) => ['queued', 'sending'].includes(a.status))
+							)
+								return yield* Effect.fail(
+									reject('Wait for pending work and state persistence before ending guidance.')
+								);
+							const finished: FilamentChangeSession = {
+								...session,
+								step: session.step + 1,
+								stage: 'finished',
+								message:
+									'Owner ended guidance. The printer was not stopped or resumed, and its position was not verified. Any safety or unknown-action recovery still needs review.'
+							};
+							const action: ActionRecord = {
+								id: request.id,
+								label: actionLabel(c),
+								status: 'completed',
+								createdAt: Date.now(),
+								message: finished.message
+							};
+							yield* sql.withTransaction(
+								Effect.gen(function* () {
+									if (!authorized(actor))
+										return yield* Effect.fail(reject('Owner authorization expired.'));
+									yield* store.insert(action, c, actor.id);
+									yield* writeSwap(finished);
+								})
+							);
+							yield* update((current) => ({
+								...current,
+								filamentChange: finished,
+								actions: [action, ...current.actions].slice(0, 20)
+							}));
+							return action;
+						}
 						yield* check(() => validate(s, request, actor));
 						if (work || s.actions.some((a) => ['queued', 'sending'].includes(a.status)))
 							return yield* Effect.fail(reject('Another action is pending.'));

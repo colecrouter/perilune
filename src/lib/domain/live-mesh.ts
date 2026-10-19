@@ -1,3 +1,4 @@
+import { filamentChangeActive } from './filament-change.js';
 import { safetyReason } from './safety.js';
 import type { PrinterSnapshot } from './printer.js';
 import type { BedMesh } from './bed-mesh.js';
@@ -54,6 +55,7 @@ export function liveMeshPlan(config: unknown): LiveMeshPlan | null {
 	return { min, max, offset, columns: count[0], rows: count[1], samples };
 }
 export function liveMeshReason(state: PrinterSnapshot, allowReservation = false): string | null {
+	if (filamentChangeActive(state.filamentChange)) return 'Finish filament-change guidance first.';
 	const safety = safetyReason(state.safety);
 	if (safety) return safety;
 	if (state.liveRecovery) return state.liveRecovery.message;

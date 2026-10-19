@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { defaultFilamentChangeSettings } from '#lib/domain/filament-change.js';
+	import FilamentChangeWorkflow from '#lib/components/FilamentChangeWorkflow.svelte';
+	import {
+		filamentChangeActive,
+		defaultFilamentChangeSettings
+	} from '#lib/domain/filament-change.js';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import { getPrinter } from '../printer.remote.js';
 	import { getFilamentSetup, saveFilamentSetup } from './filament.remote.js';
@@ -36,6 +40,10 @@
 	});
 	let message = $state('');
 	const owner = $derived(data.user?.role === 'owner');
+	const setupLocked = $derived(
+		filamentChangeActive(snapshot.filamentChange) ||
+			snapshot.actions.some((a) => a.status === 'queued' || a.status === 'sending')
+	);
 	async function save() {
 		if (!query || !hydrated) return;
 		pending = true;
@@ -51,7 +59,7 @@
 			});
 			revision = (await query).settings.revision;
 			message =
-				'Setup plan saved. Guided execution is still being built; physical compatibility needs an attended test.';
+				'Setup plan saved. Guided changes use these macros; physical compatibility still needs an attended test.';
 		} catch (cause) {
 			message = cause instanceof Error ? cause.message : 'Setup could not be saved.';
 		} finally {
@@ -71,6 +79,13 @@
 				<h2>Operator access required</h2>
 				<p>An operator or owner can review private printer macros and filament-change setup.</p>
 			</section>{:else}
+			<FilamentChangeWorkflow
+				{snapshot}
+				settingsRevision={setup.settings.revision}
+				setupReason={setup.reason}
+				userId={data.user!.id}
+				role={data.user!.role}
+			/>
 			<section class="panel">
 				<h2>Printer compatibility</h2>
 				{#if setup.capability}
@@ -92,7 +107,10 @@
 			</section>
 			<section class="panel">
 				<h2>Change method</h2>
-				<p>This saves a setup plan. It does not enable printer commands yet.</p>
+				<p>
+					This selects the macros used by guided filament changes. Configuration changes invalidate
+					review.
+				</p>
 				<form
 					onsubmit={(event) => {
 						event.preventDefault();
@@ -145,13 +163,16 @@
 					{#if owner}<button
 							class="button primary"
 							disabled={!hydrated ||
+								setupLocked ||
 								pending ||
 								(mode !== 'disabled' && (!reviewed || !setup.ready))}
 							>{pending ? 'Saving…' : 'Save plan'}</button
 						>{:else}<p>An owner can change this setup.</p>{/if}
 				</form>
 				{#if message}<p role="status">{message}</p>{/if}
-				{#if setup.reason}<p>{setup.reason}</p>{/if}
+				{#if setup.reason && filamentChangeActive(snapshot.filamentChange)}<p>
+						{setup.reason}
+					</p>{/if}
 			</section>
 			<section class="panel">
 				<h2>No suitable macro?</h2>

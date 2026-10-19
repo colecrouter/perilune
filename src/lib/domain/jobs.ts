@@ -1,3 +1,4 @@
+import { filamentChangeActive } from './filament-change.js';
 import { safetyReason } from './safety.js';
 import type { PrinterSnapshot } from './printer.js';
 export const MAX_GCODE_BYTES = 20 * 1024 * 1024;
@@ -69,6 +70,8 @@ export function safeRelativePath(value: string): boolean {
 	);
 }
 export function startReason(snapshot: PrinterSnapshot, checkPending = true): string | null {
+	if (filamentChangeActive(snapshot.filamentChange))
+		return 'Filament-change guidance owns this print. Continue or end it first.';
 	const safety = safetyReason(snapshot.safety);
 	if (safety) return safety;
 	if (snapshot.liveRecovery) return snapshot.liveRecovery.message;

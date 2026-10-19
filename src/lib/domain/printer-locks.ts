@@ -1,3 +1,4 @@
+import { filamentChangeActive, filamentChangeLockMessage } from './filament-change.js';
 import type { PrinterSnapshot } from './printer.js';
 import { meshProbeActive } from './mesh-probe.js';
 import { extrusionActive } from './extrusion.js';
@@ -7,7 +8,15 @@ import { pidActive } from './pid.js';
 
 /** Explanations only. Admission and recovery remain owned by their existing services. */
 export interface PrinterLockNotice {
-	id: 'mesh' | 'extrusion' | 'pid' | 'z' | 'calibration' | 'configuration' | 'storage';
+	id:
+		| 'filamentChange'
+		| 'mesh'
+		| 'extrusion'
+		| 'pid'
+		| 'z'
+		| 'calibration'
+		| 'configuration'
+		| 'storage';
 	kind: 'progress' | 'attention';
 	title: string;
 	message: string;
@@ -18,6 +27,19 @@ export interface PrinterLockNotice {
 }
 export function printerLockNotices(state: PrinterSnapshot): PrinterLockNotice[] {
 	const notices: PrinterLockNotice[] = [];
+	if (filamentChangeActive(state.filamentChange))
+		notices.push({
+			id: 'filamentChange',
+			kind: state.filamentChange?.stage === 'review' ? 'attention' : 'progress',
+			title:
+				state.filamentChange?.stage === 'review'
+					? 'Filament change needs review'
+					: 'Filament change in progress',
+			message: filamentChangeLockMessage,
+			href: '/filament',
+			label: 'Review filament change',
+			operatorRequired: true
+		});
 	const mesh = state.meshProbe.session;
 	if (meshProbeActive(state.meshProbe)) {
 		const uncertain = mesh?.stage === 'uncertain';

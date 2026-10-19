@@ -45,3 +45,67 @@ export function filamentSetupReason(
 		return 'The selected resume macro is not registered on this printer.';
 	return null;
 }
+
+const jobIdentity = Schema.Struct({
+	filename: Schema.String.check(Schema.isMaxLength(512)),
+	runId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200))
+});
+export const FilamentChangeCommand = Schema.Union([
+	Schema.Struct({
+		type: Schema.Literal('filamentChangeBegin'),
+		expectedJob: jobIdentity,
+		settingsRevision: Schema.Int,
+		adoptPaused: Schema.Boolean,
+		confirmed: Schema.Boolean
+	}),
+	Schema.Struct({
+		type: Schema.Literal('filamentChangeResume'),
+		sessionId: Schema.String.check(Schema.isUUID()),
+		expectedStep: Schema.Int,
+		expectedJob: jobIdentity,
+		confirmed: Schema.Boolean
+	}),
+	Schema.Struct({
+		type: Schema.Literal('filamentChangeRecover'),
+		sessionId: Schema.String.check(Schema.isUUID()),
+		expectedStep: Schema.Int,
+		expectedJob: jobIdentity,
+		confirmed: Schema.Boolean
+	}),
+	Schema.Struct({
+		type: Schema.Literal('filamentChangeEnd'),
+		sessionId: Schema.String.check(Schema.isUUID()),
+		expectedStep: Schema.Int,
+		expectedJob: Schema.Struct({
+			filename: Schema.String.check(Schema.isMaxLength(512)),
+			runId: Schema.String.check(Schema.isMaxLength(200))
+		}),
+		confirmed: Schema.Boolean
+	})
+]);
+export type FilamentChangeCommand = typeof FilamentChangeCommand.Type;
+export interface FilamentChangeSession {
+	id: string;
+	ownerId: string;
+	filename: string;
+	runId: string;
+	generation: number;
+	settingsRevision: number;
+	fingerprint: string;
+	step: number;
+	stage: 'waiting' | 'paused' | 'review' | 'finished';
+	startedAt: number;
+	expiresAt: number;
+	message: string;
+}
+export const filamentChangeActive = (session?: FilamentChangeSession | null) =>
+	!!session && session.stage !== 'finished';
+export function interruptFilamentChange(
+	session: FilamentChangeSession,
+	message: string
+): FilamentChangeSession {
+	return filamentChangeActive(session) ? { ...session, stage: 'review', message } : session;
+}
+
+export const filamentChangeLockMessage =
+	'Filament-change guidance owns this print. Continue or end guidance there before using other controls.';
