@@ -192,3 +192,33 @@ test('expanding a response group pauses following and revision-only updates pres
 		false
 	);
 });
+
+test('the composer follows stable history and keeps a wide send action with keyboard help below it', async () => {
+	const screen = await render(PrinterConsole, {
+		snapshot: initial,
+		connected: true,
+		onSubmit: vi.fn(),
+		onFind: vi.fn(),
+		onPin: vi.fn()
+	});
+	const history = screen.container.querySelector('.log') as HTMLElement;
+	const composer = screen.container.querySelector('textarea')!;
+	const send = screen.container.querySelector('.send-command')!;
+	const hint = screen.container.querySelector('#console-history-hint')!;
+	expect(history.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	expect(send.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	expect(send.getBoundingClientRect().width).toBeGreaterThan(
+		composer.getBoundingClientRect().width * 0.9
+	);
+	const height = history.clientHeight;
+	await screen.rerender({
+		snapshot: {
+			...initial,
+			receipts: [
+				{ ...receipt, status: 'completed', output: Array(50).fill('Retained printer response') }
+			]
+		}
+	});
+	expect(history.clientHeight).toBe(height);
+	await expect.element(screen.getByText('Physical keyboard:', { exact: false })).toBeVisible();
+});

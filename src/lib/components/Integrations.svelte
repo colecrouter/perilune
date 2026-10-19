@@ -206,40 +206,52 @@
 			</div>
 		{:else}<p>{loaded ? 'No active slicer keys.' : 'Loading slicer keys…'}</p>{/each}
 	{/if}
-	<h3>Paired browsers</h3>
-	<p>
-		Approve a slicer Device tab, touchscreen, or another browser. Paired browsers use your account
-		permissions and stay signed in for up to 90 days.
-	</p>
-	<a class="button secondary" href="/pair">Approve a browser</a>
-	{#each browsers as browser (browser.id)}
-		<div class="integration-row">
-			<div>
-				<strong>{browser.name}</strong>{#if browser.current}<small>This browser</small
-					>{/if}{#if browser.integrationId}<small
-						>Linked to {keys.find((key) => key.id === browser.integrationId)?.name ??
-							'a revoked integration'}</small
-					>{/if}
-				<p>
-					Paired {new Date(browser.created).toLocaleDateString()} · Expires {new Date(
-						browser.expires
-					).toLocaleDateString()}
-				</p>
-				{#if rowMessages[browser.id]}<p class="feedback" role="status">
-						{rowMessages[browser.id]}
-					</p>{/if}
+	<section class="paired-browsers" aria-labelledby="paired-browsers-heading">
+		<h3 id="paired-browsers-heading">Paired browsers</h3>
+		<p>
+			Approve a slicer Device tab, touchscreen, or another browser. Paired browsers use your account
+			permissions and stay signed in for up to 90 days.
+		</p>
+		<a class="button secondary" href="/pair">Approve a browser</a>
+		{#each browsers as browser (browser.id)}
+			<div class="integration-row">
+				<div>
+					<strong>{browser.name}</strong>{#if browser.current}<small>This browser</small
+						>{/if}{#if browser.integrationId}<small
+							>Linked to {keys.find((key) => key.id === browser.integrationId)?.name ??
+								'a revoked integration'}</small
+						>{/if}
+					<p>
+						Paired {new Date(browser.created).toLocaleDateString()} · Expires {new Date(
+							browser.expires
+						).toLocaleDateString()}
+					</p>
+					{#if rowMessages[browser.id]}<p class="feedback" role="status">
+							{rowMessages[browser.id]}
+						</p>{/if}
+				</div>
+				<button
+					class="button secondary"
+					disabled={pending[browser.id]}
+					onclick={() => action('browser', browser.id)}>Sign out browser</button
+				>
 			</div>
-			<button
-				class="button secondary"
-				disabled={pending[browser.id]}
-				onclick={() => action('browser', browser.id)}>Sign out browser</button
-			>
-		</div>
-	{:else}<p>{loaded ? 'No paired browsers.' : 'Loading paired browsers…'}</p>{/each}
+		{:else}<p>{loaded ? 'No paired browsers.' : 'Loading paired browsers…'}</p>{/each}
+	</section>
 	{#if copyMessage}<p class="feedback" role="status">{copyMessage}</p>{/if}
 </section>
 
 <style>
+	.paired-browsers {
+		display: grid;
+		gap: 0.75rem;
+		margin-top: 1.5rem;
+		padding-top: 1.25rem;
+		border-top: 1px solid var(--border);
+	}
+	.paired-browsers > .button {
+		justify-self: start;
+	}
 	.setup-guide {
 		margin: 0.75rem 0 1rem;
 	}

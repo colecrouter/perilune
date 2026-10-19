@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { Tabs } from 'bits-ui';
 	import DisplayPreferences from '#lib/components/DisplayPreferences.svelte';
 	import Integrations from '#lib/components/Integrations.svelte';
 	import DeviceSettings from '#lib/components/DeviceSettings.svelte';
@@ -13,6 +14,11 @@
 		{ id: 'preferences', label: 'Display' }
 	];
 	let active = $state('access');
+	function selectSection(value: string) {
+		active = value;
+		// Updating the address directly keeps tab changes from scrolling to fragment targets.
+		history.replaceState(history.state, '', `#${value}`);
+	}
 	let accounts = $state<{ id: string; name: string; email: string; role: string }[]>([]);
 	let invitations = $state<
 		{ hash: string; role: string; expires: number; claimed: number | null }[]
@@ -117,115 +123,115 @@
 				<p>{data.user?.name} · {data.user?.role}</p>
 			</div>
 		</header>
-		<nav class="account-sections" aria-label="Account sections">
-			{#each sections as section}<a
-					href={`#${section.id}`}
-					aria-current={active === section.id ? 'location' : undefined}
-					onclick={() => (active = section.id)}>{section.label}</a
-				>{/each}
-		</nav>
-		<div hidden={active !== 'preferences'} id="preferences"><DisplayPreferences /></div>
-		<div hidden={active !== 'notifications'} id="notifications"><DeviceSettings /></div>
-		<div hidden={active !== 'integrations'}>
-			<Integrations canOperate={data.user?.role === 'owner' || data.user?.role === 'operator'} />
-		</div>
-		<div hidden={active !== 'access'} id="access">
-			<section class="account-card" aria-labelledby="secure-access">
-				<h2 id="secure-access">Secure access</h2>
-				<p>Use your device’s fingerprint, face recognition, or security key to sign in.</p>
-				<div class="actions">
-					<button class="button primary" onclick={addPasskey} disabled={pending.security}
-						>Add a passkey</button
-					><button class="button secondary" onclick={logout} disabled={pending.security}
-						>Sign out</button
-					>
-				</div>
-				{#if messages.security}<p class="feedback" role="status">{messages.security}</p>{/if}
-			</section>
-			{#if data.user?.role === 'owner'}
-				<section class="account-card" aria-labelledby="invite-heading">
-					<h2 id="invite-heading">Invite someone</h2>
-					<div class="invite-form">
-						<label
-							>Access<select bind:value={role}
-								><option value="viewer">Viewer</option><option value="operator">Operator</option
-								><option value="owner">Owner</option></select
-							></label
-						><button
-							class="button primary"
-							disabled={pending.invite}
-							onclick={() => action('invite', { role }, 'invite')}
-							>{pending.invite ? 'Creating…' : 'Create invitation'}</button
+		<Tabs.Root value={active} onValueChange={selectSection} activationMode="automatic" loop>
+			<Tabs.List class="account-sections" aria-label="Account sections">
+				{#each sections as section}<Tabs.Trigger class="account-tab" value={section.id}
+						>{section.label}</Tabs.Trigger
+					>{/each}
+			</Tabs.List>
+			<Tabs.Content value="preferences"><DisplayPreferences /></Tabs.Content>
+			<Tabs.Content value="notifications"><DeviceSettings /></Tabs.Content>
+			<Tabs.Content value="integrations">
+				<Integrations canOperate={data.user?.role === 'owner' || data.user?.role === 'operator'} />
+			</Tabs.Content>
+			<Tabs.Content value="access">
+				<section class="account-card" aria-labelledby="secure-access">
+					<h2 id="secure-access">Secure access</h2>
+					<p>Use your device’s fingerprint, face recognition, or security key to sign in.</p>
+					<div class="actions">
+						<button class="button primary" onclick={addPasskey} disabled={pending.security}
+							>Add a passkey</button
+						><button class="button secondary" onclick={logout} disabled={pending.security}
+							>Sign out</button
 						>
 					</div>
-					<p class="help">
-						{role === 'viewer'
-							? 'Viewers can watch status and the camera.'
-							: role === 'operator'
-								? 'Operators can also use printer controls.'
-								: 'Owners can also manage accounts and invitations.'}
-					</p>
-					{#if link}<div class="invite-link">
+					{#if messages.security}<p class="feedback" role="status">{messages.security}</p>{/if}
+				</section>
+				{#if data.user?.role === 'owner'}
+					<section class="account-card" aria-labelledby="invite-heading">
+						<h2 id="invite-heading">Invite someone</h2>
+						<div class="invite-form">
 							<label
-								>Single-use link · expires in 24 hours<input
-									readonly
-									value={link}
-									onclick={(event) => event.currentTarget.select()}
-								/></label
-							><button class="button secondary" onclick={copyInvitation}>Copy link</button>
-						</div>{/if}
-					{#if messages.invite}<p class="feedback" role="status">{messages.invite}</p>{/if}
-				</section>
-				{#if messages.people}<div class="account-card" role="status">
-						<p>{messages.people}</p>
-						<button class="button secondary" onclick={load}>Retry loading accounts</button>
-					</div>{/if}
-				<section class="account-card" aria-labelledby="accounts-heading">
-					<h2 id="accounts-heading">Accounts</h2>
-					{#if messages.accountsResult}<p class="feedback" role="status">
-							{messages.accountsResult}
-						</p>{/if}
-					{#if !loaded && !messages.people}<p role="status">Loading accounts…</p>{/if}
-					{#each accounts as account}<div class="crew-row">
-							<div>
-								<strong>{account.name}</strong><small>{account.email} · {account.role}</small
-								>{#if messages[account.id]}<p class="feedback" role="status">
-										{messages[account.id]}
-									</p>{/if}
-							</div>
-							{#if account.id !== data.user.id}<button
-									class="button danger-outline"
-									disabled={pending[account.id]}
-									onclick={() => action('revoke-account', { id: account.id }, account.id)}
-									>Revoke access</button
-								>{/if}
-						</div>{/each}
-				</section>
-				<section class="account-card" aria-labelledby="invitations-heading">
-					<h2 id="invitations-heading">Invitations</h2>
-					{#if messages.invitationsResult}<p class="feedback" role="status">
-							{messages.invitationsResult}
-						</p>{/if}
-					{#each invitations.filter((invite) => !invite.claimed && invite.expires > Date.now()) as invite}<div
-							class="crew-row"
-						>
-							<div>
-								<strong>{invite.role}</strong><small
-									>Expires {new Date(invite.expires).toLocaleString()}</small
-								>{#if messages[invite.hash]}<p class="feedback" role="status">
-										{messages[invite.hash]}
-									</p>{/if}
-							</div>
-							<button
-								class="button danger-outline"
-								disabled={pending[invite.hash]}
-								onclick={() => action('revoke-invite', { hash: invite.hash }, invite.hash)}
-								>Revoke invitation</button
+								>Access<select bind:value={role}
+									><option value="viewer">Viewer</option><option value="operator">Operator</option
+									><option value="owner">Owner</option></select
+								></label
+							><button
+								class="button primary"
+								disabled={pending.invite}
+								onclick={() => action('invite', { role }, 'invite')}
+								>{pending.invite ? 'Creating…' : 'Create invitation'}</button
 							>
-						</div>{:else}{#if loaded}<p class="help">No outstanding invitations.</p>{/if}{/each}
-				</section>
-			{/if}
-		</div>
+						</div>
+						<p class="help">
+							{role === 'viewer'
+								? 'Viewers can watch status and the camera.'
+								: role === 'operator'
+									? 'Operators can also use printer controls.'
+									: 'Owners can also manage accounts and invitations.'}
+						</p>
+						{#if link}<div class="invite-link">
+								<label
+									>Single-use link · expires in 24 hours<input
+										readonly
+										value={link}
+										onclick={(event) => event.currentTarget.select()}
+									/></label
+								><button class="button secondary" onclick={copyInvitation}>Copy link</button>
+							</div>{/if}
+						{#if messages.invite}<p class="feedback" role="status">{messages.invite}</p>{/if}
+					</section>
+					{#if messages.people}<div class="account-card" role="status">
+							<p>{messages.people}</p>
+							<button class="button secondary" onclick={load}>Retry loading accounts</button>
+						</div>{/if}
+					<section class="account-card" aria-labelledby="accounts-heading">
+						<h2 id="accounts-heading">Accounts</h2>
+						{#if messages.accountsResult}<p class="feedback" role="status">
+								{messages.accountsResult}
+							</p>{/if}
+						{#if !loaded && !messages.people}<p role="status">Loading accounts…</p>{/if}
+						{#each accounts as account}<div class="crew-row">
+								<div>
+									<strong>{account.name}</strong><small>{account.email} · {account.role}</small
+									>{#if messages[account.id]}<p class="feedback" role="status">
+											{messages[account.id]}
+										</p>{/if}
+								</div>
+								{#if account.id !== data.user.id}<button
+										class="button danger-outline"
+										disabled={pending[account.id]}
+										onclick={() => action('revoke-account', { id: account.id }, account.id)}
+										>Revoke access</button
+									>{/if}
+							</div>{/each}
+					</section>
+					<section class="account-card" aria-labelledby="invitations-heading">
+						<h2 id="invitations-heading">Invitations</h2>
+						{#if messages.invitationsResult}<p class="feedback" role="status">
+								{messages.invitationsResult}
+							</p>{/if}
+						{#each invitations.filter((invite) => !invite.claimed && invite.expires > Date.now()) as invite}<div
+								class="crew-row"
+							>
+								<div>
+									<strong>{invite.role}</strong><small
+										>Expires {new Date(invite.expires).toLocaleString()}</small
+									>{#if messages[invite.hash]}<p class="feedback" role="status">
+											{messages[invite.hash]}
+										</p>{/if}
+								</div>
+								<button
+									class="button danger-outline"
+									disabled={pending[invite.hash]}
+									onclick={() => action('revoke-invite', { hash: invite.hash }, invite.hash)}
+									>Revoke invitation</button
+								>
+							</div>{:else}{#if loaded}<p class="help">No outstanding invitations.</p>{/if}{/each}
+					</section>
+				{/if}
+			</Tabs.Content>
+		</Tabs.Root>
 	</div>
 </AppShell>
 
@@ -243,28 +249,42 @@
 	.account-header p {
 		color: var(--muted);
 	}
-	.account-sections {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
+	:global(.account-sections) {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		border-bottom: 1px solid var(--border-strong);
 		margin-bottom: 1.25rem;
 	}
-	.account-sections a {
+	:global(.account-tab) {
 		display: inline-flex;
 		align-items: center;
-		min-height: 44px;
-		padding: 0.5rem 0.8rem;
-		border: 1px solid var(--border);
-		border-radius: 0.6rem;
-		color: var(--text);
-		text-decoration: none;
-		background: var(--surface);
+		justify-content: center;
+		min-width: 0;
+		min-height: 48px;
+		padding: 0.65rem 0.6rem;
+		border: 0;
+		border-bottom: 3px solid transparent;
+		border-radius: 6px 6px 0 0;
+		color: var(--muted);
+		font-size: 0.875rem;
+		background: transparent;
 	}
-	.account-sections a[aria-current] {
+	:global(.account-tab:hover) {
+		background: var(--surface);
+		color: var(--text);
+	}
+	:global(.account-tab[data-state='active']) {
 		background: var(--highlight);
 		color: var(--highlight-text);
-		border-color: var(--accent-border);
+		border-bottom-color: var(--accent);
+		font-weight: 600;
 	}
+	@media (max-width: 640px) {
+		:global(.account-sections) {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+
 	.account-card {
 		background: var(--surface);
 		border: 1px solid var(--border);

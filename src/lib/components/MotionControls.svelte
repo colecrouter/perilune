@@ -491,6 +491,7 @@
 		margin-top: 0.75rem;
 	}
 	.step-switch {
+		width: min(100%, 28rem);
 		border: 0;
 		padding: 0;
 		margin: 0.75rem 0;

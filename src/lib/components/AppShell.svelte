@@ -179,7 +179,7 @@
 		max-height: calc(100dvh - 140px);
 		overflow-y: auto;
 	}
-	@media (max-width: 600px) {
+	@media (max-width: 900px) {
 		:global(.sidebar nav .secondary-destination) {
 			display: none;
 		}
@@ -243,7 +243,7 @@
 		cursor: pointer;
 		white-space: nowrap;
 	}
-	@media (max-width: 600px) {
+	@media (max-width: 900px) {
 		:global(.nav-trigger) {
 			width: auto;
 		}

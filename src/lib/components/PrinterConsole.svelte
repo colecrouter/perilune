@@ -238,7 +238,6 @@
 <div class="console-grid">
 	<section class="panel macros">
 		<h2>Printer macros</h2>
-		<p class="muted">Descriptions come from the printer. Pin the ones you reach for often.</p>
 		<label class="search"
 			>Find a macro<input
 				type="search"
@@ -267,10 +266,12 @@
 				</div>
 				<p>{macro.description}</p>
 				<button
+					class="macro-run"
+					aria-label={`Run ${macro.name}`}
 					disabled={!!reason || pending || !!uncertain}
 					onclick={() => {
 						void submit(macro.name);
-					}}>Run {macro.name}</button
+					}}>Run</button
 				>
 			</article>{:else}<p class="muted">
 				{search
@@ -300,48 +301,6 @@
 			>
 		</div>
 		{#if reason}<p class="notice" role="status">{reason}</p>{/if}
-		<label class="composer"
-			>Command<textarea
-				bind:value={draft}
-				onkeydown={historyKey}
-				oninput={() => {
-					historyIndex = -1;
-				}}
-				aria-describedby="console-history-hint"
-				rows="3"
-				maxlength="2048"
-				placeholder={snapshot.mode === 'simulator'
-					? 'Try HELP, M105, or PERILUNE_STATUS'
-					: 'Enter G-code or a macro to send to the printer.'}
-				spellcheck="false"></textarea></label
-		>
-		<details class="command-help">
-			<summary>Command help</summary>
-			<p id="console-history-hint" class="muted small">
-				↑ / ↓ at the first / last line recalls recent commands and restores your draft.
-			</p>
-			<p class="muted small">
-				{snapshot.mode === 'simulator'
-					? 'The simulator supports M105, M114, HELP and the listed example macros. Other commands produce a clear error.'
-					: 'Check each command and the printer’s macro configuration before sending.'}
-			</p>
-		</details>
-		{#if snapshot.mode === 'moonraker'}<p class="muted small">
-				Commands and macros run on the real printer and may move or heat it.
-			</p>{/if}
-		<button
-			class="button primary"
-			disabled={!!reason || pending || !!uncertain || !draft.trim()}
-			onclick={() => void submit()}>{pending ? 'Submitting…' : 'Send command'}</button
-		>
-		{#if uncertain}<div class="notice">
-				<p>Unconfirmed request: <code>{uncertain.id}</code></p>
-				<button disabled={pending} onclick={check}>Check receipt</button><button
-					disabled={pending}
-					onclick={stopTracking}>Stop tracking…</button
-				>
-			</div>{/if}
-		{#if message}<p role="status" class="notice">{message}</p>{/if}
 		<details class="log-options">
 			<summary>History display</summary>
 			<div class="log-tools">
@@ -427,10 +386,42 @@
 						: 'Responses and submitted commands will appear here.'}
 				</p>{/each}
 		</div>
-		<p class="muted small">
-			Shared with operators and owners. Latest 100 commands and 200 live responses; older entries
-			may be omitted. Unknown outcomes are never replayed.
+		<label class="composer"
+			>Command<textarea
+				bind:value={draft}
+				onkeydown={historyKey}
+				oninput={() => {
+					historyIndex = -1;
+				}}
+				aria-describedby="console-history-hint"
+				rows="3"
+				maxlength="2048"
+				placeholder={snapshot.mode === 'simulator'
+					? 'Try HELP, M105, or PERILUNE_STATUS'
+					: 'Enter G-code or a macro to send to the printer.'}
+				spellcheck="false"></textarea></label
+		>
+
+		{#if snapshot.mode === 'moonraker'}<p class="muted small">
+				Commands and macros run on the real printer and may move or heat it.
+			</p>{/if}
+		<button
+			class="button primary send-command"
+			disabled={!!reason || pending || !!uncertain || !draft.trim()}
+			onclick={() => void submit()}>{pending ? 'Submitting…' : 'Send command'}</button
+		>
+		<p id="console-history-hint" class="muted small keyboard-hint">
+			Physical keyboard: ↑ / ↓ at the first / last line recalls recent commands and restores your
+			draft.
 		</p>
+		{#if uncertain}<div class="notice">
+				<p>Unconfirmed request: <code>{uncertain.id}</code></p>
+				<button disabled={pending} onclick={check}>Check receipt</button><button
+					disabled={pending}
+					onclick={stopTracking}>Stop tracking…</button
+				>
+			</div>{/if}
+		{#if message}<p role="status" class="notice">{message}</p>{/if}
 	</section>
 </div>
 
@@ -461,13 +452,37 @@
 		line-height: 1.6;
 	}
 	article {
-		padding: 1rem 0;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		column-gap: 0.5rem;
+		padding: 0.65rem 0;
 		border-top: 1px solid var(--border);
 	}
 	article p {
 		font-size: 0.85rem;
 		color: var(--muted);
-		margin: 0.6rem 0;
+		margin: 0.25rem 0 0;
+		grid-column: 1 / -1;
+	}
+	.macro-run {
+		grid-column: 2;
+		grid-row: 1;
+	}
+	.macro-title {
+		min-width: 0;
+	}
+	.macro-title h3 {
+		font-size: 0.85rem;
+	}
+	.send-command {
+		width: 100%;
+		margin-top: 0.5rem;
+	}
+	.composer {
+		margin-top: 0.8rem;
+	}
+	.keyboard-hint {
+		margin: 0.4rem 0 0;
 	}
 	.macro-title,
 	.console-heading,
@@ -477,7 +492,6 @@
 		gap: 0.8rem;
 		align-items: center;
 	}
-	.command-help,
 	.log-options {
 		margin: 0.75rem 0;
 		font-size: 0.85rem;
@@ -507,7 +521,7 @@
 		font-weight: 600;
 	}
 	.search {
-		margin: 1rem 0;
+		margin: 0.65rem 0 0.25rem;
 	}
 	.check {
 		display: flex;
