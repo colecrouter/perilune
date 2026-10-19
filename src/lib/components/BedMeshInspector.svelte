@@ -304,7 +304,7 @@
 	}
 	.mesh-inspector {
 		display: grid;
-		gap: 1.25rem;
+		gap: 0.8rem;
 	}
 	.view-controls {
 		display: flex;
@@ -335,7 +335,7 @@
 		display: grid;
 		grid-template-columns: repeat(4, 1fr);
 		gap: 1rem;
-		padding: 1.2rem;
+		padding: 0.8rem;
 		background: var(--surface);
 		border: 1px solid var(--border);
 		border-radius: 1rem;
@@ -427,6 +427,7 @@
 	.sample-fields {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
+		gap: 0.6rem;
 		gap: 0.7rem;
 		margin: 1rem 0;
 	}
@@ -480,14 +481,15 @@
 		}
 		.mesh-summary {
 			grid-template-columns: 1fr 1fr;
+			gap: 0.6rem;
 		}
 		.height-map button {
 			font-size: 0.65rem;
 		}
 		.view-controls label {
 			min-width: 0;
-			width: 100%;
-			flex-basis: 100%;
+			width: auto;
+			flex: 1 1 8rem;
 		}
 	}
 </style>

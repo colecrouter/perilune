@@ -1062,3 +1062,67 @@ progress::-moz-progress-bar {
 .preference-error button {
 	margin-top: 0.5rem;
 }
+
+/* Shared interaction defaults: unavailable controls are distinct from work in progress. */
+:where(button, a, input, select, textarea, summary):focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 3px;
+}
+:where(button, input, select, textarea) {
+	accent-color: var(--accent);
+}
+button:disabled {
+	cursor: not-allowed;
+}
+button[aria-busy='true'] {
+	cursor: wait;
+}
+.button {
+	min-height: 44px;
+}
+.skip-link {
+	position: fixed;
+	left: 1rem;
+	top: 1rem;
+	z-index: 200;
+	padding: 0.75rem 1rem;
+	background: var(--surface);
+	color: var(--text);
+	border: 2px solid var(--accent);
+	border-radius: 8px;
+	transform: translateY(-200%);
+}
+.skip-link:focus {
+	transform: translateY(0);
+}
+#main-content:focus {
+	outline: none;
+}
+@media (max-width: 600px) {
+	.sidebar nav {
+		overflow: visible;
+	}
+	.sidebar nav :is(a, .nav-trigger) {
+		min-width: 0;
+		padding-inline: 6px;
+		justify-content: center;
+	}
+}
+@media (prefers-reduced-motion: no-preference) {
+	.button {
+		transition:
+			background-color 120ms ease,
+			border-color 120ms ease;
+	}
+	.dialog-content[data-state='open'] {
+		animation: dialog-arrive 140ms ease-out;
+	}
+	@keyframes dialog-arrive {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+}

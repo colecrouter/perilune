@@ -65,3 +65,23 @@ test('cannot save a loaded review while configuration recovery disallows writes'
 		.toBeDisabled();
 	await expect.element(screen.getByText(/Saving is currently unavailable/)).toBeVisible();
 });
+
+test('empty pending settings remain a calm read-only state without a commit action', async () => {
+	const fetcher = vi
+		.fn()
+		.mockResolvedValue(
+			Response.json({ message: 'There are no pending calibration changes.' }, { status: 400 })
+		);
+	vi.stubGlobal('fetch', fetcher);
+	const screen = await render(PendingConfiguration, { autoInspect: true });
+	await expect
+		.element(screen.getByRole('status'))
+		.toHaveTextContent(
+			'No pending printer settings. Edits in the configuration editor remain separate drafts.'
+		);
+	await expect.element(screen.getByRole('alert')).not.toBeInTheDocument();
+	await expect
+		.element(screen.getByRole('button', { name: 'Save settings & restart' }))
+		.not.toBeInTheDocument();
+	expect(fetcher.mock.calls.every(([, init]) => !init?.method)).toBe(true);
+});

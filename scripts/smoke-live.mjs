@@ -195,7 +195,7 @@ try {
 		false,
 		'Mesh mobile layout does not overflow'
 	);
-	await second.getByRole('button', { name: 'Calibration', exact: true }).click();
+	await second.getByRole('button', { name: 'More navigation', exact: true }).click();
 	await second.getByRole('menuitem', { name: /Bed mesh/ }).waitFor();
 	await second.screenshot({ path: 'test-results/mesh-live-mobile.png', fullPage: true });
 	await second.keyboard.press('Escape');

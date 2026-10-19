@@ -96,7 +96,7 @@ try {
 	await page.getByRole('heading', { name: 'fixture-bracket.gcode', exact: true }).waitFor();
 	await page.locator('.inspection').getByText('1h 12m', { exact: true }).waitFor();
 	assert.equal(
-		await page.getByRole('button', { name: 'Review & start simulation', exact: true }).isDisabled(),
+		await page.getByRole('button', { name: 'Start simulation…', exact: true }).isDisabled(),
 		true
 	);
 	await page
@@ -117,14 +117,11 @@ try {
 	await second.getByRole('link', { name: 'fixture-bracket.gcode', exact: true }).waitFor();
 	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
-	await page.getByRole('button', { name: 'Review & start simulation', exact: true }).waitFor();
+	await page.getByRole('button', { name: 'Start simulation…', exact: true }).waitFor();
 	await page.waitForFunction(
-		() =>
-			![...document.querySelectorAll('button')].find(
-				(b) => b.textContent.trim() === 'Review & start simulation'
-			)?.disabled
+		() => document.querySelector('a.start-button')?.getAttribute('aria-disabled') === 'false'
 	);
-	await page.getByRole('button', { name: 'Review & start simulation', exact: true }).click();
+	await page.getByRole('button', { name: 'Start simulation…', exact: true }).click();
 	await page
 		.getByRole('dialog')
 		.getByText('1 manual filament change and 1 other pause requested by this file.', {
@@ -141,6 +138,7 @@ try {
 		.waitFor();
 	await page.getByRole('button', { name: 'Pause print', exact: true }).click();
 	await second.getByRole('button', { name: 'Resume print', exact: true }).waitFor();
+	const removedFileName = await page.locator('.inspection h2').innerText();
 	await page.getByRole('button', { name: 'Remove file…', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Remove file', exact: true }).click();
 	await page.getByRole('dialog').getByRole('alert').waitFor();
@@ -262,7 +260,7 @@ try {
 	await page.waitForFunction(
 		() => document.querySelector('[aria-label="Current job"]').dataset.jobState === 'cancelled'
 	);
-	await page.getByRole('button', { name: 'Review & start simulation', exact: true }).click();
+	await page.getByRole('button', { name: 'Start simulation…', exact: true }).click();
 	await page
 		.getByRole('dialog')
 		.getByRole('button', { name: 'Start simulated print', exact: true })
@@ -289,9 +287,14 @@ try {
 	);
 	await page.getByRole('button', { name: 'Remove file…', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Remove file', exact: true }).click();
+	await page.getByRole('heading', { name: 'File library', exact: true }).waitFor();
 	await page
-		.getByRole('heading', { name: 'A little preparation goes a long way.', exact: true })
-		.waitFor();
+		.getByRole('heading', { name: removedFileName, exact: true })
+		.waitFor({ state: 'hidden' });
+	await page
+		.locator('.library')
+		.getByRole('link', { name: removedFileName, exact: true })
+		.waitFor({ state: 'hidden' });
 	await page.reload();
 	await page
 		.locator('.history .run')
@@ -337,7 +340,7 @@ try {
 	await staticPage.getByRole('heading', { name: 'catalog-10.gcode', exact: true }).waitFor();
 	assert.match(staticPage.url(), /jobs\/[^?]+\?.*page=2/);
 	const staticDetailUrl = staticPage.url();
-	await staticPage.getByRole('button', { name: 'Review & start simulation', exact: true }).click();
+	await staticPage.getByRole('button', { name: 'Start simulation…', exact: true }).click();
 	await staticPage.getByRole('heading', { name: 'Start this print?', exact: true }).waitFor();
 	await staticPage
 		.getByText('1 manual filament change and 0 other pauses requested by this file.', {

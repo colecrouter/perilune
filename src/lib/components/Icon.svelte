@@ -4,6 +4,7 @@
 		size = 20
 	}: {
 		name:
+			| 'more'
 			| 'activity'
 			| 'help'
 			| 'console'
@@ -25,6 +26,7 @@
 		size?: number;
 	} = $props();
 	const paths = {
+		more: 'M5 12h.01 M12 12h.01 M19 12h.01',
 		activity: 'M3 12h4l3-8 4 16 3-8h4',
 		help: 'M9 9a3 3 0 1 1 5 2c-2 1-2 2-2 3 M12 17v.01 M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20',
 		console: 'm4 6 6 6-6 6 M13 18h7',

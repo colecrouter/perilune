@@ -126,3 +126,59 @@ test('shows an unknown save outcome with recovery rather than claiming success',
 		.element(screen.getByRole('link', { name: 'Review configuration & recovery' }))
 		.toBeVisible();
 });
+
+test('a matched verified discard is not presented as a saved calibration', async () => {
+	const screen = await render(ZCalibrationResult, {
+		session,
+		capability,
+		role: 'owner',
+		readRecovery: vi.fn().mockResolvedValue({
+			enabled: true,
+			application: { ...application, mode: 'discard', writeVerified: false }
+		})
+	});
+	await expect.element(screen.getByRole('heading', { name: 'Result discarded' })).toBeVisible();
+	await expect
+		.element(
+			screen.getByText('Pending settings were discarded and the saved configuration is unchanged.')
+		)
+		.toBeVisible();
+	await expect
+		.element(screen.getByRole('heading', { name: 'Saved & startup verified' }))
+		.not.toBeInTheDocument();
+});
+
+for (const [phase, title] of [
+	['restarting', 'Discarding & restarting'],
+	['unknown', 'Discard outcome unknown'],
+	['error', 'Discard needs attention']
+] as const) {
+	test(`labels ${phase} discard without implying a configuration save`, async () => {
+		const screen = await render(ZCalibrationResult, {
+			session,
+			capability,
+			role: 'owner',
+			readRecovery: vi.fn().mockResolvedValue({
+				enabled: true,
+				application: {
+					...application,
+					mode: 'discard',
+					phase,
+					writeVerified: false,
+					message: 'Restart requires verification.'
+				}
+			})
+		});
+		await expect.element(screen.getByRole('heading', { name: title })).toBeVisible();
+		await expect.element(screen.getByRole('heading', { name: /^Save/ })).not.toBeInTheDocument();
+		await expect
+			.element(
+				screen.getByText(
+					phase === 'restarting'
+						? /leaves saved configuration unchanged/
+						: /No saved configuration write was requested/
+				)
+			)
+			.toBeVisible();
+	});
+}

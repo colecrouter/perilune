@@ -10,7 +10,7 @@
 
 <svelte:head><title>Review printer action · Perilune</title></svelte:head>
 <AppShell active="Controls"
-	><main class="result serif">
+	><div class="result serif">
 		{#if form?.message}<h1>Action not submitted</h1>
 			<p role="alert">{form.message}</p>{/if}
 		{#if data.review}<h1>
@@ -44,8 +44,8 @@
 								required
 							/> Stop the displayed print</label
 						>{:else}<p>
-							Check that the bed is clear and the correct filament is loaded before starting. The
-							backend checks printer readiness again before execution.
+							Check that the bed is clear and the correct filament is loaded before starting.
+							Printer readiness is checked again before execution.
 						</p>{/if}
 					<button class="button primary" disabled={pending || uncertain}
 						>{pending
@@ -58,7 +58,7 @@
 			>{:else}<p>Choose an action from the printer controls.</p>{/if}
 		<p><a href="/">Return to overview</a></p>
 		<p>Use your browser’s Back button to return to the previous form.</p>
-	</main></AppShell
+	</div></AppShell
 >
 
 <style>

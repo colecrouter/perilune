@@ -254,6 +254,10 @@ test('saved Klipper revisions open read-only and file search keeps the current e
 	await expect
 		.element(screen.getByRole('textbox', { name: 'Editable configuration source', exact: true }))
 		.toHaveAttribute('contenteditable', 'false');
+	await expect
+		.element(screen.getByRole('searchbox', { name: 'Find a file' }))
+		.not.toBeInTheDocument();
+	await screen.getByRole('button', { name: /Browse files/ }).click();
 	await screen.getByRole('searchbox', { name: 'Find a file' }).fill('no matching file');
 	await expect.element(screen.getByText('No matching files.', { exact: true })).toBeVisible();
 	await expect
@@ -281,5 +285,29 @@ test('a draft newly recognized as a saved revision cannot retain an open save re
 	await expect
 		.element(screen.getByRole('button', { name: 'Export draft', exact: true }))
 		.toBeEnabled();
+	expect(calls.onSave).not.toHaveBeenCalled();
+});
+
+test('filtering explained settings preserves edits and reviews the complete draft', async () => {
+	const doc = file(
+		'printer.cfg',
+		'[printer]\nmax_velocity: 200\n[extruder]\nrotation_distance: 22\n'
+	);
+	const calls = callbacks(doc);
+	const screen = await render(ConfigurationEditor, { document: doc, files: [doc], ...calls });
+	await screen.getByRole('spinbutton', { name: 'Maximum velocity', exact: true }).fill('180');
+	await screen
+		.getByRole('searchbox', { name: 'Find a setting', exact: true })
+		.fill('rotation_distance');
+	await expect
+		.element(screen.getByRole('spinbutton', { name: 'Maximum velocity', exact: true }))
+		.not.toBeInTheDocument();
+	await expect
+		.element(screen.getByRole('spinbutton', { name: 'Extruder rotation distance', exact: true }))
+		.toHaveValue(22);
+	await screen.getByRole('button', { name: 'Review changes…' }).click();
+	await expect
+		.element(screen.getByLabelText('Proposed source'))
+		.toHaveTextContent('max_velocity: 180');
 	expect(calls.onSave).not.toHaveBeenCalled();
 });

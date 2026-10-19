@@ -195,6 +195,7 @@ test('an ambiguous physical submission stays blocked until its recorded receipt 
 	});
 	await screen.getByRole('checkbox', { name: /Filament is loaded/ }).click();
 	await screen.getByRole('checkbox', { name: /nozzle has clearance/ }).click();
+	await screen.getByText('Load or adjust filament', { exact: true }).click();
 	await screen.getByRole('button', { name: 'Feed 5 mm', exact: true }).click();
 	await expect
 		.element(screen.getByRole('button', { name: 'Feed 5 mm', exact: true }))

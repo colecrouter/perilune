@@ -56,3 +56,18 @@ test('a failure after quiet success remains actionable and uncertain outcomes ne
 		.element(screen.getByText('Printer rejected this action.', { exact: true }))
 		.toBeVisible();
 });
+
+test('a workflow can retain its completion anchor without claiming printer telemetry', async () => {
+	const screen = await render(ActionFeedback, { receipt, showCompleted: true });
+	await screen.rerender({
+		receipt: { ...receipt, status: 'completed', message: 'Execution acknowledged.' }
+	});
+	await expect.element(screen.getByRole('status')).toBeVisible();
+	await expect
+		.element(screen.getByText('Pause print: Command completed', { exact: true }))
+		.toBeVisible();
+	await expect.element(screen.getByRole('link')).not.toBeInTheDocument();
+	await screen.rerender({ receipt: { ...receipt, status: 'unknown', message: null } });
+	await expect.element(screen.getByRole('alert')).toBeVisible();
+	await expect.element(screen.getByRole('link', { name: 'Review action' })).toBeVisible();
+});

@@ -8,9 +8,7 @@
 <AppShell active="Console"
 	><div class="page serif">
 		<header>
-			<p class="eyebrow">A direct line to the printer</p>
 			<h1>Macros & console</h1>
-			<p>Understand a command. Send it. Follow the response.</p>
 		</header>
 		{#if ['owner', 'operator'].includes(data.user?.role ?? '')}<ConsoleWorkspace />{:else}<section
 				class="panel"
@@ -36,9 +34,6 @@
 	h1 {
 		font-size: clamp(2.2rem, 5vw, 3rem);
 		margin: 0.4rem 0;
-	}
-	header > p:last-child {
-		color: var(--muted);
 	}
 	.panel {
 		padding: 1.5rem;

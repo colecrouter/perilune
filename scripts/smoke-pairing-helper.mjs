@@ -38,7 +38,7 @@ export async function testPairing(owner, base, directory, filename) {
 		await approver.goto(`${base}/pair`);
 		await approver.getByLabel('Pairing code').fill(code);
 		await approver.getByRole('button', { name: 'Check code' }).click();
-		await approver.getByRole('heading', { name: 'Desktop slicer' }).waitFor();
+		await approver.getByRole('heading', { name: 'My browser' }).waitFor();
 		await approver
 			.getByLabel('Link to an integration', { exact: true })
 			.selectOption(integration.key.id);

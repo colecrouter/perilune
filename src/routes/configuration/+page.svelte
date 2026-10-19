@@ -75,9 +75,7 @@
 <AppShell active="Configuration"
 	><div class="config-page serif">
 		<header>
-			<p class="eyebrow">Know what your printer is told</p>
 			<h1>Configuration</h1>
-			<p class="muted">Understand a setting. Keep the source. Review every change.</p>
 		</header>
 		{#if !data.allowed}<section class="panel">
 				<h2>Owner access required</h2>
@@ -132,9 +130,6 @@
 	h1 {
 		margin: 0.4rem 0;
 		font-size: clamp(2.2rem, 5vw, 3rem);
-	}
-	.muted {
-		color: var(--muted);
 	}
 	.panel {
 		padding: 1.5rem;

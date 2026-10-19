@@ -21,6 +21,7 @@
 	let busy = $state(false),
 		confirmed = $state(false),
 		submitted = $state(false),
+		empty = $state(false),
 		message = $state('');
 	async function request(body?: unknown) {
 		const response = await fetch('/api/configuration/application' + (body ? '' : '?pending'), {
@@ -43,12 +44,15 @@
 		controller = new AbortController();
 		busy = true;
 		message = '';
+		empty = false;
 		confirmed = false;
 		review = null;
 		try {
 			review = await request();
 		} catch (cause) {
-			message = cause instanceof Error ? cause.message : 'Could not review pending settings.';
+			if (cause instanceof Error && cause.message === 'There are no pending calibration changes.')
+				empty = true;
+			else message = cause instanceof Error ? cause.message : 'Could not review pending settings.';
 		} finally {
 			busy = false;
 		}
@@ -101,6 +105,9 @@
 					? 'Try reviewing again'
 					: 'Review pending settings'}</button
 	>
+	{#if empty}<p role="status">
+			No pending printer settings. Edits in the configuration editor remain separate drafts.
+		</p>{/if}
 	{#if review}
 		<p>
 			{mode === 'discard' ? 'The saved file stays unchanged:' : 'These settings will be saved to'}

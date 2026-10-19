@@ -313,12 +313,12 @@ try {
 	await page
 		.locator('article')
 		.filter({ has: page.getByRole('link', { name: 'Set bed to 40°C', exact: true }) })
-		.getByText('completed', { exact: true })
+		.getByText('Command completed', { exact: true })
 		.waitFor();
 	assert.equal(status.heater_bed.target, 40);
 	await page.goto(base + '/jobs');
 	await page.getByRole('link', { name: /fixture.gcode/ }).click();
-	await page.getByRole('button', { name: 'Review & start print', exact: true }).click();
+	await page.getByRole('button', { name: 'Start print…', exact: true }).click();
 	const start = page.getByRole('dialog');
 	await start.getByRole('heading', { name: 'Start this print?', exact: true }).waitFor();
 	await start.getByRole('button', { name: /Start/ }).click();
@@ -354,7 +354,7 @@ try {
 	await page
 		.locator('article')
 		.filter({ has: page.getByRole('link', { name: 'Stop print', exact: true }) })
-		.getByText('completed', { exact: true })
+		.getByText('Command completed', { exact: true })
 		.waitFor();
 	assert.equal(status.heater_bed.target, 40);
 	assert.equal(status.extruder.target, 0);
@@ -379,7 +379,7 @@ try {
 	};
 	await nativePage.goto(base + '/jobs');
 	await nativePage.getByRole('link', { name: /fixture.gcode/ }).click();
-	await nativePage.getByRole('button', { name: 'Review & start print', exact: true }).click();
+	await nativePage.getByRole('button', { name: 'Start print…', exact: true }).click();
 	await nativePage.getByRole('heading', { name: 'Start this print?', exact: true }).waitFor();
 	await nativePage.getByRole('button', { name: 'Start print', exact: true }).click();
 	await idle();
@@ -528,7 +528,7 @@ try {
 		.filter({
 			has: page.getByRole('link', { name: 'Stop current job during recovery', exact: true })
 		})
-		.getByText('completed', { exact: true })
+		.getByText('Command completed', { exact: true })
 		.waitFor();
 	await page.getByRole('link', { name: '← Return to overview', exact: true }).click();
 	assert.equal(status.print_stats.state, 'cancelled');
@@ -574,7 +574,7 @@ try {
 	await page
 		.locator('article')
 		.filter({ has: page.getByRole('link', { name: 'Emergency stop', exact: true }) })
-		.getByText('completed', { exact: true })
+		.getByText('Command completed', { exact: true })
 		.waitFor();
 	await page.getByRole('link', { name: '← Return to overview', exact: true }).click();
 	assert.equal(safetyRequests.filter((p) => p === '/printer/emergency_stop').length, 1);

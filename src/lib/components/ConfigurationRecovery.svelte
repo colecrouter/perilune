@@ -111,41 +111,49 @@
 	>
 		<h2>
 			{pending
-				? 'Applying configuration'
+				? application?.mode === 'discard'
+					? 'Discarding pending settings'
+					: 'Applying configuration'
 				: application?.phase === 'ready'
 					? 'Configuration startup verified'
 					: 'Configuration needs attention'}
 		</h2>
 		{#if application}<p>{application.message}</p>
-			{#if compact}<a href="/configuration">Open configuration recovery →</a>{:else}
-				<p class="muted">
-					{application.path} · {application.mode} · {new Date(
-						application.updatedAt
-					).toLocaleString()}
-				</p>
-				<p>
-					<a href={`/api/configuration/application?snapshot=${application.id}&side=before`}
-						>Export previous file</a
-					>
-					·
-					<a href={`/api/configuration/application?snapshot=${application.id}&side=after`}
-						>Export proposed file</a
-					>
-				</p>
-				{#if application.diagnostic}<pre
-						aria-label="Klipper startup diagnostic">{application.diagnostic}</pre>{/if}
-				{#if !pending}<button disabled={busy} onclick={() => action('check')}
-						>Check saved bytes and printer state</button
-					>
-					{#if recovery?.enabled && (application.mode !== 'revert' ? application.writeVerified : application.phase === 'error')}<label
-							><input type="checkbox" bind:checked={confirmed} />Restore the snapshot and restart
-							Klipper. Unsaved runtime calibration changes may be lost.</label
+			{#if compact}<a href="/configuration#configuration-recovery">Open configuration recovery →</a
+				>{:else}
+				<details open={application.phase !== 'ready'}>
+					<summary>Saved files & recovery</summary>
+					<p class="muted">
+						{application.path} · Updated {new Date(application.updatedAt).toLocaleString()}
+					</p>
+					<p class="snapshot-links">
+						<a href={`/api/configuration/application?snapshot=${application.id}&side=before`}
+							>Export previous file</a
 						>
-						<button class="restore" disabled={busy || !confirmed} onclick={() => action('revert')}
-							>{application.mode === 'revert'
-								? 'Retry restore and restart'
-								: 'Revert changes and restart'}</button
-						>{/if}{/if}
+						·
+						<a href={`/api/configuration/application?snapshot=${application.id}&side=after`}
+							>Export reviewed file</a
+						>
+					</p>
+					<p class="muted">
+						The previous file is the recovery copy from before this operation. The reviewed file is
+						the exact content submitted for verification; exporting it does not apply it.
+					</p>
+					{#if application.diagnostic}<pre
+							aria-label="Klipper startup diagnostic">{application.diagnostic}</pre>{/if}
+					{#if !pending}<button disabled={busy} onclick={() => action('check')}
+							>Check printer and saved settings</button
+						>
+						{#if recovery?.enabled && (application.mode !== 'revert' ? application.writeVerified : application.phase === 'error')}<label
+								><input type="checkbox" bind:checked={confirmed} />Restore the snapshot and restart
+								Klipper. Unsaved runtime calibration changes may be lost.</label
+							>
+							<button class="restore" disabled={busy || !confirmed} onclick={() => action('revert')}
+								>{application.mode === 'revert'
+									? 'Retry restore and restart'
+									: 'Revert changes and restart'}</button
+							>{/if}{/if}
+				</details>
 			{/if}
 		{/if}
 		{#if failure || networkFailure}<p role="alert">{failure || networkFailure}</p>
@@ -164,7 +172,7 @@
 	}
 	h2 {
 		margin: 0 0 0.6rem;
-		font-family: var(--font-heading);
+		font-family: 'Newsreader Variable', Georgia, serif;
 		font-size: 1.4rem;
 	}
 	p {
@@ -208,7 +216,8 @@
 		margin: 1rem 0;
 	}
 	.restore {
-		border-color: var(--accent);
+		border-color: var(--danger-border);
+		color: var(--danger);
 	}
 	a {
 		color: var(--accent);

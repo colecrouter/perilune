@@ -300,33 +300,80 @@
 			>
 		</div>
 		{#if reason}<p class="notice" role="status">{reason}</p>{/if}
-		<div class="log-tools">
-			<label
-				>Show<select
-					bind:value={filter}
-					onchange={(event) =>
-						preferences?.update({
-							consoleFilter: event.currentTarget.value as 'all' | 'errors' | 'commands'
-						})}
-					><option value="all">All activity</option><option value="errors"
-						>Errors & unknown outcomes</option
-					><option value="commands">Submitted commands</option></select
-				></label
-			><label class="check"
-				><input
-					type="checkbox"
-					bind:checked={follow}
-					onchange={(event) => preferences?.update({ consoleFollow: event.currentTarget.checked })}
-				/>Follow latest</label
-			>
-			<label class="check"
-				><input
-					type="checkbox"
-					bind:checked={compact}
-					onchange={(event) => preferences?.update({ consoleCompact: event.currentTarget.checked })}
-				/>Group repeated responses</label
-			>
-		</div>
+		<label class="composer"
+			>Command<textarea
+				bind:value={draft}
+				onkeydown={historyKey}
+				oninput={() => {
+					historyIndex = -1;
+				}}
+				aria-describedby="console-history-hint"
+				rows="3"
+				maxlength="2048"
+				placeholder={snapshot.mode === 'simulator'
+					? 'Try HELP, M105, or PERILUNE_STATUS'
+					: 'Enter G-code or a macro to send to the printer.'}
+				spellcheck="false"></textarea></label
+		>
+		<details class="command-help">
+			<summary>Command help</summary>
+			<p id="console-history-hint" class="muted small">
+				↑ / ↓ at the first / last line recalls recent commands and restores your draft.
+			</p>
+			<p class="muted small">
+				{snapshot.mode === 'simulator'
+					? 'The simulator supports M105, M114, HELP and the listed example macros. Other commands produce a clear error.'
+					: 'Check each command and the printer’s macro configuration before sending.'}
+			</p>
+		</details>
+		{#if snapshot.mode === 'moonraker'}<p class="muted small">
+				Commands and macros run on the real printer and may move or heat it.
+			</p>{/if}
+		<button
+			class="button primary"
+			disabled={!!reason || pending || !!uncertain || !draft.trim()}
+			onclick={() => void submit()}>{pending ? 'Submitting…' : 'Send command'}</button
+		>
+		{#if uncertain}<div class="notice">
+				<p>Unconfirmed request: <code>{uncertain.id}</code></p>
+				<button disabled={pending} onclick={check}>Check receipt</button><button
+					disabled={pending}
+					onclick={stopTracking}>Stop tracking…</button
+				>
+			</div>{/if}
+		{#if message}<p role="status" class="notice">{message}</p>{/if}
+		<details class="log-options">
+			<summary>History display</summary>
+			<div class="log-tools">
+				<label
+					>Show<select
+						bind:value={filter}
+						onchange={(event) =>
+							preferences?.update({
+								consoleFilter: event.currentTarget.value as 'all' | 'errors' | 'commands'
+							})}
+						><option value="all">All activity</option><option value="errors"
+							>Errors & unknown outcomes</option
+						><option value="commands">Submitted commands</option></select
+					></label
+				><label class="check"
+					><input
+						type="checkbox"
+						bind:checked={follow}
+						onchange={(event) =>
+							preferences?.update({ consoleFollow: event.currentTarget.checked })}
+					/>Follow latest</label
+				>
+				<label class="check"
+					><input
+						type="checkbox"
+						bind:checked={compact}
+						onchange={(event) =>
+							preferences?.update({ consoleCompact: event.currentTarget.checked })}
+					/>Group repeated responses</label
+				>
+			</div>
+		</details>
 		<!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users must be able to focus and scroll retained output.) -->
 		<div
 			class="log"
@@ -370,7 +417,7 @@
 									{line.receipt.message}
 								</p>{/if}{#if ['queued', 'sending'].includes(line.receipt.status)}<p role="status">
 									{line.receipt.status === 'queued'
-										? 'Waiting for backend execution…'
+										? 'Waiting to run…'
 										: 'Waiting for command completion…'}
 								</p>{/if}
 						</div>{/if}
@@ -384,42 +431,6 @@
 			Shared with operators and owners. Latest 100 commands and 200 live responses; older entries
 			may be omitted. Unknown outcomes are never replayed.
 		</p>
-		<label class="composer"
-			>Command<textarea
-				bind:value={draft}
-				onkeydown={historyKey}
-				oninput={() => {
-					historyIndex = -1;
-				}}
-				aria-describedby="console-history-hint"
-				rows="3"
-				maxlength="2048"
-				placeholder={snapshot.mode === 'simulator'
-					? 'Try HELP, M105, or PERILUNE_STATUS'
-					: 'Enter G-code or a macro to send to the printer.'}
-				spellcheck="false"></textarea></label
-		>
-		<p id="console-history-hint" class="muted small">
-			↑ / ↓ at the first / last line recalls recent commands and restores your draft.
-		</p>
-		<p class="muted small">
-			{snapshot.mode === 'simulator'
-				? 'The simulator supports M105, M114, HELP and the listed example macros. Other commands produce a clear error.'
-				: 'Commands and macros run on the real printer and may move or heat it. Check each command and the printer’s macro configuration before sending.'}
-		</p>
-		<button
-			class="button primary"
-			disabled={!!reason || pending || !!uncertain || !draft.trim()}
-			onclick={() => void submit()}>{pending ? 'Submitting…' : 'Send command'}</button
-		>
-		{#if uncertain}<div class="notice">
-				<p>Unconfirmed request: <code>{uncertain.id}</code></p>
-				<button disabled={pending} onclick={check}>Check receipt</button><button
-					disabled={pending}
-					onclick={stopTracking}>Stop tracking…</button
-				>
-			</div>{/if}
-		{#if message}<p role="status" class="notice">{message}</p>{/if}
 	</section>
 </div>
 
@@ -465,6 +476,15 @@
 		justify-content: space-between;
 		gap: 0.8rem;
 		align-items: center;
+	}
+	.command-help,
+	.log-options {
+		margin: 0.75rem 0;
+		font-size: 0.85rem;
+	}
+	summary {
+		cursor: pointer;
+		color: var(--muted);
 	}
 	.console-heading {
 		align-items: start;
@@ -550,7 +570,7 @@
 		font-size: 0.85rem;
 	}
 	.log {
-		height: clamp(240px, 45vh, 480px);
+		height: clamp(180px, 32vh, 360px);
 		overflow: auto;
 		border: 1px solid var(--border);
 		border-radius: 10px;

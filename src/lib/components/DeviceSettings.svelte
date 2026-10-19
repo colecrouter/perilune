@@ -116,12 +116,12 @@
 	}
 </script>
 
-<section class="device-card">
+<section class="device-card" aria-labelledby="device-heading">
 	<div class="heading">
 		<img src="/icons/app-192.png" alt="" width="64" height="64" />
 		<div>
-			<p class="eyebrow">Your own little mission control</p>
-			<h2>Perilune on this device</h2>
+			<p class="eyebrow">Install & notifications</p>
+			<h2 id="device-heading">Perilune on this device</h2>
 		</div>
 	</div>
 	{#if installed}<p>Installed and ready for launch.</p>{:else}<p>
@@ -144,7 +144,7 @@
 				your browser.
 			</p>{/if}{/if}
 	<div class="divider"></div>
-	<h3>A signal when it matters</h3>
+	<h3>Notifications</h3>
 	<p>Receive updates even when Perilune is closed. These settings apply only to this device.</p>
 	{#if ios && !installed}<p class="help">
 			Install Perilune to your Home Screen, open it there, then enable notifications. Requires iOS
@@ -173,42 +173,47 @@
 				Allow notifications in your browser or OS settings, then reload this page. Installing the
 				app does not automatically grant permission.
 			</p>{/if}
-		<fieldset disabled={pending} oninput={() => (edited = true)}>
-			<legend>Notify me about</legend>
-			<p class="help">
-				By default, notices follow prints started by your account, including your slicer
-				integrations. Unattributed prints are skipped.
-			</p>
-			<label
-				><input type="checkbox" bind:checked={preferences.allPrints} />Include prints started by
-				anyone</label
-			>
-			<label
-				><input type="checkbox" bind:checked={preferences.sharedErrors} />Include printer errors
-				when I have no active print</label
-			>
-			<label><input type="checkbox" bind:checked={preferences.complete} />Completed prints</label>
-			<label><input type="checkbox" bind:checked={preferences.failed} />Failed prints</label>
-			<label><input type="checkbox" bind:checked={preferences.printerError} />Printer errors</label>
-			<label
-				><input type="checkbox" bind:checked={preferences.snapshot} />Include a camera snapshot when
-				available</label
-			>
-			<p class="help">
-				Notifications use generic text. Snapshots may appear on your lock screen on supported
-				devices; private images expire after five minutes.
-			</p>
-			<label><input type="checkbox" bind:checked={preferences.quiet} />Quiet hours</label>
-			{#if preferences.quiet}<div class="quiet">
-					<label>From<input type="time" bind:value={preferences.quietStart} /></label><label
-						>Until<input type="time" bind:value={preferences.quietEnd} /></label
-					>
-				</div>
-				<label class="timezone">Time zone<input bind:value={preferences.timezone} /></label>
+		<details class="notification-options" open={subscribed}>
+			<summary>Notification preferences</summary>
+			<fieldset disabled={pending} oninput={() => (edited = true)}>
+				<legend>Notify me about</legend>
 				<p class="help">
-					Events during quiet hours are skipped. Equal start and end times silence the whole day.
-				</p>{/if}
-		</fieldset>
+					By default, notices follow prints started by your account, including your slicer
+					integrations. Unattributed prints are skipped.
+				</p>
+				<label
+					><input type="checkbox" bind:checked={preferences.allPrints} />Include prints started by
+					anyone</label
+				>
+				<label
+					><input type="checkbox" bind:checked={preferences.sharedErrors} />Include printer errors
+					when I have no active print</label
+				>
+				<label><input type="checkbox" bind:checked={preferences.complete} />Completed prints</label>
+				<label><input type="checkbox" bind:checked={preferences.failed} />Failed prints</label>
+				<label
+					><input type="checkbox" bind:checked={preferences.printerError} />Printer errors</label
+				>
+				<label
+					><input type="checkbox" bind:checked={preferences.snapshot} />Include a camera snapshot
+					when available</label
+				>
+				<p class="help">
+					Notifications use generic text. Snapshots may appear on your lock screen on supported
+					devices; private images expire after five minutes.
+				</p>
+				<label><input type="checkbox" bind:checked={preferences.quiet} />Quiet hours</label>
+				{#if preferences.quiet}<div class="quiet">
+						<label>From<input type="time" bind:value={preferences.quietStart} /></label><label
+							>Until<input type="time" bind:value={preferences.quietEnd} /></label
+						>
+					</div>
+					<label class="timezone">Time zone<input bind:value={preferences.timezone} /></label>
+					<p class="help">
+						Events during quiet hours are skipped. Equal start and end times silence the whole day.
+					</p>{/if}
+			</fieldset>
+		</details>
 		<div class="actions">
 			{#if subscribed}<button
 					class="button primary"
@@ -219,6 +224,7 @@
 							message = 'Device preferences saved.';
 						})}>Save preferences</button
 				><button
+					class="button secondary"
 					disabled={pending}
 					onclick={() =>
 						run(async () => {
@@ -226,9 +232,12 @@
 							message =
 								'Test accepted by the push service. Confirm it appears in your device’s notifications.';
 						})}>Send a test</button
-				><button disabled={pending} onclick={() => run(disable)}>Disable notifications</button
-				>{:else}<button class="button primary" disabled={pending} onclick={() => run(enable)}
-					>{pending ? 'Enabling…' : 'Enable notifications'}</button
+				><button class="button secondary" disabled={pending} onclick={() => run(disable)}
+					>Disable notifications</button
+				>{:else if permission !== 'denied'}<button
+					class="button primary"
+					disabled={pending}
+					onclick={() => run(enable)}>{pending ? 'Enabling…' : 'Enable notifications'}</button
 				>{/if}
 		</div>
 	{/if}
@@ -236,6 +245,17 @@
 </section>
 
 <style>
+	.notification-options {
+		border-top: 1px solid var(--border);
+		margin-top: 1rem;
+	}
+	.notification-options summary {
+		cursor: pointer;
+		padding: 0.75rem 0;
+		min-height: 44px;
+		color: var(--accent);
+		font-weight: 500;
+	}
 	.device-card {
 		background: var(--surface);
 		border: 1px solid var(--border);
@@ -311,7 +331,6 @@
 		gap: 0.6rem;
 		flex-wrap: wrap;
 	}
-	button,
 	input:not([type='checkbox']) {
 		min-height: 44px;
 		padding: 0.6rem 0.9rem;

@@ -29,6 +29,7 @@
 	);
 </script>
 
+<a class="skip-link" href="#main-content">Skip to main content</a>
 <div class="app-shell">
 	<aside class="sidebar">
 		<a class="brand" href="/">
@@ -40,7 +41,7 @@
 				{#if item.label === 'Calibration'}
 					<DropdownMenu.Root
 						><DropdownMenu.Trigger
-							class={`nav-trigger ${active === 'Calibration' ? 'active' : ''}`}
+							class={`nav-trigger secondary-destination ${active === 'Calibration' ? 'active' : ''}`}
 							aria-label="Calibration"
 							><Icon name="calibration" /><span class="calibration-label"
 								>Calibration<svg
@@ -90,11 +91,64 @@
 					>
 				{:else}<a
 						href={item.href}
+						class:secondary-destination={!'Overview Controls Jobs Console'
+							.split(' ')
+							.includes(item.label)}
 						class:active={active === item.label}
 						aria-current={active === item.label ? 'page' : undefined}
 						><Icon name={item.icon} /><span>{item.label}</span></a
 					>{/if}
 			{/each}
+
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger
+					class={`nav-trigger mobile-more ${!['Overview', 'Controls', 'Jobs', 'Console'].includes(active) ? 'active' : ''}`}
+					aria-label="More navigation"
+				>
+					<Icon name="more" /><span>More</span>
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Portal
+					><DropdownMenu.Content
+						class="calibration-menu mobile-navigation-menu"
+						side="bottom"
+						align="end"
+						sideOffset={6}
+					>
+						<DropdownMenu.Group
+							><DropdownMenu.GroupHeading class="calibration-menu-heading"
+								>Workshops</DropdownMenu.GroupHeading
+							>
+							{#each [{ href: '/calibration', title: 'Z-offset' }, { href: '/calibration/mesh', title: 'Bed mesh' }, { href: '/calibration/extrusion', title: 'Filament & extrusion' }, { href: '/calibration/pid', title: 'PID heater tuning' }] as item}
+								<DropdownMenu.Item
+									>{#snippet child({ props })}<a
+											{...props}
+											href={item.href}
+											class="calibration-menu-item"
+											aria-current={page.url.pathname === item.href ? 'page' : undefined}
+											>{item.title}</a
+										>{/snippet}</DropdownMenu.Item
+								>
+							{/each}
+						</DropdownMenu.Group>
+						<DropdownMenu.Separator class="menu-divider" />
+						<DropdownMenu.Group
+							><DropdownMenu.GroupHeading class="calibration-menu-heading"
+								>Manage & help</DropdownMenu.GroupHeading
+							>
+							{#each visibleNavigation.filter( (item) => ['Activity', 'Configuration', 'Account', 'Help'].includes(item.label) ) as item}
+								<DropdownMenu.Item
+									>{#snippet child({ props })}<a
+											{...props}
+											href={item.href}
+											class="calibration-menu-item"
+											aria-current={active === item.label ? 'page' : undefined}>{item.label}</a
+										>{/snippet}</DropdownMenu.Item
+								>
+							{/each}
+						</DropdownMenu.Group>
+					</DropdownMenu.Content></DropdownMenu.Portal
+				>
+			</DropdownMenu.Root>
 		</nav>
 		<a
 			class="sidebar-footer"
@@ -103,7 +157,7 @@
 			rel="noreferrer">Built in the open<small>View development on GitHub</small></a
 		>
 	</aside>
-	<main>
+	<main id="main-content" tabindex="-1">
 		<PrinterSafetyRegion {snapshot} initial={page.data.initial?.printer} />
 		{#if page.data.user?.role === 'owner' && active !== 'Configuration'}<ConfigurationRecovery
 				compact
@@ -113,6 +167,27 @@
 </div>
 
 <style>
+	:global(.sidebar nav .mobile-more) {
+		display: none;
+	}
+	:global(.menu-divider) {
+		height: 1px;
+		background: var(--border);
+		margin: 0.35rem 0;
+	}
+	:global(.mobile-navigation-menu) {
+		max-height: calc(100dvh - 140px);
+		overflow-y: auto;
+	}
+	@media (max-width: 600px) {
+		:global(.sidebar nav .secondary-destination) {
+			display: none;
+		}
+		:global(.sidebar nav .mobile-more) {
+			display: flex;
+		}
+	}
+
 	.calibration-label {
 		display: inline-flex;
 		align-items: center;

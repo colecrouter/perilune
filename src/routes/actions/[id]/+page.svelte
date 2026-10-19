@@ -1,15 +1,19 @@
 <script lang="ts">
+	import { actionStatusLabel } from '#lib/client/action-label.js';
 	import AppShell from '#lib/components/AppShell.svelte';
 	let { data } = $props();
 </script>
 
 <svelte:head><title>Action receipt · Perilune</title></svelte:head>
 <AppShell active="Controls"
-	><main class="receipt">
+	><div class="receipt serif">
 		<h1>{data.receipt.label}</h1>
-		<p role="status">{data.receipt.status}</p>
+		<p role="status">{actionStatusLabel[data.receipt.status]}</p>
 		{#if data.receipt.message}<p>{data.receipt.message}</p>{/if}
-		<p>Request <code>{data.receipt.id}</code></p>
+		<details>
+			<summary>Request details</summary>
+			<p><code>{data.receipt.id}</code></p>
+		</details>
 		<p>
 			Refreshing this receipt never resubmits the action. Unknown outcomes are never automatically
 			replayed.
@@ -17,7 +21,7 @@
 		<a class="button secondary" href={`/actions/${data.receipt.id}`} data-sveltekit-reload
 			>Refresh status</a
 		> <a href="/">Return to overview</a>
-	</main></AppShell
+	</div></AppShell
 >
 
 <style>
