@@ -137,6 +137,11 @@ sections and contextual entry/notification guidance. See
 [beta-ux-readiness.md](beta-ux-readiness.md) for the accepted scope and verification
 criteria. The backend command and authentication contracts remain unchanged.
 
+Camera compatibility and quality is the next implementation milestone. The
+accepted source matrix, managed companion direction, isolated lifecycle probe,
+and remaining acceptance are recorded in [camera-compatibility.md](camera-compatibility.md).
+The probe does not change the deployed camera gateway.
+
 Outstanding work includes coordinated hardware/platform acceptance, camera
 quality/codec processing, configurable overview layouts, race-safe rolling
 sessions, and optional email recovery. These are tracked separately from the beta

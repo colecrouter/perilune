@@ -82,6 +82,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm run test:compose
+      - name: Verify shared camera conversion and idle shutdown
+        run: node scripts/probe-camera-companion.mjs
       - run: docker build -t perilune:ci .
       - run: docker run --detach --name perilune-ci --publish 127.0.0.1:3000:3000 --env PERILUNE_ORIGIN=http://127.0.0.1:3000 perilune:ci
       - run: pnpm run test:smoke
