@@ -1325,3 +1325,25 @@ override maps one explicitly selected device without privileged mode. The pinned
 producer supports MJPEG, H.264, HEVC, YUYV and NV12; other offered formats are omitted.
 Default offered profiles are selectable; custom capture dimensions/rates, physical
 USB/unplug/replug and CSI driver provisioning remain acceptance/future work.
+
+## Explaining printer control locks
+
+Unavailable controls must identify the blocking condition and provide a useful
+review destination. `printerLockNotices` derives fixed public explanations from
+the existing shared snapshot; it never alters admission or clears a workflow.
+Normal calibration/progress and waiting review states use status language.
+Uncertain bed-mesh ownership, unclassified calibration and degraded storage need
+attention. Completed/staged results that do not hold controls are not presented
+as locks.
+
+The shared safety region displays persistent workflow guidance on every page,
+while existing emergency, uncertain-action and owner configuration recovery
+notices retain priority. Temperature and console explanations identify the same
+workflow and its review page. Role checks suppress owner/operator-only recovery
+links for other accounts and explain whom to contact. Console guidance is only
+attached when it matches the current admission reason; reconnect and higher
+priority safety states retain their own explanations. No new polling or mount-time
+configuration fetch was added, and incoming notices preserve local drafts.
+
+Future controls should follow this convention (issue #117). A notice links to the
+existing recovery flow; it is never a dismiss button for an active interlock.

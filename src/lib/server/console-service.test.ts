@@ -128,3 +128,38 @@ it('a throwing authorization callback cannot kill the execution worker', async (
 		.poll(async () => (await f.runtime.runPromise(f.service.find(next.id, f.actor)))?.status)
 		.toBe('completed');
 });
+
+it('publishes specific workflow guidance and removes it when the lock resolves', async () => {
+	const f = await fixture();
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.printer.state, (s) => ({
+			...s,
+			motion: { ...s.motion, calibration: true },
+			meshProbe: {
+				...s.meshProbe,
+				session: {
+					id: 'mesh',
+					ownerId: 'operator',
+					ownerName: 'Operator',
+					stage: 'uncertain' as const,
+					completedSamples: 0,
+					result: null,
+					startedAt: 0,
+					expiresAt: 1,
+					message: 'Private diagnostic'
+				}
+			}
+		}))
+	);
+	await expect.poll(async () => (await f.read()).guidance?.href).toBe('/calibration/mesh');
+	expect((await f.read()).reason).toContain('bed-mesh');
+	expect(JSON.stringify((await f.read()).guidance)).not.toContain('Private diagnostic');
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.printer.state, (s) => ({
+			...s,
+			motion: { ...s.motion, calibration: false },
+			meshProbe: { ...s.meshProbe, session: null }
+		}))
+	);
+	await expect.poll(async () => (await f.read()).guidance).toBeUndefined();
+});

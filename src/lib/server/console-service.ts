@@ -17,6 +17,7 @@ import { PrinterService } from './printer-service.js';
 import { MoonrakerService } from './moonraker.js';
 import {
 	consoleReason,
+	consoleGuidance,
 	consoleScript,
 	simulatorMacros,
 	simulateConsole,
@@ -80,6 +81,7 @@ export const ConsoleServiceLive = Layer.effect(
 			executionEnabled: initial.mode === 'simulator' || initial.liveConsole === true,
 			connection: initial.connection,
 			reason: consoleReason(initial),
+			guidance: consoleGuidance(initial),
 			macros: initial.mode === 'simulator' ? simulatorMacros : [],
 			responses: [],
 			receipts: []
@@ -120,6 +122,7 @@ export const ConsoleServiceLive = Layer.effect(
 				mode: snapshot.mode,
 				executionEnabled: snapshot.mode === 'simulator' || snapshot.liveConsole === true,
 				connection: snapshot.connection,
+				guidance: unhealthy ? undefined : consoleGuidance(snapshot),
 				reason: unhealthy
 					? 'Console storage failed. Check history before submitting more commands.'
 					: consoleReason(snapshot),

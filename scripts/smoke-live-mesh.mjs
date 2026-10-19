@@ -166,6 +166,8 @@ const app = spawn(process.execPath, ['scripts/server.mjs'], {
 		PERILUNE_DATABASE: join(directory, 'state.sqlite'),
 		PERILUNE_MOONRAKER_URL: `ws://127.0.0.1:${address.port}/websocket`,
 		PERILUNE_LIVE_MESH: 'true',
+		PERILUNE_LIVE_CONTROLS: 'true',
+		PERILUNE_LIVE_CONSOLE: 'true',
 		PERILUNE_MOONRAKER_API_KEY: '',
 		PERILUNE_CAMERA_COMPANION_URL: ''
 	},
@@ -192,7 +194,17 @@ try {
 	page.on('pageerror', (e) => errors.push(e.message));
 	observer.on('pageerror', (e) => errors.push(e.message));
 	await page.goto(base + '/calibration/mesh');
-	await observer.goto(base + '/calibration/mesh');
+	await observer.goto(base);
+	await observer.locator('form[data-enhanced="true"]:has(#bed-target)').waitFor();
+	await observer.getByRole('spinbutton', { name: 'Bed target' }).fill('85');
+	const consoleObserver = await context.newPage();
+	consoleObserver.on('pageerror', (e) => errors.push(e.message));
+	const consoleReady = consoleObserver.waitForResponse((response) =>
+		response.url().includes('/getConsole')
+	);
+	await consoleObserver.goto(base + '/console');
+	await consoleReady;
+	await consoleObserver.getByRole('textbox', { name: 'Command', exact: true }).fill('M105');
 	const prepare = async () => {
 		await page.getByRole('button', { name: 'Probe bed…', exact: true }).click();
 		await page.getByRole('checkbox', { name: /bed and probe cleanliness/ }).check();
@@ -201,10 +213,18 @@ try {
 	};
 	await prepare();
 	await page.getByRole('button', { name: 'Home and probe bed' }).click();
-	await observer.getByText('Mapping the bed', { exact: true }).waitFor();
-	await observer.getByText(/of 9 samples/).waitFor();
+	await observer.getByText('Bed-mesh calibration in progress', { exact: true }).waitFor();
+	await consoleObserver
+		.locator('p.notice')
+		.getByRole('link', { name: 'Review bed mesh →' })
+		.waitFor();
 	await page.getByRole('link', { name: 'Controls', exact: true }).click();
-	await observer.getByText('Review your mesh', { exact: true }).waitFor();
+	await observer.getByText('Bed-mesh review is waiting', { exact: true }).waitFor();
+	assert.equal(await observer.getByRole('spinbutton', { name: 'Bed target' }).inputValue(), '85');
+	assert.equal(
+		await consoleObserver.getByRole('textbox', { name: 'Command', exact: true }).inputValue(),
+		'M105'
+	);
 	await page.goto(base + '/calibration/mesh');
 	await page
 		.getByRole('button', { name: 'Save profile…', exact: true })
@@ -225,6 +245,14 @@ try {
 	assert.deepEqual(status.bed_mesh.profiles.default.points, points);
 	assert.ok(status.bed_mesh.profiles['reviewed-bed']);
 	assert.equal(status.configfile.save_config_pending, false);
+	await observer
+		.getByRole('region', { name: 'Printer workflow status' })
+		.waitFor({ state: 'detached' });
+	assert.equal(await observer.getByRole('spinbutton', { name: 'Bed target' }).inputValue(), '85');
+	assert.equal(
+		await consoleObserver.getByRole('textbox', { name: 'Command', exact: true }).inputValue(),
+		'M105'
+	);
 	assert.equal(scripts.filter((s) => s.includes('SAVE_CONFIG')).length, 1);
 	assert.equal(scripts.filter((s) => s === 'G28').length, 1);
 	assert.ok(

@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+	import { printerLockNotices, canReviewPrinterLock } from '#lib/domain/printer-locks.js';
 	import { onMount } from 'svelte';
 	import { liveConnection } from '#lib/client/live-connection.svelte.js';
 	import ActionForm from '#lib/components/ActionForm.svelte';
@@ -94,12 +95,23 @@
 		snapshot.connection === 'connected' && snapshot.klippy === 'ready' && transportConnected
 	);
 	const alreadyOff = $derived(thermalReady && heaterTargetsOff(snapshot));
+	const controlLock = $derived(
+		thermalReady &&
+			!snapshot.safety?.halted &&
+			!snapshot.liveRecovery &&
+			(snapshot.mode === 'simulator' || snapshot.liveControls) &&
+			data.user?.role !== 'viewer'
+			? printerLockNotices(snapshot)[0]
+			: undefined
+	);
 	const thermalReason = $derived(
 		!transportConnected
 			? `${updates.label}. History and drafts are retained.`
 			: data.user?.role === 'viewer'
 				? 'An operator account is required to change temperatures.'
-				: temperatureReason(snapshot)
+				: readOnly && controlLock
+					? controlLock.message
+					: temperatureReason(snapshot)
 	);
 	const busy = $derived(submitting || pending || snapshot.storage === 'degraded');
 	async function send(command: PrinterCommand) {
@@ -254,7 +266,12 @@
 								>{/snippet}</ActionForm
 						>
 					</div>
-					{#if thermalReason}<p class="muted">{thermalReason}</p>{/if}
+					{#if thermalReason}<p class="muted">
+							{thermalReason}
+							{#if readOnly && controlLock && canReviewPrinterLock(controlLock, data.user?.role)}<a
+									href={controlLock.href}>{controlLock.label} →</a
+								>{/if}
+						</p>{/if}
 					{#if alreadyOff}<p class="muted">
 							Both heater targets are already off. The heaters may still be cooling.
 						</p>{/if}

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { canReviewPrinterLock } from '#lib/domain/printer-locks.js';
+	import { page } from '$app/state';
 	import { tick } from 'svelte';
 	import { preferencesContext } from '#lib/client/preferences.svelte.js';
 	import { isHttpError } from '@sveltejs/kit';
@@ -311,7 +313,12 @@
 				>{connected && snapshot.connection === 'connected' ? 'Connected' : 'Reconnecting'}</span
 			>
 		</div>
-		{#if reason}<p class="notice" role="status">{reason}</p>{/if}
+		{#if reason}<p class="notice" role="status">
+				{reason}
+				{#if connected && snapshot.guidance && canReviewPrinterLock(snapshot.guidance, page.data.user?.role)}<a
+						href={snapshot.guidance.href}>{snapshot.guidance.label} →</a
+					>{/if}
+			</p>{/if}
 		<details class="log-options">
 			<summary>History display</summary>
 			<div class="log-tools">
