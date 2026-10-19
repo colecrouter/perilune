@@ -277,11 +277,12 @@ try {
 	assert.deepEqual(errors, []);
 
 	db.prepare('UPDATE user SET authVersion=authVersion+1').run();
-	const invalid = await native.request.get(base + '/');
+	const invalid = await native.request.get(base + '/', { maxRedirects: 0 });
 	assert.ok(
 		[401, 403, 303].includes(invalid.status()),
 		`Invalidated session received ${invalid.status()}`
 	);
+	if (invalid.status() === 303) assert.equal(invalid.headers().location, '/login');
 	assert.ok(!(await invalid.text()).includes('Nozzle target'));
 	db.close();
 	console.log(
