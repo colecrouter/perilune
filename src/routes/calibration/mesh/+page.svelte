@@ -43,12 +43,8 @@
 					Explore the reported height grid, inspect profiles, and understand the variation.
 				</p>
 			</div>
-			<span class="mode-badge"
-				>{snapshot.mode === 'simulator'
-					? 'Simulator examples'
-					: snapshot.liveMesh.enabled
-						? 'Live calibration'
-						: 'Read-only inspection'}</span
+			<span class="mesh-source"
+				>{snapshot.mode === 'simulator' ? 'Simulator examples' : 'Printer mesh data'}</span
 			>
 		</header>
 		<BedMeshProbe
@@ -124,6 +120,16 @@
 >
 
 <style>
+	.mesh-source {
+		flex-shrink: 0;
+		padding: 0.35rem 0.7rem;
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--muted);
+		font-size: 0.8rem;
+	}
+
 	.mesh-guide summary {
 		cursor: pointer;
 		font-weight: 600;
