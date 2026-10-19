@@ -9,7 +9,7 @@ services:
       - camera
   camera:
     image: alexxit/go2rtc:1.9.14@sha256:675c318b23c06fd862a61d262240c9a63436b4050d177ffc68a32710d9e05bae
-    command: ['-config', '/config/go2rtc.yaml']
+    command: ['go2rtc', '-config', '/config/go2rtc.yaml']
     volumes:
       - ./docker/camera/go2rtc.yaml:/config/go2rtc.yaml:ro
     read_only: true
