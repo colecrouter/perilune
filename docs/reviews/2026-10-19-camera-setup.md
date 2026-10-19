@@ -23,3 +23,11 @@ was resolved by making snapshot preview failure copy neutral about media type.
 Validation evidence is recorded in the PR. Synthetic media verifies protocol and
 browser behavior; actual Safari, low-power hardware and USB/CSI acceptance remain
 coordinated device checks. No physical printer commands were issued.
+
+Deployment follow-up: the Compose command override omitted the executable from
+an image whose entrypoint is tini. The explicit `go2rtc` command resolves startup.
+`test:compose` now starts the actual isolated override with its read-only config,
+checks its private API and lack of published ports, and removes the project in
+`finally`. The independent reviewer approved this correction without findings;
+the real Compose startup check passed locally and the deployed companion was
+verified running on loopback only.
