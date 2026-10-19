@@ -67,10 +67,10 @@
 			</p>
 			<SafetyButton {snapshot} label="Stop calibration" />
 		{:else if run.stage === 'staged' && live}
-			<a class="button primary" href="/configuration">Review pending settings &amp; save →</a>
+			<a class="button primary" href="/configuration/pending">Review pending settings →</a>
 			<p class="muted">
-				Saving is separate and restarts Klipper. The review includes every pending setting, not just
-				this heater. Saving also requires the server’s separate configuration application opt-in.
+				Next, review all staged settings together. Nothing is saved until you confirm
+				<strong>Save settings &amp; restart</strong> on the review page.
 			</p>
 		{:else if run.stage === 'interrupted'}<a href="/activity#recovery">Review printer recovery →</a
 			>{/if}

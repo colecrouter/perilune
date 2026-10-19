@@ -1211,8 +1211,11 @@ PID checkpoint; interrupted or restarted work is never replayed. Native command
 capability checks reject overridden PID/cooldown commands. A long-running RPC is
 followed by fresh pending-gain, idle-state and targets-off verification.
 
-Staged gains link to the existing all-pending configuration review and separate
-save/restart workflow. Synthetic simulator gains are labelled examples and cannot
+Staged gains open a dedicated owner-only pending-settings review page, which
+loads every staged setting automatically rather than dropping the owner into the
+configuration editor. Unavailable saving is shown explicitly. Saving remains a
+separate confirmed action, gated by current recovery availability and the existing
+server-side pending/source fingerprint checks. Synthetic simulator gains are labelled examples and cannot
 be applied to hardware. The separate `PERILUNE_LIVE_PID` opt-in stays false until
 owner-coordinated heater acceptance. See [PID calibration](pid-calibration.md) for
 implemented behavior and the outstanding physical acceptance checklist.

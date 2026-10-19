@@ -263,6 +263,18 @@ try {
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 	await mkdir('test-results', { recursive: true });
 	await page.screenshot({ path: 'test-results/pid-result-mobile.png', fullPage: true });
+	await page.getByRole('link', { name: 'Review pending settings →', exact: true }).click();
+	await page.waitForURL(base + '/configuration/pending');
+	assert.equal(await page.title(), 'Review pending settings · Perilune');
+	await page.getByRole('heading', { name: 'Review pending settings', exact: true }).waitFor();
+	await page.getByRole('alert').filter({ hasText: 'disabled on this server' }).waitFor();
+	assert.equal(await page.getByRole('button', { name: 'Save settings & restart' }).count(), 0);
+	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+	await page.screenshot({
+		path: '/tmp/perilune-pending-review-disabled-mobile.png',
+		fullPage: true
+	});
+	await page.goto(base + '/calibration/pid');
 	status.configfile.save_config_pending = false;
 	status.configfile.save_config_pending_items = {};
 	publish();

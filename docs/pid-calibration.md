@@ -33,12 +33,12 @@ replayed. Review the printer and Activity recovery before submitting a new test.
 
 A completed RPC alone is insufficient: the backend also requires fresh pending
 PID gains, both heater targets off, and an idle printer. The result is staged;
-previous control settings remain active until saved. Configuration → Review
-pending settings shows **all** pending Klipper settings, including changes staged
+previous control settings remain active until saved. The result’s **Review pending settings** button opens a focused review page
+and loads the staged changes automatically. It shows **all** pending Klipper settings, including changes staged
 by other clients. Review them all before explicitly confirming save and restart.
 The existing configuration workflow rechecks pending/source fingerprints, backs
 up the previous source, and verifies saved bytes and startup. If saving is disabled,
-coordinate its separate configuration application opt-in first.
+the review page explains that saving is unavailable; coordinate its separate configuration application opt-in first.
 
 If pending gains change or disappear, the result says so; disappearance alone
 does not prove the proposed values were saved. Inspect active configuration.

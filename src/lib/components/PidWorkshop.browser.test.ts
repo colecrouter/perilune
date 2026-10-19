@@ -52,3 +52,23 @@ test('keeps calibration disabled for viewers and makes synthetic results explici
 		.element(screen.getByRole('link', { name: /Review pending settings/ }))
 		.not.toBeInTheDocument();
 });
+
+test('staged live gains lead directly to the focused review without saving', async () => {
+	const snapshot = ready();
+	snapshot.mode = 'moonraker';
+	snapshot.pid!.run = {
+		id: 'live-result',
+		ownerId: 'owner',
+		heater: 'nozzle',
+		target: 200,
+		startedAt: Date.now(),
+		stage: 'staged',
+		parameters: { kp: 20, ki: 1.2, kd: 80 },
+		message: 'Staged and unsaved.'
+	};
+	const screen = await render(PidWorkshop, { snapshot, role: 'owner' });
+	await expect
+		.element(screen.getByRole('link', { name: 'Review pending settings →' }))
+		.toHaveAttribute('href', '/configuration/pending');
+	await expect.element(screen.getByText(/Nothing is saved until you confirm/)).toBeVisible();
+});

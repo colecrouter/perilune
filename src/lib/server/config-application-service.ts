@@ -419,8 +419,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 				Effect.tryPromise({
 					try: async (signal) => {
 						authorize(actor);
-						if (!enabled)
-							throw failure('Live configuration application is disabled on this server.');
+						if (!enabled) throw failure('Saving printer settings is disabled on this server.');
 						const config = await idle(signal, false, true);
 						const manifest = pendingManifest(config?.save_config_pending_items);
 						const sources = await Effect.runPromise(files.sources('@main', actor), { signal });
@@ -451,8 +450,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 					Effect.tryPromise({
 						try: async (signal) => {
 							authorize(actor);
-							if (!enabled)
-								throw failure('Live configuration application is disabled on this server.');
+							if (!enabled) throw failure('Saving printer settings is disabled on this server.');
 							if (!/^[a-f0-9-]{36}$/i.test(request.id) || request.confirmedRestart !== true)
 								throw failure('Supply a unique operation ID and explicitly confirm restart.');
 							const fingerprint = hash(JSON.stringify(request));
