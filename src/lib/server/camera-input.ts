@@ -1,8 +1,9 @@
+import { localCameraEndpoint } from './camera-local.js';
 import { createHash } from 'node:crypto';
 
 /** Private input configuration. Never serialize this object into browser snapshots. */
 export interface CameraInput {
-	kind: 'network' | 'snapshot';
+	kind: 'network' | 'snapshot' | 'local';
 	name: string;
 	streamUrl: string;
 	snapshotUrl?: string;
@@ -60,7 +61,7 @@ export function cameraInput(value: unknown, webOrigin?: string): CameraInput {
 	const name = typeof data.name === 'string' ? data.name.trim() : '';
 	if (!name || name.length > 120)
 		throw new Error('Give this camera a name of up to 120 characters.');
-	if (data.kind !== 'network' && data.kind !== 'snapshot')
+	if (data.kind !== 'network' && data.kind !== 'snapshot' && data.kind !== 'local')
 		throw new Error('Choose a supported camera connection.');
 	const rotation = data.rotation ?? 0;
 	if (![0, 90, 180, 270].includes(rotation as number)) throw new Error('Choose a valid rotation.');
@@ -70,7 +71,10 @@ export function cameraInput(value: unknown, webOrigin?: string): CameraInput {
 	return {
 		kind: data.kind,
 		name,
-		streamUrl: cameraEndpoint(data.streamUrl, data.kind === 'snapshot', webOrigin),
+		streamUrl:
+			data.kind === 'local'
+				? localCameraEndpoint(data.streamUrl)
+				: cameraEndpoint(data.streamUrl, data.kind === 'snapshot', webOrigin),
 		...(data.snapshotUrl ? { snapshotUrl: cameraEndpoint(data.snapshotUrl, true, webOrigin) } : {}),
 		rotation: rotation as CameraInput['rotation'],
 		flipHorizontal: data.flipHorizontal === true,
@@ -89,9 +93,10 @@ export function discoverCameraInputs(webcams: unknown, webOrigin?: string): Came
 		try {
 			const input = cameraInput(
 				{
-					kind: 'network',
+					kind:
+						typeof item.stream_url === 'string' && item.stream_url.trim() ? 'network' : 'snapshot',
 					name: typeof item.name === 'string' && item.name.trim() ? item.name : 'Printer camera',
-					streamUrl: item.stream_url,
+					streamUrl: item.stream_url || item.snapshot_url,
 					snapshotUrl: item.snapshot_url,
 					rotation: item.rotation,
 					flipHorizontal: item.flip_horizontal,
@@ -119,6 +124,11 @@ export function cameraCandidateSummary(candidate: CameraCandidate) {
 	return {
 		id: candidate.id,
 		name: candidate.input.name,
-		protocol: new URL(candidate.input.streamUrl).protocol.startsWith('rtsp') ? 'RTSP' : 'HTTP'
+		protocol:
+			candidate.input.kind === 'local'
+				? 'USB / Linux'
+				: new URL(candidate.input.streamUrl).protocol.startsWith('rtsp')
+					? 'RTSP'
+					: 'HTTP'
 	};
 }

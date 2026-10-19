@@ -1,28 +1,17 @@
 import { error, json, type RequestEvent } from '@sveltejs/kit';
-import { Effect, SubscriptionRef } from 'effect';
+import { Effect } from 'effect';
 import { authService, requireIdentity, sameOrigin } from '#lib/server/auth/index.js';
 import { readBoundedBody } from '#lib/server/action-body.js';
 import { CameraSetupService, CameraSetupError } from '#lib/server/camera-setup-service.js';
-import { cameraCandidateSummary, discoverCameraInputs } from '#lib/server/camera-input.js';
-import { MoonrakerService } from '#lib/server/moonraker.js';
+import { cameraCandidates, cameraSetupSnapshot } from '#lib/server/camera-setup-read.js';
 import { runtime } from '#lib/server/runtime.js';
-async function candidates() {
-	if (!process.env.PERILUNE_MOONRAKER_URL) return [];
-	const moonraker = await runtime.runPromise(MoonrakerService);
-	const snapshot = await runtime.runPromise(SubscriptionRef.get(moonraker.state));
-	return discoverCameraInputs(snapshot.webcams, process.env.PERILUNE_PRINTER_WEB_ORIGIN);
-}
 export async function GET(event: RequestEvent) {
 	requireIdentity(event, 'owner');
-	const service = await runtime.runPromise(CameraSetupService);
-	const status = await runtime.runPromise(service.status);
-	const discovered = await candidates();
+	const settings = await cameraSetupSnapshot();
 	requireIdentity(event, 'owner');
-	return json(
-		{ status, candidates: discovered.map(cameraCandidateSummary) },
-		{ headers: { 'Cache-Control': 'no-store' } }
-	);
+	return json(settings, { headers: { 'Cache-Control': 'no-store' } });
 }
+
 export async function POST(event: RequestEvent) {
 	const identity = requireIdentity(event, 'owner');
 	sameOrigin(event.request);
@@ -41,8 +30,17 @@ export async function POST(event: RequestEvent) {
 		let operation: Effect.Effect<unknown, Error>;
 		if (body.operation === 'test') {
 			let input = body.input;
-			if (typeof body.candidate === 'string') {
-				const candidate = (await candidates()).find((item) => item.id === body.candidate);
+			if (typeof body.localCandidate === 'string') {
+				const devices = await runtime.runPromise(
+					service.devices(AbortSignal.any([event.request.signal, lease.signal]))
+				);
+				const selected = devices.find((item) => item.id === body.localCandidate);
+				if (!selected) error(409, 'This local camera is no longer available. Scan again.');
+				input = selected.input;
+			} else if ((input as { kind?: unknown })?.kind === 'local')
+				error(400, 'Choose a detected local camera.');
+			else if (typeof body.candidate === 'string') {
+				const candidate = (await cameraCandidates()).find((item) => item.id === body.candidate);
 				if (!candidate) error(409, 'The discovered camera changed. Refresh and choose it again.');
 				input = candidate.input;
 			}

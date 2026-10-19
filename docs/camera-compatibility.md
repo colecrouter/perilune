@@ -14,7 +14,7 @@ external go2rtc installations remain supported.
 | camera-streamer                | Prefer available encoded HTTP or optional RTSP output                        | Encoded HTTP remux probe verified           |
 | IP camera H.264                | RTSP ingestion and remux                                                     | Synthetic RTSP H.264 verified               |
 | IP camera H.265                | Convert to browser-compatible H.264                                          | Synthetic RTSP HEVC conversion verified     |
-| USB on Perilune host           | Host capture daemon to HTTP/RTSP; no app device mapping                      | Device acceptance pending                   |
+| USB on Perilune host           | Optional single-device mapping and detected V4L2 profiles                    | Device acceptance pending                   |
 | USB/CSI on remote printer      | Reuse capture daemon on that host                                            | Setup documented; device acceptance pending |
 | JPEG-only endpoint             | Clearly identified still-image fallback                                      | Implemented; synthetic tests                |
 | External go2rtc / Frigate      | Existing authenticated proxy integration                                     | Previously shipped H.264 path               |
@@ -95,7 +95,7 @@ legacy source restoration and native-HLS selection behavior.
 Actual Safari/native HLS, phones, low-power performance and representative USB/CSI
 hardware require coordinated device acceptance. Synthetic fixtures establish
 protocol behavior, not a universal camera compatibility or performance guarantee.
-Direct USB driver provisioning and vendor cloud integrations are not implemented.
+USB driver provisioning and vendor cloud integrations are not implemented.
 
 ## Primary references
 

@@ -1,19 +1,22 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { getCameraSetup, getLocalCameras } from './camera.remote.js';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import { getPrinter } from '../printer.remote.js';
 	let { data } = $props();
 	const printer = getPrinter();
 	const snapshot = $derived(printer.current ?? data.initial!.printer);
-	let status = $state<{
-		enabled: boolean;
-		revision: number;
-		name: string | null;
-		status: string;
-		message: string;
-	} | null>(null);
-	let candidates = $state<Array<{ id: string; name: string; protocol: string }>>([]);
+	const settings = getCameraSetup();
+	const initialSetup = await settings;
+	const setup = $derived(settings.current ?? initialSetup);
+	const status = $derived(setup.status);
+	const candidates = $derived(setup.candidates);
 	let candidate = $state('manual');
+	let localCandidate = $state('');
+	let localDevices = $state<Array<{ id: string; name: string; protocol: string }>>([]);
+	let scanned = $state(false);
+	let scanning = $state(false);
+	let captureHost = $state('printer');
 	let name = $state('Printer camera');
 	let mediaKind = $state<'network' | 'snapshot'>('network');
 	let streamUrl = $state('');
@@ -29,6 +32,7 @@
 		JSON.stringify({
 			mediaKind,
 			candidate,
+			localCandidate,
 			name,
 			streamUrl,
 			snapshotUrl,
@@ -40,22 +44,31 @@
 	let testedDraft = $state('');
 	let previewFailed = $state(false);
 	const canSave = $derived(tested && draft === testedDraft);
-	let controller: AbortController | undefined;
+	let controller = $state<AbortController>();
 	onMount(() => {
 		void Promise.resolve(printer).catch(() => {});
 		controller = new AbortController();
-		void fetch('/api/camera/setup', { signal: controller.signal, cache: 'no-store' })
-			.then(async (response) => {
-				if (!response.ok) throw Error('Camera settings could not load. Reload to try again.');
-				const body = await response.json();
-				status = body.status;
-				candidates = body.candidates;
-			})
-			.catch((cause) => {
-				if (!controller?.signal.aborted) failure = cause.message;
-			});
+
 		return () => controller?.abort();
 	});
+	async function scanLocal() {
+		if (scanning) return;
+		scanning = true;
+		failure = '';
+		try {
+			const devices = getLocalCameras();
+			await devices.refresh();
+			localDevices = await devices;
+			scanned = true;
+			if (!localDevices.some((item) => item.id === localCandidate)) localCandidate = '';
+		} catch {
+			failure =
+				'Local cameras could not be checked. Verify the camera service is running and try again.';
+		} finally {
+			scanning = false;
+		}
+	}
+
 	async function send(operation: 'test' | 'save' | 'reset') {
 		if (pending) return;
 		if (operation === 'test') tested = null;
@@ -73,20 +86,22 @@
 						? { operation, revision: status?.revision }
 						: operation === 'save'
 							? { operation, token: tested?.token }
-							: candidate === 'manual'
-								? {
-										operation,
-										input: {
-											kind: mediaKind,
-											name,
-											streamUrl,
-											snapshotUrl,
-											rotation,
-											flipHorizontal,
-											flipVertical
+							: candidate === 'local'
+								? { operation, localCandidate }
+								: candidate === 'manual'
+									? {
+											operation,
+											input: {
+												kind: mediaKind,
+												name,
+												streamUrl,
+												snapshotUrl,
+												rotation,
+												flipHorizontal,
+												flipVertical
+											}
 										}
-									}
-								: { operation, candidate }
+									: { operation, candidate }
 				)
 			});
 			const body = await response.json();
@@ -101,7 +116,6 @@
 						? 'Image connection verified. Save to use this camera.'
 						: 'Video connection verified. Save to use this camera.';
 			} else {
-				status = body;
 				tested = null;
 				if (operation === 'save' && draft === submitted) {
 					streamUrl = '';
@@ -111,6 +125,12 @@
 					operation === 'reset'
 						? 'Managed camera disconnected. The previous connection is restored, if configured.'
 						: 'Camera saved. It is ready on the overview.';
+				try {
+					await settings.refresh();
+				} catch {
+					failure =
+						'The change was saved, but current settings could not refresh. Your edits are preserved. Refresh settings to try again.';
+				}
 			}
 		} catch (cause) {
 			if (!controller?.signal.aborted)
@@ -131,10 +151,29 @@
 			</p>
 		</header>
 		{#if failure}<p role="alert" class="error-text">{failure}</p>{/if}
+		{#if settings.error}<button
+				class="button secondary"
+				disabled={settings.loading}
+				onclick={async () => {
+					try {
+						await settings.refresh();
+						failure = '';
+					} catch {
+						failure = 'Current settings could not refresh. Your edits are preserved.';
+					}
+				}}>Refresh settings</button
+			>{/if}
 		{#if status}
 			<section class="panel">
 				<h2>Current camera</h2>
-				<p>{status.name ?? 'Using the existing camera connection, if configured.'}</p>
+				<p>{setup.current.configured ? setup.current.name : 'No camera connected'}</p>
+				<p class="muted">
+					{status.name
+						? 'Connected through Perilune’s camera service.'
+						: setup.current.configured
+							? 'Connected through an external camera service. Adding a camera below replaces this selection after you test and save.'
+							: 'Choose a source below to connect your first camera.'}
+				</p>
 				{#if status.message}<p role="status">{status.message}</p>{/if}<a href="/">Open overview</a
 				>{#if status.name}<details class="disconnect">
 						<summary>Disconnect this camera</summary>
@@ -174,13 +213,84 @@
 						}}
 					>
 						<label
-							>Camera source<select bind:value={candidate}
-								><option value="manual">Enter an endpoint</option>{#each candidates as item}<option
-										value={item.id}>{item.name} · {item.protocol}</option
+							>Camera source<select bind:value={candidate} disabled={!controller}
+								><option value="manual">Network or printer-host camera</option><option value="local"
+									>USB camera on this server</option
+								>{#each candidates as item}<option value={item.id}
+										>{item.name} · {item.protocol}</option
 									>{/each}</select
 							></label
 						>
-						{#if candidate === 'manual'}
+						{#if candidate === 'local'}
+							<p class="muted">
+								Find USB / Linux cameras attached to the computer running Perilune’s camera service.
+								Cameras attached to a remote printer belong under Network or printer-host camera.
+							</p>
+							<button
+								class="button secondary"
+								type="button"
+								disabled={scanning || Boolean(pending)}
+								onclick={() => void scanLocal()}
+								>{scanning ? 'Checking devices…' : 'Find local cameras'}</button
+							>
+							{#if localDevices.length}
+								<label
+									>Capture profile<select bind:value={localCandidate}
+										><option value="">Choose a detected profile</option
+										>{#each localDevices as item}<option value={item.id}>{item.name}</option
+											>{/each}</select
+									></label
+								>
+								<p class="muted help">
+									Prefer H.264 when offered; MJPEG may need conversion. Close other capture software
+									before testing a device.
+								</p>
+							{:else if scanned}<p role="status">
+									No supported local cameras found. Attach a camera and map its video device into
+									the camera service, then check again.
+								</p>{/if}
+							<details>
+								<summary>Allow a local USB device</summary>
+								<p>
+									Linux installations can add <code>compose.camera-usb.yaml</code> alongside the
+									normal camera Compose files. Set <code>PERILUNE_CAMERA_DEVICE</code> to the host’s camera
+									device. This grants access to one camera, without privileged mode. A camera already
+									captured by Crowsnest should use its network stream instead.
+								</p>
+								<a
+									href="https://github.com/colecrouter/perilune/blob/main/docs/camera-setup.md#local-usb-capture"
+									target="_blank"
+									rel="noreferrer">USB installation guide ↗</a
+								>
+							</details>
+						{:else if candidate === 'manual'}
+							<label
+								>Camera location<select bind:value={captureHost}
+									><option value="printer">USB / CSI on the printer computer</option><option
+										value="ip">IP camera or another network source</option
+									></select
+								></label
+							>
+							{#if captureHost === 'printer'}<p class="muted help">
+									Klipper controls the printer; Crowsnest, ustreamer or camera-streamer captures the
+									camera. Choose an imported Moonraker entry above when available, or enter that
+									capture service’s stream below. The service must run on the computer with the
+									camera attached.
+								</p>
+								<details>
+									<summary>No imported printer cameras?</summary>
+									<p>
+										Check Moonraker’s webcam configuration. Relative webcam paths require the
+										printer web origin on the Perilune server; it can differ from Moonraker’s API
+										port. You can also enter the full stream endpoint below.
+									</p>
+									<a href="https://crowsnest.mainsail.xyz/" target="_blank" rel="noreferrer"
+										>Crowsnest setup guide ↗</a
+									>
+								</details>{:else}<p class="muted help">
+									Prefer the camera’s H.264 RTSP stream when available. HTTP video and MJPEG are
+									also supported; the camera’s viewer page is not a stream endpoint.
+								</p>{/if}
 							<label
 								>Connection type<select bind:value={mediaKind}
 									><option value="network">Video stream</option><option value="snapshot"
@@ -234,7 +344,7 @@
 							<button
 								class="button secondary"
 								type="submit"
-								disabled={Boolean(pending)}
+								disabled={Boolean(pending) || (candidate === 'local' && !localCandidate)}
 								aria-busy={pending === 'test'}
 								>{pending === 'test' ? 'Testing camera…' : 'Test connection'}</button
 							><button

@@ -131,3 +131,31 @@ it('remuxes encoded HTTP with a fixed copy template and encodes argument/templat
 	);
 	expect(sources[1]).toBe(`ffmpeg:${id}#video=h264`);
 });
+
+it('reads local devices only from the private fixed discovery endpoint', async () => {
+	const client = await fixture((request, response) => {
+		expect(request.url).toBe('/api/v4l2');
+		response.end(
+			JSON.stringify({
+				sources: [
+					{
+						url: 'v4l2:device?video=/dev/video0&input_format=h264&video_size=1280x720&framerate=30'
+					}
+				]
+			})
+		);
+	});
+	const [candidate] = await client.devices();
+	expect(candidate.input.kind).toBe('local');
+});
+it('treats no devices as empty and rejects oversized discovery responses', async () => {
+	const empty = await fixture((_request, response) => {
+		response.writeHead(404);
+		response.end('no sources');
+	});
+	expect(await empty.devices()).toEqual([]);
+	const huge = await fixture((_request, response) => {
+		response.end(' '.repeat(262145));
+	});
+	await expect(huge.devices()).rejects.toThrow('Local camera discovery unavailable.');
+});

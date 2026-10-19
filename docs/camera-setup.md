@@ -61,8 +61,8 @@ media; settings changes invalidate prior media sessions.
   capturing the device. Import its Moonraker entry or enter its HTTP/RTSP output.
   Prefer encoded output when available. Do not open the same USB device twice.
 - **USB on the Perilune host:** run a Linux capture service on that host and connect
-  its HTTP/RTSP output. This release does not grant the companion direct device
-  access or install/configure capture drivers. Container capture needs an explicit
+  its HTTP/RTSP output. Alternatively use the explicit local USB mapping described below. This release
+  does not install/configure capture drivers. Container capture needs an explicit
   device mapping in that capture service; do not use privileged mode by default.
 - **Pi CSI:** use the capture software appropriate to the Pi's camera/OS stack,
   such as a compatible camera-streamer or Crowsnest setup. Configure its network
@@ -97,3 +97,33 @@ owner flow, actual browser decode, quality persistence, app/companion restarts,
 JPEG refresh and authorization. Both require Docker, use generated media, and
 remove their containers. Hardware performance, real Safari/native HLS and
 representative USB/CSI acceptance are still coordinated device checks.
+
+## Local USB capture
+
+On a Linux server, the managed companion can discover and capture a USB/V4L2
+camera directly. This is separate from importing a camera already served by
+Crowsnest on a printer computer. The UI lists only profiles reported by the
+companion, with their format, resolution and frame rate. Arbitrary device paths
+and media-engine directives are not accepted from the browser.
+
+Map one host camera into the companion using the additional override:
+
+```sh
+PERILUNE_CAMERA_DEVICE=/dev/video0 docker compose \
+  -f compose.yaml -f compose.camera.yaml -f compose.camera-usb.yaml up -d
+```
+
+Prefer a stable host `/dev/v4l/by-id/...` path when available. Inside the companion
+it becomes `/dev/video0`. No privileged mode or broad `/dev` mount is required.
+Device access is explicitly enabled by the installer; a browser cannot grant it.
+
+In Camera settings choose **USB camera on this server**, find local cameras,
+select a detected profile, then test and save. H.264 avoids unnecessary encoding;
+MJPEG and raw formats may require conversion. Close another capture process before
+opening its device. Discovery offers each supported format's default profile;
+custom resolution/frame-rate selection is not implemented yet. Unsupported driver
+formats are omitted. Capture and unplug/replug behavior still need physical USB
+acceptance; the adapter and profile lifecycle are covered by synthetic tests.
+
+A CSI camera requiring libcamera/rpicam should continue through an appropriate
+capture service on its Pi. Mapping a USB node is not a universal CSI setup method.
