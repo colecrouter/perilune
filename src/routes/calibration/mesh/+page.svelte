@@ -35,10 +35,9 @@
 
 <svelte:head><title>Bed mesh · Perilune</title></svelte:head>
 <AppShell {snapshot} active="Calibration"
-	><div class="mesh-page serif">
+	><div class="mesh-page page-frame serif">
 		<header>
 			<div>
-				<p class="eyebrow">Read the shape of your bed</p>
 				<h1>Bed mesh</h1>
 				<p class="muted">
 					Explore the reported height grid, inspect profiles, and understand the variation.
@@ -130,9 +129,7 @@
 		font-weight: 600;
 	}
 	.mesh-page {
-		max-width: 1200px;
-		margin: auto;
-		padding: 2rem;
+		--page-content-max: 75rem;
 		display: grid;
 		gap: 1.6rem;
 	}
@@ -141,10 +138,6 @@
 		justify-content: space-between;
 		gap: 1rem;
 		align-items: start;
-	}
-	h1 {
-		font-size: 2.7rem;
-		margin: 0.3rem 0;
 	}
 	.mesh-guide {
 		padding: 1.5rem;
@@ -171,9 +164,6 @@
 		.mesh-guide summary {
 			cursor: pointer;
 			font-weight: 600;
-		}
-		.mesh-page {
-			padding: 1rem;
 		}
 		header {
 			flex-direction: column;

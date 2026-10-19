@@ -5,7 +5,7 @@
 
 <svelte:head><title>Action receipt · Perilune</title></svelte:head>
 <AppShell active="Controls"
-	><main class="receipt">
+	><div class="receipt page-frame serif">
 		<h1>{data.receipt.label}</h1>
 		<p role="status">{data.receipt.status}</p>
 		{#if data.receipt.message}<p>{data.receipt.message}</p>{/if}
@@ -23,13 +23,12 @@
 		<a class="button secondary" href={`/safety/${data.receipt.id}`} data-sveltekit-reload
 			>Refresh status</a
 		> <a href="/">Return to overview</a>
-	</main></AppShell
+	</div></AppShell
 >
 
 <style>
 	.receipt {
-		padding: 2rem;
-		max-width: 50rem;
+		--page-content-max: 50rem;
 	}
 	p {
 		margin: 1rem 0;

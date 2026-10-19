@@ -139,7 +139,7 @@
 	/></svelte:head
 >
 <AppShell {snapshot}>
-	<div class="dashboard serif">
+	<div class="dashboard page-frame serif">
 		<header class="page-header">
 			<div>
 				<h1>Overview</h1>

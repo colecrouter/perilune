@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import { preferencesContext } from '#lib/client/preferences.svelte.js';
 	import { isHttpError } from '@sveltejs/kit';
 	import type { ConsoleSnapshot, ConsoleReceipt } from '#lib/domain/console.js';
@@ -41,6 +42,16 @@
 		pinPending = $state('');
 	let request = $state<{ id: string; script: string } | null>(null),
 		uncertain = $state<{ id: string; script: string } | null>(null);
+	let composer = $state<HTMLTextAreaElement | null>(null);
+	async function recallCommand(script: string) {
+		draft = script;
+		historyIndex = -1;
+		historyDraft = script;
+		await tick();
+		composer?.focus();
+		composer?.setSelectionRange(script.length, script.length);
+		composer?.scrollIntoView({ block: 'nearest' });
+	}
 	let historyIndex = $state(-1),
 		historyDraft = '',
 		historyEntries: string[] = [];
@@ -369,7 +380,12 @@
 										<pre>{original.text}</pre>
 									</li>{/each}
 							</ol>
-						</details>{:else}<pre>{line.text}</pre>{/if}
+						</details>{:else if line.receipt}<button
+							class="recall-command"
+							aria-label={`Copy command to draft: ${line.text}`}
+							title="Copy to command draft"
+							onclick={() => void recallCommand(line.text)}><pre>{line.text}</pre></button
+						>{:else}<pre>{line.text}</pre>{/if}
 					{#if 'receipt' in line && line.receipt}<div class="output">
 							{#each line.receipt.output as output}<pre>{output}</pre>{/each}{#if line.receipt.message}<p
 								>
@@ -388,6 +404,7 @@
 		</div>
 		<label class="composer"
 			>Command<textarea
+				bind:this={composer}
 				bind:value={draft}
 				onkeydown={historyKey}
 				oninput={() => {
@@ -589,6 +606,23 @@
 		border: 1px solid var(--border);
 		border-radius: 10px;
 		background: var(--canvas);
+	}
+	.recall-command {
+		display: block;
+		width: 100%;
+		text-align: left;
+		border: 0;
+		background: transparent;
+		padding: 0.25rem 0;
+		border-radius: 0.25rem;
+		color: var(--accent);
+	}
+	.recall-command:hover {
+		text-decoration: underline;
+	}
+	.recall-command:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
 	}
 	.log-entry {
 		padding: 0.8rem 1rem;

@@ -6,7 +6,7 @@
 
 <svelte:head><title>Macros & console · Perilune</title></svelte:head>
 <AppShell active="Console"
-	><div class="page serif">
+	><div class="page page-frame serif">
 		<header>
 			<h1>Macros & console</h1>
 		</header>
@@ -23,17 +23,8 @@
 >
 
 <style>
-	.page {
-		padding: clamp(1rem, 3vw, 2.5rem);
-		max-width: 1500px;
-		margin: auto;
-	}
 	header {
 		margin-bottom: 1.5rem;
-	}
-	h1 {
-		font-size: clamp(2.2rem, 5vw, 3rem);
-		margin: 0.4rem 0;
 	}
 	.panel {
 		padding: 1.5rem;

@@ -47,9 +47,8 @@
 
 <svelte:head><title>Filament & extrusion · Perilune</title></svelte:head>
 <AppShell {snapshot} active="Calibration"
-	><div class="page serif">
+	><div class="page page-frame serif">
 		<header>
-			<p class="eyebrow">Calibration workshop</p>
 			<h1>Filament & extrusion</h1>
 			<p class="muted">Check the distance. Understand the adjustment.</p>
 		</header>
@@ -66,14 +65,10 @@
 
 <style>
 	.page {
-		padding: clamp(1.2rem, 4vw, 3rem);
+		--page-content-max: 76rem;
 	}
 	header {
 		margin-bottom: 2rem;
-	}
-	h1 {
-		font-size: clamp(2rem, 5vw, 3rem);
-		margin: 0.4rem 0;
 	}
 	.muted {
 		color: var(--muted);
