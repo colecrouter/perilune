@@ -155,10 +155,18 @@ try {
 	const viewer = await browser.newContext();
 	const viewerPage = await viewer.newPage();
 	await viewerPage.goto(url);
+	// Registration consumes the invitation fragment on mount; wait before editing SSR inputs.
+	await viewerPage.waitForFunction(() => location.hash === '');
 	await viewerPage.getByLabel('Your name').fill('Console viewer');
 	await viewerPage.getByLabel('Email', { exact: true }).fill('console-viewer@example.test');
 	await viewerPage.getByLabel('Password', { exact: true }).fill('fixture-viewer-password');
+	const enrollment = viewerPage.waitForResponse(
+		(response) =>
+			response.url() === sim.base + '/api/account/enroll' && response.request().method() === 'POST'
+	);
 	await viewerPage.getByRole('button', { name: 'Create account', exact: true }).click();
+	const enrolled = await enrollment;
+	assert.equal(enrolled.status(), 200, 'Viewer enrollment should succeed');
 	await viewerPage.getByRole('heading', { name: 'Welcome back' }).waitFor();
 	const login = await viewer.request.post(sim.base + '/api/auth/sign-in/email', {
 		headers: { Origin: sim.base },
@@ -217,6 +225,9 @@ try {
 	console.log(
 		'Console smoke passed: shared receipts, dedup, failure/filtering, per-account shortcuts, reconnect, viewer/CSRF gates, private live responses, one socket, no live execution and 320px layout.'
 	);
+} catch (cause) {
+	console.error(cause);
+	throw cause;
 } finally {
 	await browser?.close();
 	for (const child of children) child.kill('SIGTERM');
