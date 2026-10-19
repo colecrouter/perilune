@@ -3,7 +3,7 @@ import { Context, Data, Effect, Layer, Schedule, Semaphore } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
 import { CameraService } from './camera.js';
 import { CameraCompanion, cameraProfiles, type CameraProfiles } from './camera-companion.js';
-import { cameraInput, type CameraInput } from './camera-input.js';
+import { cameraInput, type CameraInput, type CameraCandidate } from './camera-input.js';
 import { migrate } from './migrations.js';
 
 export class CameraSetupError extends Data.TaggedError('CameraSetupError')<{ message: string }> {}
@@ -37,6 +37,7 @@ export class CameraSetupService extends Context.Service<
 	CameraSetupService,
 	{
 		status: Effect.Effect<SetupStatus>;
+		devices: (signal?: AbortSignal) => Effect.Effect<CameraCandidate[], Error>;
 		reset: (expected: number, authorize: () => boolean) => Effect.Effect<SetupStatus, Error>;
 		preview: (actor: string, token: string, request: Request) => Effect.Effect<Response, Error>;
 		test: (
@@ -69,6 +70,7 @@ export const CameraSetupServiceLive = Layer.effect(
 		let saved: SavedCamera | null = rows[0]?.value ? JSON.parse(rows[0].value) : null;
 		let connected = false;
 		let testsRunning = 0;
+		let discoveryRunning = false;
 		const tested = new Map<string, TestCamera>();
 		const status = (): SetupStatus => ({
 			enabled: Boolean(client),
@@ -145,6 +147,22 @@ export const CameraSetupServiceLive = Layer.effect(
 		);
 		return {
 			status: Effect.sync(status),
+			devices: (signal) =>
+				Effect.gen(function* () {
+					if (!client) return [];
+					if (discoveryRunning)
+						return yield* Effect.fail(
+							setupError('Local camera discovery is already running. Try again shortly.')
+						);
+					discoveryRunning = true;
+					return yield* attempt(() => client.devices(signal)).pipe(
+						Effect.ensuring(
+							Effect.sync(() => {
+								discoveryRunning = false;
+							})
+						)
+					);
+				}),
 			reset: (expected, authorize) =>
 				Effect.gen(function* () {
 					if (!authorize())

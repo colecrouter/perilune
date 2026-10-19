@@ -1,0 +1,7 @@
+# Linux only. Use with compose.yaml and compose.camera.yaml.
+# Select a stable /dev/v4l/by-id/... path when possible.
+# Grants one camera device; does not expose the host's entire /dev directory.
+services:
+  camera:
+    devices:
+      - ${PERILUNE_CAMERA_DEVICE:?Set the host camera device path}:/dev/video0

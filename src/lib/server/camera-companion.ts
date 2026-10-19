@@ -1,3 +1,4 @@
+import { localCameraCandidates } from './camera-local.js';
 import { mp4VideoSize } from './camera-mp4.js';
 import { cameraInput, type CameraInput } from './camera-input.js';
 
@@ -73,6 +74,34 @@ export class CameraCompanion {
 			this.controllers.delete(controller);
 			// Fetch errors can contain endpoint credentials; expose a fixed message only.
 			throw new Error('Camera companion unavailable.');
+		}
+	}
+	async devices(signal?: AbortSignal) {
+		const { response, release } = await this.request('api/v4l2', {}, 'GET', signal);
+		try {
+			if (response.status === 404) return [];
+			if (!response.ok) throw Error('Local camera discovery unavailable.');
+			// Bound the discovery response before parsing the companion's device list.
+			const reader = response.body?.getReader();
+			if (!reader) return [];
+			const chunks: Uint8Array[] = [];
+			let size = 0;
+			try {
+				while (true) {
+					const next = await reader.read();
+					if (next.done) break;
+					size += next.value.length;
+					if (size > 262144) throw Error('Local camera discovery response too large.');
+					chunks.push(next.value);
+				}
+			} finally {
+				await reader.cancel().catch(() => {});
+			}
+			return localCameraCandidates(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+		} catch {
+			throw Error('Local camera discovery unavailable.');
+		} finally {
+			release();
 		}
 	}
 	/** Opaque IDs and fixed templates prevent browser input becoming FFmpeg directives. */

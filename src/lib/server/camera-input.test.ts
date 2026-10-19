@@ -99,3 +99,10 @@ describe('private camera source adapters', () => {
 		expect(() => cameraInput({ ...input, flipHorizontal: 'true' })).toThrow();
 	});
 });
+
+it('imports a Moonraker JPEG-only camera without inventing video', () => {
+	const [candidate] = discoverCameraInputs([
+		{ enabled: true, name: 'Still', snapshot_url: 'https://camera.example.invalid/image.jpg' }
+	]);
+	expect(candidate.input.kind).toBe('snapshot');
+});

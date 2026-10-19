@@ -99,7 +99,33 @@ try {
 	page = await context.newPage();
 	const errors = [];
 	page.on('pageerror', (error) => errors.push(error.message));
+
+	const mountReads = [];
+	page.on('request', (request) => {
+		if (request.method() === 'GET' && new URL(request.url()).pathname === '/api/camera/setup')
+			mountReads.push(request.url());
+	});
+	const ssr = await context.request.get(base + '/camera');
+	assert.equal(ssr.status(), 200);
+	const html = await ssr.text();
+	assert.match(html, /No camera connected/);
+	assert.match(html, /Network or printer-host camera/);
+	assert.doesNotMatch(html, /Loading camera settings/);
 	await page.goto(base + '/camera');
+
+	await page.getByRole('combobox', { name: 'Camera source', exact: true }).selectOption('local');
+	await page.getByRole('button', { name: 'Find local cameras', exact: true }).click();
+	await page.getByText('No supported local cameras found.', { exact: false }).waitFor();
+	assert.equal(
+		await page.getByRole('button', { name: 'Test connection', exact: true }).isDisabled(),
+		true
+	);
+	await page.getByRole('combobox', { name: 'Camera source', exact: true }).selectOption('manual');
+	assert.deepEqual(
+		mountReads,
+		[],
+		'Settings render through the remote query with no mount-time REST fetch'
+	);
 	await page
 		.getByRole('textbox', { name: 'Video endpoint', exact: true })
 		.fill('http://127.0.0.1:1984/api/stream.mjpeg?src=fixture');
@@ -240,8 +266,15 @@ try {
 	await page
 		.getByText('Image connection verified. Save to use this camera.', { exact: true })
 		.waitFor();
+	await page.route('**/*getCameraSetup*', (route) => route.abort());
 	await page.getByRole('button', { name: 'Save camera', exact: true }).click();
 	await page.getByText('Camera saved. It is ready on the overview.', { exact: true }).waitFor();
+	await page
+		.getByText('The change was saved, but current settings could not refresh.', { exact: false })
+		.waitFor();
+	await page.unroute('**/*getCameraSetup*');
+	await page.getByRole('button', { name: 'Refresh settings', exact: true }).click();
+	await page.getByText('Connected through Perilune’s camera service.', { exact: true }).waitFor();
 	await page.goto(base + '/');
 	await page.waitForFunction(
 		() => document.querySelector('.camera-video img')?.naturalWidth === 640
@@ -265,7 +298,7 @@ try {
 	);
 	assert.deepEqual(errors, []);
 	console.log(
-		'Camera setup smoke passed: HTTP MJPEG conversion without an NVR, owner test/preview/save, preserved drafts, real H.264 decode, useful quality choices, per-device persistence, app/companion restart, idle shutdown, CSRF and anonymous guards, JPEG-only manual refresh, mobile layout.'
+		'Camera setup smoke passed: HTTP MJPEG conversion without an NVR, owner test/preview/save, preserved drafts, real H.264 decode, useful quality choices, per-device persistence, app/companion restart, idle shutdown, CSRF and anonymous guards, JPEG-only manual refresh, mobile layout, SSR remote settings, failed refresh recovery and local-device empty state.'
 	);
 } catch (cause) {
 	if (page) {

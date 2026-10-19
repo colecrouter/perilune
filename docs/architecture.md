@@ -1306,3 +1306,21 @@ expire after five minutes. Account-only policy intentionally skips notices for
 jobs started outside Perilune unless their owner can be established from an
 already verified durable identity. Actual OS delivery and image presentation
 remain owner/device acceptance work.
+
+## Camera source setup refinement
+
+Camera settings use an SSR-awaited owner remote query for finite local config and
+source summaries, with explicit refresh after mutation. No configuration request
+runs from a mount hook. Live printer subscriptions retain their existing lifecycle.
+The current source is identified by its name and connection provider through the
+same authenticated playback gateway.
+
+An on-demand owner remote query discovers Linux/V4L2 capture profiles from the
+private companion. Discovery has a single process-scoped slot, bounded response
+size and deadline, request/session cancellation, and re-enumeration before testing.
+Only opaque profile IDs reach the selection API; endpoints are validated against
+fixed video-node, format, size and frame-rate rules. The optional USB Compose
+override maps one explicitly selected device without privileged mode. The pinned
+producer supports MJPEG, H.264, HEVC, YUYV and NV12; other offered formats are omitted.
+Default offered profiles are selectable; custom capture dimensions/rates, physical
+USB/unplug/replug and CSI driver provisioning remain acceptance/future work.

@@ -77,3 +77,30 @@ try {
 } finally {
 	compose('down', '--remove-orphans');
 }
+
+const usb = JSON.parse(
+	execFileSync(
+		'docker',
+		[
+			'compose',
+			'-f',
+			'compose.yaml',
+			'-f',
+			'compose.camera.yaml',
+			'-f',
+			'compose.camera-usb.yaml',
+			'config',
+			'--format',
+			'json'
+		],
+		{
+			env: { ...process.env, PERILUNE_CAMERA_DEVICE: '/dev/v4l/by-id/example-camera' },
+			encoding: 'utf8'
+		}
+	)
+);
+assert.equal(usb.services.camera.devices.length, 1);
+assert.equal(usb.services.camera.devices[0].source, '/dev/v4l/by-id/example-camera');
+assert.equal(usb.services.camera.devices[0].target, '/dev/video0');
+assert.equal(usb.services.camera.privileged ?? false, false);
+console.log('USB override maps one explicit device without privileged access.');

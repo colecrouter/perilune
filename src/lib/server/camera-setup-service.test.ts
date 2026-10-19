@@ -16,11 +16,25 @@ const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
 	for (const close of cleanup.splice(0).reverse()) await close();
 });
-async function fixture(filename = ':memory:') {
+async function fixture(filename = ':memory:', discoveryDelay = 0) {
 	const streams = new Map<string, string>();
 	const server = createServer((request, response) => {
 		const url = new URL(request.url!, 'http://fixture.invalid');
 		const src = url.searchParams.get('src')!;
+		if (url.pathname === '/api/v4l2') {
+			setTimeout(() => {
+				response.end(
+					JSON.stringify({
+						sources: [
+							{
+								url: 'v4l2:device?video=/dev/video0&input_format=mjpeg&video_size=640x480&framerate=30'
+							}
+						]
+					})
+				);
+			}, discoveryDelay);
+			return;
+		}
 		if (url.pathname === '/snapshot.jpg') {
 			response.writeHead(200, { 'Content-Type': 'image/jpeg' });
 			response.end(new Uint8Array([255, 216, 255]));
@@ -234,4 +248,24 @@ it('keeps JPEG-only cameras as still images without registering video encoders',
 		snapshotUrl: '/api/camera/snapshot'
 	});
 	expect(descriptor.qualities).toBeUndefined();
+});
+
+it('tests and persists an enumerated USB profile through the normal lifecycle', async () => {
+	const f = await fixture();
+	const service = await f.runtime.runPromise(CameraSetupService);
+	const [device] = await f.runtime.runPromise(service.devices());
+	expect(device.input.kind).toBe('local');
+	const tested = await f.runtime.runPromise(service.test('owner', device.input));
+	await f.runtime.runPromise(service.save('owner', tested.token, () => true));
+	expect((await f.runtime.runPromise(service.status)).name).toBe(device.input.name);
+});
+
+it('bounds discovery and releases its slot after cancellation', async () => {
+	const f = await fixture(':memory:', 100);
+	const controller = new AbortController();
+	const first = f.runtime.runPromise(f.service.devices(controller.signal));
+	await expect(f.runtime.runPromise(f.service.devices())).rejects.toThrow('already running');
+	controller.abort();
+	await expect(first).rejects.toThrow();
+	expect(await f.runtime.runPromise(f.service.devices())).toHaveLength(1);
 });
