@@ -1,3 +1,4 @@
+import { FilamentChangeStoreLive } from './filament-change-settings.js';
 import { PreferenceServiceLive } from './preference-service.js';
 import { SafetyServiceLive, SafetySettings, SafetyDisabled } from './safety-service.js';
 import {
@@ -215,6 +216,7 @@ const cameraSetupLayer = CameraSetupServiceLive.pipe(
 export const runtime = ManagedRuntime.make(
 	Layer.mergeAll(
 		cameraSetupLayer,
+		FilamentChangeStoreLive.pipe(Layer.provide(databaseLayer)),
 		...(moonrakerUrl ? [liveServices] : []),
 		configurationLayer,
 		PreferenceServiceLive.pipe(Layer.provide(databaseLayer))

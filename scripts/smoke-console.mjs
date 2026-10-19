@@ -12,6 +12,7 @@ let logs = '',
 	browser;
 const methods = [];
 const sockets = [];
+let fixtureMacroBody = 'PAUSE';
 const upstream = new WebSocketServer({ port: 0, host: '127.0.0.1' });
 await new Promise((resolve) => upstream.once('listening', resolve));
 upstream.on('connection', (socket) => {
@@ -23,13 +24,25 @@ upstream.on('connection', (socket) => {
 			'server.connection.identify': {},
 			'server.info': { klippy_state: 'ready' },
 			'printer.objects.list': {
-				objects: ['print_stats', 'extruder', 'heater_bed', 'gcode_macro TEST_MACRO']
+				objects: [
+					'print_stats',
+					'extruder',
+					'heater_bed',
+					'configfile',
+					'pause_resume',
+					'gcode_macro TEST_MACRO',
+					'gcode_macro M600'
+				]
 			},
 			'printer.gcode.help': { TEST_MACRO: 'Fixture macro description' },
 			'printer.objects.subscribe': {
 				eventtime: 1,
 				status: {
 					print_stats: { state: 'standby', filename: '' },
+					configfile: {
+						config: { 'gcode_macro M600': { gcode: fixtureMacroBody }, pause_resume: {} }
+					},
+					pause_resume: { is_paused: false },
 					extruder: { temperature: 20, target: 0 },
 					heater_bed: { temperature: 20, target: 0 }
 				}
@@ -218,6 +231,50 @@ try {
 	const publicPage = await live.context.newPage();
 	await publicPage.goto(live.base + '/');
 	assert.ok(!(await publicPage.content()).includes(privateText));
+	// Setup is an SSR-awaited read and an explicit owner mutation, never a printer write.
+	await livePage.goto(live.base + '/filament');
+	await livePage.getByRole('heading', { name: 'Filament changes', exact: true }).waitFor();
+	await livePage.getByLabel('Method', { exact: true }).selectOption('printer');
+	const review = livePage.getByRole('checkbox', { name: /I reviewed these macros/ });
+	await review.check();
+	await livePage.getByRole('button', { name: 'Save plan', exact: true }).click();
+	await livePage.getByText(/Setup plan saved/).waitFor();
+	await livePage.getByLabel('Change macro', { exact: true }).selectOption('TEST_MACRO');
+	assert.equal(await review.isChecked(), false, 'Review is bound to selected commands');
+	await livePage.getByLabel('Change macro', { exact: true }).selectOption('M600');
+	await review.check();
+	fixtureMacroBody = 'PAUSE\nG1 E-5';
+	sockets.at(-1).send(
+		JSON.stringify({
+			jsonrpc: '2.0',
+			method: 'notify_status_update',
+			params: [
+				{
+					configfile: {
+						config: { 'gcode_macro M600': { gcode: fixtureMacroBody }, pause_resume: {} }
+					}
+				},
+				2
+			]
+		})
+	);
+	await livePage.getByRole('button', { name: 'Refresh discovery' }).click();
+	await livePage
+		.getByText('Printer configuration changed. Review filament-change setup again.')
+		.waitFor();
+	assert.equal(await review.isChecked(), false, 'Refreshed configuration requires fresh review');
+	assert.equal(
+		await livePage.getByRole('button', { name: 'Save plan', exact: true }).isDisabled(),
+		true
+	);
+	await livePage.setViewportSize({ width: 390, height: 844 });
+	assert.equal(
+		await livePage.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+		true
+	);
+	await livePage.screenshot({ path: 'test-results/filament-setup-mobile.png' });
+	await viewerPage.goto(sim.base + '/filament');
+	await viewerPage.getByRole('heading', { name: 'Operator access required' }).waitFor();
 	assert.ok(!methods.includes('printer.gcode.script'));
 	assert.equal(sockets.length, 1, 'Console and dashboard share one printer connection');
 	assert.deepEqual(errors, []);
