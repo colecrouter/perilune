@@ -20,7 +20,11 @@
 		}[]
 	>([]);
 	let message = $state('');
-	let pending = $state(false);
+	let pending = $state<Record<string, boolean>>({});
+	let createMessage = $state('');
+	let copyMessage = $state('');
+	let rowMessages = $state<Record<string, string>>({});
+	let loaded = $state(false);
 	let host = $state('');
 	async function api(path: string, body?: unknown) {
 		const response = await fetch(path, {
@@ -36,6 +40,7 @@
 	async function refresh() {
 		browsers = (await api('/api/account/browsers')).browsers;
 		if (canOperate) keys = (await api('/api/jobs/keys')).keys;
+		loaded = true;
 	}
 	onMount(() => {
 		host = location.origin;
@@ -44,7 +49,11 @@
 		});
 	});
 	async function action(operation: string, id?: string) {
-		pending = true;
+		const scope = id ?? 'create';
+		if (pending[scope]) return;
+		pending[scope] = true;
+		if (id) rowMessages[id] = '';
+		else createMessage = '';
 		message = '';
 		try {
 			if (operation === 'create') {
@@ -55,6 +64,7 @@
 				});
 				token = result.token;
 				reveal = false;
+				createMessage = 'Key created. Copy it before leaving this page.';
 			} else if (operation === 'key') {
 				await api('/api/jobs/revoke-key', { id });
 				token = '';
@@ -63,46 +73,61 @@
 				token = '';
 			} else await api('/api/account/revoke-browser', { id });
 			await refresh();
+			if (id)
+				message =
+					operation === 'browser'
+						? 'Browser signed out.'
+						: operation === 'disconnect'
+							? 'Integration disconnected, including its paired browsers.'
+							: 'Key revoked. Paired browsers remain signed in.';
 		} catch (cause) {
-			message = cause instanceof Error ? cause.message : 'Action failed.';
+			const error = cause instanceof Error ? cause.message : 'Action failed.';
+			if (id) rowMessages[id] = error;
+			else createMessage = error;
 		} finally {
-			pending = false;
+			pending[scope] = false;
 		}
 	}
 	async function copy(value: string) {
 		try {
 			await navigator.clipboard.writeText(value);
-			message = 'Copied.';
+			copyMessage = 'Copied.';
 		} catch {
-			message = 'Clipboard unavailable. Reveal and select the key to copy it.';
+			copyMessage =
+				'Clipboard unavailable. Select the address or reveal and select the key to copy it.';
 		}
 	}
 </script>
 
 <section id="integrations" class="integrations">
-	<h2>Integrations</h2>
+	<h2>Slicers & browsers</h2>
+	{#if message}<p class="feedback" role="status">{message}</p>{/if}
 	{#if canOperate}
 		<p>
 			Connect any slicer that supports Klipper / Moonraker. Each key belongs to your account and can
 			be revoked independently.
 		</p>
-		<ol>
-			<li>
-				In the slicer’s printer connection settings, choose <strong>Klipper / Moonraker</strong>.
-			</li>
-			<li>
-				Set the host to <code>{host}</code> <button onclick={() => copy(host)}>Copy address</button>
-			</li>
-			<li>
-				Create a key below and paste it into the slicer’s API key field. Use its connection test,
-				then upload a file.
-			</li>
-			<li>
-				For an embedded Device tab, open this address and choose <strong
-					>Sign in with another browser</strong
-				>. Upload keys do not sign browsers in.
-			</li>
-		</ol>
+		<details class="setup-guide">
+			<summary>Slicer connection instructions</summary>
+			<ol>
+				<li>
+					In the slicer’s printer connection settings, choose <strong>Klipper / Moonraker</strong>.
+				</li>
+				<li>
+					Set the host to <code>{host}</code>
+					<button class="button secondary" onclick={() => copy(host)}>Copy address</button>
+				</li>
+				<li>
+					Create a key below and paste it into the slicer’s API key field. Use its connection test,
+					then upload a file.
+				</li>
+				<li>
+					For an embedded Device tab, open this address and choose <strong
+						>Sign in with another browser</strong
+					>. Upload keys do not sign browsers in.
+				</li>
+			</ol>
+		</details>
 		<form
 			onsubmit={(event) => {
 				event.preventDefault();
@@ -123,8 +148,11 @@
 					><option value="365">After one year</option></select
 				></label
 			>
-			<button disabled={pending}>Create key</button>
+			<button class="button primary" disabled={pending.create}
+				>{pending.create ? 'Creating…' : 'Create key'}</button
+			>
 		</form>
+		{#if createMessage}<p class="feedback" role="status">{createMessage}</p>{/if}
 		{#if token}
 			<div class="secret">
 				<p>Copy this key now. After leaving this page, create a replacement if you lose it.</p>
@@ -136,11 +164,13 @@
 					autocomplete="off"
 					spellcheck="false"
 				/>
-				<button onclick={() => copy(token)}>Copy key</button><button
+				<button class="button secondary" onclick={() => copy(token)}>Copy key</button><button
+					class="button secondary"
 					onclick={() => {
 						reveal = !reveal;
 					}}>{reveal ? 'Hide' : 'Reveal'} key</button
 				><button
+					class="button secondary"
 					onclick={() => {
 						token = '';
 					}}>Dismiss key</button
@@ -161,21 +191,27 @@
 							? `Last used ${new Date(key.lastUsed).toLocaleString()}`
 							: 'Never used'}</small
 					>
+					{#if rowMessages[key.id]}<p class="feedback" role="status">{rowMessages[key.id]}</p>{/if}
 				</div>
-				<button disabled={pending} onclick={() => action('key', key.id)}>Revoke key</button>
-				<button disabled={pending} onclick={() => action('disconnect', key.id)}
-					>Disconnect integration</button
+				<button
+					class="button danger-outline"
+					disabled={pending[key.id]}
+					onclick={() => action('key', key.id)}>Revoke key</button
+				>
+				<button
+					class="button danger-outline"
+					disabled={pending[key.id]}
+					onclick={() => action('disconnect', key.id)}>Disconnect integration</button
 				>
 			</div>
-		{:else}<p>No active slicer keys.</p>{/each}
+		{:else}<p>{loaded ? 'No active slicer keys.' : 'Loading slicer keys…'}</p>{/each}
 	{/if}
 	<h3>Paired browsers</h3>
 	<p>
-		Pairing works with slicers, touchscreens, and other browsers. Sign-in expires 90 days after
-		login or pairing, even when used regularly. Sign in or pair again to start a new period. Account
-		recovery or removal revokes access.
+		Approve a slicer Device tab, touchscreen, or another browser. Paired browsers use your account
+		permissions and stay signed in for up to 90 days.
 	</p>
-	<a href="/pair">Approve a browser</a>
+	<a class="button secondary" href="/pair">Approve a browser</a>
 	{#each browsers as browser (browser.id)}
 		<div class="integration-row">
 			<div>
@@ -189,16 +225,34 @@
 						browser.expires
 					).toLocaleDateString()}
 				</p>
+				{#if rowMessages[browser.id]}<p class="feedback" role="status">
+						{rowMessages[browser.id]}
+					</p>{/if}
 			</div>
-			<button disabled={pending} onclick={() => action('browser', browser.id)}
-				>Sign out browser</button
+			<button
+				class="button secondary"
+				disabled={pending[browser.id]}
+				onclick={() => action('browser', browser.id)}>Sign out browser</button
 			>
 		</div>
-	{:else}<p>No paired browsers.</p>{/each}
-	{#if message}<p role="status">{message}</p>{/if}
+	{:else}<p>{loaded ? 'No paired browsers.' : 'Loading paired browsers…'}</p>{/each}
+	{#if copyMessage}<p class="feedback" role="status">{copyMessage}</p>{/if}
 </section>
 
 <style>
+	.setup-guide {
+		margin: 0.75rem 0 1rem;
+	}
+	.setup-guide summary {
+		cursor: pointer;
+		min-height: 44px;
+		padding: 0.6rem 0;
+		color: var(--accent);
+	}
+	.feedback {
+		margin: 0.75rem 0;
+		font-size: 0.875rem;
+	}
 	.integrations {
 		background: var(--surface);
 		border: 1px solid var(--border);
@@ -225,14 +279,15 @@
 		gap: 0.4rem;
 	}
 	input,
-	select,
-	button {
+	select {
 		font: inherit;
 		border: 1px solid var(--border-strong);
 		border-radius: 8px;
 		padding: 0.6rem 0.9rem;
 		min-height: 44px;
 		max-width: 100%;
+		background: var(--surface);
+		color: var(--text);
 	}
 	button {
 		cursor: pointer;

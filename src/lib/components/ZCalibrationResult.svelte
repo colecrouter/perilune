@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import PendingSettingsDialog from './PendingSettingsDialog.svelte';
+	let reviewOpen = $state(false);
+	let reviewMode = $state<'save' | 'discard'>('save');
 	import type { LiveZSession, ZProbeCapability } from '#lib/domain/live-z.js';
 	import type { ConfigRecovery } from '#lib/domain/config-application.js';
 	let {
@@ -27,6 +30,8 @@
 			application.phase === 'ready' &&
 			application.writeVerified
 	);
+	const discarding = $derived(application?.mode === 'discard');
+	const discarded = $derived(application?.mode === 'discard' && application.phase === 'ready');
 	const reverted = $derived(
 		application?.mode === 'revert' && application.phase === 'ready' && application.writeVerified
 	);
@@ -74,19 +79,27 @@
 <section class="result" aria-label="Z calibration result">
 	<p class="eyebrow">Paper test complete</p>
 	<h3>
-		{reverted
-			? 'Previous configuration restored'
-			: saved
-				? 'Saved & startup verified'
-				: applying
-					? 'Saving & restarting'
-					: application?.phase === 'unknown'
-						? 'Save outcome unknown'
-						: application?.phase === 'error'
-							? 'Save needs attention'
-							: session.stage === 'staged'
-								? 'Accepted · waiting to save'
-								: 'Accepted result'}
+		{discarded
+			? 'Result discarded'
+			: reverted
+				? 'Previous configuration restored'
+				: saved
+					? 'Saved & startup verified'
+					: applying
+						? discarding
+							? 'Discarding & restarting'
+							: 'Saving & restarting'
+						: application?.phase === 'unknown'
+							? discarding
+								? 'Discard outcome unknown'
+								: 'Save outcome unknown'
+							: application?.phase === 'error'
+								? discarding
+									? 'Discard needs attention'
+									: 'Save needs attention'
+								: session.stage === 'staged'
+									? 'Accepted · waiting to save'
+									: 'Accepted result'}
 	</h3>
 	<dl>
 		<div>
@@ -108,13 +121,19 @@
 			</dd>
 		</div>
 	</dl>
-	<p>
-		The paper-test coordinate locates the nozzle. Klipper calculates a separate {session.method ===
-		'probe'
-			? 'probe offset'
-			: 'endstop position'} from that observation; these numbers do not represent the same measurement.
-	</p>
-	{#if saved}<p role="status">
+	<details class="measurement-help">
+		<summary>Why are these measurements different?</summary>
+		<p>
+			The paper-test coordinate locates the nozzle. Klipper calculates a separate {session.method ===
+			'probe'
+				? 'probe offset'
+				: 'endstop position'} from that observation; these numbers do not represent the same measurement.
+		</p>
+	</details>
+	{#if discarded}<p role="status">
+			Pending settings were discarded and the saved configuration is unchanged.
+		</p>
+	{:else if saved}<p role="status">
 			The reviewed file bytes and a fresh Klipper startup were verified. {capability?.configuredOffset ===
 			session.candidate
 				? 'The current configured setting matches this result.'
@@ -125,11 +144,15 @@
 			measurement is retained here for reference.
 		</p>
 	{:else if applying}<p role="status">
-			Follow configuration recovery for the outcome. A request to save is not yet a verified
-			startup.
+			{discarding
+				? 'Discarding pending settings leaves saved configuration unchanged. Follow recovery until the restart is verified.'
+				: 'Follow configuration recovery for the outcome. A request to save is not yet a verified startup.'}
 		</p>
 	{:else if application && ['error', 'unknown'].includes(application.phase)}<p role="status">
-			{application.message} Review configuration recovery before another save.
+			{application.message} Review configuration recovery before another {discarding
+				? 'discard'
+				: 'save'}.{#if discarding}
+				No saved configuration write was requested.{/if}
 		</p>
 	{:else if capability?.pending}<p role="status">
 			Klipper has pending settings. This result is not confirmed saved; review every pending change
@@ -140,9 +163,27 @@
 			may have been saved or discarded outside this flow.
 		</p>{/if}
 	{#if unavailable}<p class="muted">
-			Save status could not be refreshed. Any verification shown above is from the last successful
-			check.
+			Operation status could not be refreshed. Any verification shown above is from the last
+			successful check.
 		</p>{/if}
+	{#if role === 'owner' && session.stage === 'staged' && capability?.pending && !applying && !saved && !discarded && !reverted && !['error', 'unknown'].includes(application?.phase ?? '')}
+		<div class="result-actions">
+			<button
+				class="button primary"
+				onclick={() => {
+					reviewMode = 'save';
+					reviewOpen = true;
+				}}>Save…</button
+			><button
+				class="button secondary"
+				onclick={() => {
+					reviewMode = 'discard';
+					reviewOpen = true;
+				}}>Discard…</button
+			>
+		</div>
+		<p class="muted">Both actions review all pending settings and restart Klipper.</p>
+	{/if}
 	{#if role === 'owner'}<a
 			class="button secondary"
 			href="/configuration#configuration-recovery"
@@ -152,8 +193,19 @@
 			An owner can review saving and snapshot recovery in Configuration.
 		</p>{/if}
 </section>
+{#if role === 'owner'}<PendingSettingsDialog bind:open={reviewOpen} mode={reviewMode} />{/if}
 
 <style>
+	.result-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.6rem;
+		margin-block: 0.75rem;
+	}
+	.measurement-help summary {
+		cursor: pointer;
+		color: var(--muted);
+	}
 	.result {
 		margin: 1.25rem 0;
 		padding: 1.25rem;

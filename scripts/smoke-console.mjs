@@ -104,6 +104,7 @@ try {
 	await second.getByRole('button', { name: 'Unpin PERILUNE_STATUS', exact: true }).waitFor();
 	await page.getByRole('button', { name: 'Run SIMULATE_FAILURE', exact: true }).click();
 	await page.getByText('Simulator · failed', { exact: true }).waitFor();
+	await page.getByText('History display', { exact: true }).click();
 	await page.getByRole('combobox', { name: 'Show', exact: true }).selectOption('errors');
 	assert.equal(await page.locator('.log-entry').count(), 1);
 
@@ -198,6 +199,7 @@ try {
 		.locator('.response-group li')
 		.getByText('B:25 /0 T0:26 /0', { exact: true })
 		.waitFor();
+	await livePage.getByText('History display', { exact: true }).click();
 	await livePage.getByRole('checkbox', { name: 'Group repeated responses' }).uncheck();
 	assert.equal(await livePage.locator('.response-group').count(), 0);
 	assert.equal(

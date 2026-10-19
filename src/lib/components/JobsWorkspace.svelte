@@ -4,6 +4,9 @@
 	import { page, navigating } from '$app/state';
 	import JobInterventions from './JobInterventions.svelte';
 	import CurrentJob from './CurrentJob.svelte';
+	import ActionFeedback from './ActionFeedback.svelte';
+	import { actionStatusLabel } from '#lib/client/action-label.js';
+	import type { ActionRecord } from '#lib/domain/printer.js';
 	import { liveConnection } from '#lib/client/live-connection.svelte.js';
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
 	import JobTable from './JobTable.svelte';
@@ -66,6 +69,13 @@
 	let stale = $state(false);
 	let submitting = $state(false);
 	let startOpen = $state(false);
+	let startReceipt = $state<ActionRecord | null>(null);
+	let startedFileId = $state<string | null>(null);
+	const currentStart = $derived(
+		startReceipt && selected?.id === startedFileId
+			? (snapshot.actions.find((action) => action.id === startReceipt!.id) ?? startReceipt)
+			: null
+	);
 	let removeOpen = $state(false);
 	$effect(() => {
 		void routePath;
@@ -198,7 +208,11 @@
 		submitting = true;
 		failure = '';
 		try {
-			await submitAction({ id: crypto.randomUUID(), command });
+			const receipt = await submitAction({ id: crypto.randomUUID(), command });
+			if (command.type === 'start') {
+				startReceipt = receipt;
+				startedFileId = command.fileId;
+			}
 			message = ''; // The shared job card and activity already show command progress.
 		} catch (cause) {
 			failure = cause instanceof Error ? cause.message : 'Could not submit the action.';
@@ -288,35 +302,35 @@
 					<h2>File library</h2>
 					<span class="muted">{catalog.total} {catalog.total === 1 ? 'file' : 'files'}</span>
 				</div>
-				<form
-					class="library-filters"
-					method="GET"
-					action={resolve('/jobs')}
-					data-sveltekit-reset="false"
-				>
-					<label class="search-label"
-						>Find a file<input
-							name="q"
-							type="search"
-							placeholder="Search filenames…"
-							bind:value={search}
-						/></label
+				{#if catalog.total > 0 || search || material}<form
+						class="library-filters"
+						method="GET"
+						action={resolve('/jobs')}
+						data-sveltekit-reset="false"
 					>
-					<label class="search-label"
-						>Material<select
-							name="material"
-							bind:value={material}
-							disabled={!catalog.metadataComplete}
-							><option value="">All materials</option>{#each catalog.materials as value}<option
-									{value}>{value}</option
-								>{/each}</select
-						></label
-					>
-					<input type="hidden" name="sort" value={catalog.query.sort} />
-					<input type="hidden" name="direction" value={catalog.query.direction} />
-					<input type="hidden" name="size" value={catalog.query.pageSize} />
-					<button class="button secondary" type="submit">Search</button>
-				</form>
+						<label class="search-label"
+							>Find a file<input
+								name="q"
+								type="search"
+								placeholder="Search filenames…"
+								bind:value={search}
+							/></label
+						>
+						<label class="search-label"
+							>Material<select
+								name="material"
+								bind:value={material}
+								disabled={!catalog.metadataComplete}
+								><option value="">All materials</option>{#each catalog.materials as value}<option
+										{value}>{value}</option
+									>{/each}</select
+							></label
+						>
+						<input type="hidden" name="sort" value={catalog.query.sort} />
+						<input type="hidden" name="direction" value={catalog.query.direction} />
+						<input type="hidden" name="size" value={catalog.query.pageSize} />
+						<button class="button secondary" type="submit">Search</button>
+					</form>{/if}
 				{#if canOperate && (!live || snapshot.liveControls)}<div class="upload-zone">
 						<Icon name="jobs" size={28} />
 						<div>
@@ -354,9 +368,20 @@
 						Slicer details are loaded when you open a file. Material filtering and estimate sorting
 						become available once all file details are known.
 					</p>{/if}
-				<JobTable {catalog} selectedId={selected?.id} />
+				{#if catalog.total > 0 || search || material}<JobTable
+						{catalog}
+						selectedId={selected?.id}
+					/>{:else}<p class="muted">
+						Upload your first sliced file, or <a href="/account#integrations">connect your slicer</a
+						>.
+					</p>{/if}
 			</section>
-			<aside id="job-inspection" class="panel inspection" aria-label="Job inspection">
+			<aside
+				id="job-inspection"
+				class="panel inspection"
+				class:empty={!selected}
+				aria-label="Job inspection"
+			>
 				{#if selected}<a class="back-library" href={listHref}>← Back to library</a>
 					<p class="eyebrow">Before you print</p>
 					<h2>{selected.name}</h2>
@@ -432,6 +457,11 @@
 								print.
 							</p>{/if}
 					</div>
+					{#if currentStart}<div class="start-result" role="status">
+							<ActionFeedback receipt={currentStart} showCompleted /><a href="/"
+								>View current print →</a
+							>
+						</div>{/if}
 					<a
 						role="button"
 						href={`/actions?intent=start&fileId=${selected.id}`}
@@ -473,10 +503,7 @@
 				<h2>Recent prints</h2>
 				<span class="muted">Shared across users</span>
 			</div>
-			<p class="muted">
-				Observed print sessions, including the simulator demo. A backend restart marks an unfinished
-				session interrupted.
-			</p>
+			<p class="muted">Recent print outcomes and progress.</p>
 			{#if !catalog.historyAvailable}<p role="alert" class="error-text">
 					Print history storage is unavailable. Updates will retry automatically.
 				</p>{/if}
@@ -510,13 +537,7 @@
 			{#each snapshot.actions.slice(0, 8) as action (action.id)}<div class="run">
 					<span
 						>{action.label}{#if action.message}<small>{action.message}</small>{/if}</span
-					><span class="run-state"
-						>{action.status === 'queued'
-							? 'Waiting'
-							: action.status === 'sending'
-								? 'Sending'
-								: action.status}</span
-					>
+					><span class="run-state">{actionStatusLabel[action.status]}</span>
 				</div>{:else}<p class="muted">No pending or recent actions.</p>{/each}
 		</section>
 	</div></AppShell
@@ -806,7 +827,18 @@
 	.history > p {
 		font-size: 0.8rem;
 	}
-	@media (max-width: 700px) {
+	.start-result {
+		margin: 1rem 0;
+		padding: 0.75rem;
+		border: 1px solid var(--border);
+		border-radius: 0.6rem;
+	}
+	@media (max-width: 850px) {
+		.inspection.empty {
+			display: none;
+		}
+	}
+	@media (max-width: 850px) {
 		.library-grid.detail .library {
 			display: none;
 		}

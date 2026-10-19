@@ -143,7 +143,6 @@
 		<header class="page-header">
 			<div>
 				<h1>Overview</h1>
-				<p class="muted">Monitor your printer, track progress, and keep things running smoothly.</p>
 			</div>
 			<div class="header-tools">
 				<span class="connection-status"
@@ -213,6 +212,19 @@
 				>
 			</div>{/if}
 		{#if errorMessage}<p class="error-text" role="alert">{errorMessage}</p>{/if}
+		<div class="thermal-glance" aria-label="Temperature summary">
+			{#each sensors.filter((sensor) => ['extruder', 'heater_bed'].includes(sensor.id)) as sensor}
+				<a href="#temperature-controls"
+					><span>{sensor.label}</span><strong
+						>{sensor.current === null ? 'Unknown' : `${Math.round(sensor.current)}°C`}</strong
+					><small
+						>Target: {sensor.target === null ? 'unknown' : `${sensor.target}°C`}{!thermalReady
+							? ' · Last known'
+							: ''}</small
+					></a
+				>
+			{/each}
+		</div>
 		<div class="dashboard-grid">
 			<div class="primary-column">
 				<CurrentJob
@@ -227,7 +239,7 @@
 				<CameraPanel camera={cameraSnapshot} />
 			</div>
 			<div class="secondary-column">
-				<section class="panel temperature-panel">
+				<section class="panel temperature-panel" id="temperature-controls" tabindex="-1">
 					<div class="section-header">
 						<h2>Temperature</h2>
 						<ActionForm receipts={snapshot.actions} fields={{ intent: 'cooldown' }}
@@ -345,6 +357,33 @@
 </AppShell>
 
 <style>
+	.thermal-glance {
+		display: none;
+	}
+	@media (max-width: 900px) {
+		.thermal-glance {
+			display: grid;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			gap: 0.75rem;
+			margin-bottom: 1rem;
+		}
+		.thermal-glance a {
+			padding: 0.65rem 0.9rem;
+			border: 1px solid var(--border);
+			border-radius: 10px;
+			background: var(--surface);
+			color: var(--text);
+			text-decoration: none;
+		}
+		.thermal-glance strong {
+			margin-left: 0.5rem;
+			font-variant-numeric: tabular-nums;
+		}
+		.thermal-glance small {
+			margin-top: 0.2rem;
+		}
+	}
+
 	.connection-details {
 		padding: 1rem 1.3rem;
 	}

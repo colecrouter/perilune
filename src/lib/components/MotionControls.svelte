@@ -3,6 +3,7 @@
 	import { Dialog } from 'bits-ui';
 	import { isHttpError } from '@sveltejs/kit';
 	import ActionForm from './ActionForm.svelte';
+	import { actionStatusLabel } from '#lib/client/action-label.js';
 	import SafetyButton from './SafetyButton.svelte';
 	import type { PrinterSnapshot, PrinterCommand } from '#lib/domain/printer.js';
 	import {
@@ -203,8 +204,7 @@
 	<section class="motion-panel" aria-labelledby="motion-heading">
 		<div class="motion-heading">
 			<div>
-				<p class="eyebrow">Position & movement</p>
-				<h2 id="motion-heading">A destination, not a dozen clicks</h2>
+				<h2 id="motion-heading">Position &amp; movement</h2>
 			</div>
 			<span class="motion-tag"
 				>{snapshot.mode === 'simulator'
@@ -214,10 +214,44 @@
 						: 'Live · Read-only'}</span
 			>
 		</div>
-		<p class="intro">
-			Choose XY on the bed map and Z on the height scale, review the destination, then move.
-			Changing XY alone preserves Z. Check that the path is clear.
-		</p>
+
+		<div class="position-strip">
+			{#each ['x', 'y', 'z'] as axis}<div>
+					<span>{axis.toUpperCase()}</span><strong
+						>{snapshot.motion.position[axis as Axis]?.toFixed(2) ?? 'Unknown'}
+						<small>mm</small></strong
+					><small>{snapshot.motion.homed.includes(axis as Axis) ? 'Homed' : 'Not homed'}</small>
+				</div>{/each}
+		</div>
+		<div class="motion-tools">
+			<div>
+				<h3>Quick movement</h3>
+				<fieldset class="step-switch">
+					<legend>Step</legend>
+					<div class="step-options">
+						{#each [0.1, 1, 10] as amount}<label
+								><input type="radio" name="movement-step" value={amount} bind:group={step} /><span
+									>{amount} mm</span
+								></label
+							>{/each}
+					</div>
+				</fieldset>
+				<p class="help">Jog steps stop at the configured travel boundary.</p>
+				{#if reason}<p class="help" role="status">{reason}</p>{/if}
+
+				<div class="jog-buttons">
+					{#each [['X −', 'x', -1], ['X +', 'x', 1], ['Y −', 'y', -1], ['Y +', 'y', 1], ['Z −', 'z', -1], ['Z +', 'z', 1]] as [name, axis, direction]}<button
+							class="button secondary"
+							disabled={!!reason ||
+								pending ||
+								jogDestination(snapshot.motion, axis as Axis, Number(direction) * step) ===
+									snapshot.motion.position[axis as Axis]}
+							title={`${Number(direction) > 0 ? 'Increase' : 'Decrease'} ${String(axis).toUpperCase()}${axis === 'z' ? ' height' : ' position'}`}
+							onclick={() => jog(axis as Axis, Number(direction) * step)}>{name}</button
+						>{/each}
+				</div>
+			</div>
+		</div>
 		<div class="setup-controls">
 			<div>
 				<h3>Home the printer</h3>
@@ -257,21 +291,16 @@
 					>
 				</div>
 				<p class="help">
-					Releases every motor, regardless of printer kinematics. Home again before using movement
-					controls.{releaseReason ? ` ${releaseReason}` : ''}
+					Home again before moving after disengaging motors.{releaseReason
+						? ` ${releaseReason}`
+						: ''}
 				</p>
 			</div>
 		</div>
 
-		<div class="position-strip">
-			{#each ['x', 'y', 'z'] as axis}<div>
-					<span>{axis.toUpperCase()}</span><strong
-						>{snapshot.motion.position[axis as Axis]?.toFixed(2) ?? 'Unknown'}
-						<small>mm</small></strong
-					><small>{snapshot.motion.homed.includes(axis as Axis) ? 'Homed' : 'Not homed'}</small>
-				</div>{/each}
-		</div>
-		{#if active}<p class="notice" role="status">Pending: {active.label} · {active.status}</p>{/if}
+		{#if active}<p class="notice" role="status">
+				Pending: {active.label} · {actionStatusLabel[active.status]}
+			</p>{/if}
 		<div class="motion-grid">
 			<div class="bed-area">
 				<div class="axis-visuals">
@@ -404,44 +433,14 @@
 							});
 					}}>{pending ? 'Submitting…' : 'Move here'}</button
 				>
-				<div class="motion-tools">
-					<div>
-						<h3>Fine movement</h3>
-						<fieldset class="step-switch">
-							<legend>Step</legend>
-							<div class="step-options">
-								{#each [0.1, 1, 10] as amount}<label
-										><input
-											type="radio"
-											name="movement-step"
-											value={amount}
-											bind:group={step}
-										/><span>{amount} mm</span></label
-									>{/each}
-							</div>
-						</fieldset>
-						<p class="help">Jog steps stop at the configured travel boundary.</p>
-
-						<div class="jog-buttons">
-							{#each [['X −', 'x', -1], ['X +', 'x', 1], ['Y −', 'y', -1], ['Y +', 'y', 1], ['Z −', 'z', -1], ['Z +', 'z', 1]] as [name, axis, direction]}<button
-									class="button secondary"
-									disabled={!!reason ||
-										pending ||
-										jogDestination(snapshot.motion, axis as Axis, Number(direction) * step) ===
-											snapshot.motion.position[axis as Axis]}
-									title={`${Number(direction) > 0 ? 'Increase' : 'Decrease'} ${String(axis).toUpperCase()}${axis === 'z' ? ' height' : ' position'}`}
-									onclick={() => jog(axis as Axis, Number(direction) * step)}>{name}</button
-								>{/each}
-						</div>
-					</div>
-				</div>
 			</div>
 		</div>
 		{#if error && !releaseOpen}<p class="warning" role="alert">{error}</p>{/if}
 		{#if recent.length}<section class="recent-movement" aria-label="Recent movement">
 				<h3>Recent movement</h3>
 				{#each recent as action}<div class="movement-result">
-						<strong>{action.label}</strong><span class="motion-tag">{action.status}</span
+						<strong>{action.label}</strong><span class="motion-tag"
+							>{actionStatusLabel[action.status]}</span
 						>{#if action.message}<p class="warning" role="status">{action.message}</p>{/if}
 					</div>{/each}
 			</section>{/if}
@@ -656,11 +655,7 @@
 		font-size: 1.3rem;
 		margin-bottom: 0.75rem;
 	}
-	.intro {
-		color: var(--muted);
-		margin: 1rem 0;
-		max-width: 70ch;
-	}
+
 	.motion-tag {
 		font-size: 0.75rem;
 		background: var(--highlight);
@@ -777,9 +772,8 @@
 		display: grid;
 		grid-template-columns: 1fr;
 		gap: 1.5rem;
-		margin-top: 1.5rem;
-		padding-top: 1.5rem;
-		border-top: 1px solid var(--border);
+		margin-top: 0;
+		padding-top: 0.75rem;
 	}
 	.clearance {
 		display: flex;
@@ -817,7 +811,8 @@
 			gap: 1.25rem;
 		}
 		.motion-heading {
-			flex-direction: column;
+			flex-wrap: wrap;
+			gap: 0.5rem;
 		}
 		h2 {
 			font-size: 1.65rem;

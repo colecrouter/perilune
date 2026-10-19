@@ -58,3 +58,27 @@ test('unknown outcomes offer checking and exports without an unverified revert',
 		.not.toBeInTheDocument();
 	await screen.unmount();
 });
+
+test('verified startup keeps optional recovery controls disclosed while retaining explicit restore', async () => {
+	vi.stubGlobal(
+		'fetch',
+		vi.fn().mockResolvedValue(
+			Response.json({
+				enabled: true,
+				application: { ...application, phase: 'ready', diagnostic: null }
+			})
+		)
+	);
+	const screen = await render(ConfigurationRecovery);
+	await expect
+		.element(screen.getByRole('heading', { name: 'Configuration startup verified' }))
+		.toBeVisible();
+	await expect
+		.element(screen.getByRole('button', { name: 'Check printer and saved settings' }))
+		.not.toBeInTheDocument();
+	await screen.getByText('Saved files & recovery', { exact: true }).click();
+	await expect
+		.element(screen.getByRole('button', { name: 'Revert changes and restart' }))
+		.toBeDisabled();
+	await expect.element(screen.getByRole('link', { name: 'Export reviewed file' })).toBeVisible();
+});

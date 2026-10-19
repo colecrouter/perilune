@@ -69,6 +69,8 @@
 	let reference = $state<ReferenceCatalogue | null>(null);
 	let modes = $state<Record<string, 'guided' | 'raw'>>({});
 	let fileQuery = $state('');
+	let fileBrowserOpen = $state(false);
+	let settingQuery = $state('');
 	let jump = $state<{ line: number; token: number } | null>(null);
 	const fileIndex = $derived(configFileIndex(files, fileQuery));
 	const revisionOf = $derived(configRevision(source.path, files));
@@ -88,6 +90,16 @@
 	const referenceContext = $derived(current ? referenceInventory(current.text).kinematics : null);
 	const parts = $derived(configParts(current?.text ?? source.text));
 	const fields = $derived(configFields(current?.text ?? source.text));
+	const visibleFields = $derived(
+		fields
+			.filter((field) =>
+				`${field.hint.title} ${field.section} ${field.key}`
+					.toLowerCase()
+					.includes(settingQuery.trim().toLowerCase())
+			)
+			.slice(0, 100)
+	);
+	const fieldSections = $derived([...new Set(visibleFields.map((field) => field.section))]);
 	const macros = $derived(configMacros(parts.editable));
 	const mode = $derived(
 		revisionOf ? 'raw' : fields.length ? (modes[source.path] ?? 'guided') : 'raw'
@@ -351,39 +363,54 @@
 <div class="workspace" data-config-ready={mounted}>
 	<aside class="file-list panel">
 		<h2>Configuration files</h2>
-		<p class="muted">
-			{source.source === 'simulator' ? 'Simulator examples' : 'Private · owner access'}
-		</p>
-		<label class="file-search"
-			>Find a file<input type="search" bind:value={fileQuery} placeholder="Name or folder" /></label
+		<button
+			type="button"
+			class="file-browser-toggle"
+			aria-expanded={fileBrowserOpen}
+			onclick={() => (fileBrowserOpen = !fileBrowserOpen)}
+			>Browse files <span>{source.path}</span><span aria-hidden="true"
+				>{fileBrowserOpen ? '−' : '+'}</span
+			></button
 		>
-		<nav aria-label="Configuration files">
-			{#snippet fileLink(file: ConfigFile)}<a
-					href={`?file=${encodeURIComponent(file.path)}`}
-					data-sveltekit-reset="false"
-					aria-current={file.path === source.path ? 'page' : undefined}
-				>
-					<span>{file.path}</span
-					>{#if drafts[file.path] && drafts[file.path]!.text !== drafts[file.path]!.base.text}<span
-							class="draft-dot"
-							aria-label="Unsaved draft">●</span
-						>{/if}</a
-				>{/snippet}
-			{#each fileIndex.folders as folder}<section class="file-group">
-					<h3>{folder.path || 'Configuration'}</h3>
-					{#each folder.files as file}{@render fileLink(file)}{/each}
-				</section>{/each}
-			{#each fileIndex.revisions as group}<details
-					open={group.files.some((file) => file.path === source.path) || !!fileQuery}
-				>
-					<summary>Saved revisions · {group.current} ({group.files.length})</summary
-					>{#each group.files as file}{@render fileLink(file)}{/each}
-				</details>{/each}
-			{#if !fileIndex.folders.length && !fileIndex.revisions.length}<p>No matching files.</p>{/if}
-		</nav>
-		<p class="muted small">
-			Includes stay separate. Perilune never flattens files or rewrites unknown settings.
-		</p>
+		<div class:file-browser-collapsed={!fileBrowserOpen}>
+			<p class="muted">
+				{source.source === 'simulator' ? 'Simulator examples' : 'Private · owner access'}
+			</p>
+			<label class="file-search"
+				>Find a file<input
+					type="search"
+					bind:value={fileQuery}
+					placeholder="Name or folder"
+				/></label
+			>
+			<nav aria-label="Configuration files">
+				{#snippet fileLink(file: ConfigFile)}<a
+						href={`?file=${encodeURIComponent(file.path)}`}
+						data-sveltekit-reset="false"
+						aria-current={file.path === source.path ? 'page' : undefined}
+					>
+						<span>{file.path}</span
+						>{#if drafts[file.path] && drafts[file.path]!.text !== drafts[file.path]!.base.text}<span
+								class="draft-dot"
+								aria-label="Unsaved draft">●</span
+							>{/if}</a
+					>{/snippet}
+				{#each fileIndex.folders as folder}<section class="file-group">
+						<h3>{folder.path || 'Configuration'}</h3>
+						{#each folder.files as file}{@render fileLink(file)}{/each}
+					</section>{/each}
+				{#each fileIndex.revisions as group}<details
+						open={group.files.some((file) => file.path === source.path) || !!fileQuery}
+					>
+						<summary>Saved revisions · {group.current} ({group.files.length})</summary
+						>{#each group.files as file}{@render fileLink(file)}{/each}
+					</details>{/each}
+				{#if !fileIndex.folders.length && !fileIndex.revisions.length}<p>No matching files.</p>{/if}
+			</nav>
+			<p class="muted small">
+				Includes stay separate. Perilune never flattens files or rewrites unknown settings.
+			</p>
+		</div>
 	</aside>
 	{#if current}<div class="editor-column">
 			{#if calibrationProposal}{#key calibrationProposal.id}<CalibrationDraft
@@ -448,6 +475,29 @@
 							>Load current saved version…</button
 						>
 					</section>{/if}
+				<footer aria-label="Draft actions">
+					<details class="save-help">
+						<summary>{dirty ? 'Unsaved changes' : 'No changes'} · save details</summary>
+						<p class="muted small">
+							{revisionOf
+								? 'Saved revisions are read-only. Export or copy changes into the current file for review.'
+								: source.source === 'simulator'
+									? 'Saving creates a backup and changes the simulator file only. It does not apply or restart the printer.'
+									: applicationEnabled
+										? 'Reviewed application writes this file and restarts Klipper. A previous-file snapshot is kept for recovery. Syntax and hardware compatibility are not guaranteed.'
+										: 'Drafts stay in this tab until exported. No live file is written.'}
+						</p>
+					</details>
+					<div class="toolbar">
+						<button disabled={busy || !mounted || !!revisionOf || !dirty} onclick={discard}
+							>Discard draft…</button
+						><button
+							class="primary"
+							disabled={busy || !!revisionOf || !dirty || invalidField || conflict}
+							onclick={review}>Review changes…</button
+						>
+					</div>
+				</footer>
 				<div class="mode-switch" role="group" aria-label="Editor mode">
 					<button
 						disabled={!mounted || !fields.length || !!revisionOf}
@@ -491,64 +541,85 @@
 				</details>
 				{#if mode === 'guided'}
 					<p class="muted">
-						These are configured values in this file, not live readings. Hints and input bounds help
-						with editing; Klipper must validate the complete configuration and its includes.
+						Configuration values, not live readings. Review changes before applying them.
 					</p>
 					{#if fields.length > 100}<p class="muted">
-							Showing the first 100 explained fields. The complete file remains available in raw
-							source.
+							Showing up to 100 matching settings. Search to narrow the list, or open raw source for
+							the complete file.
+						</p>{/if}
+					<label class="setting-search"
+						>Find a setting<input
+							type="search"
+							bind:value={settingQuery}
+							placeholder="Name, section or setting key"
+						/></label
+					>
+					{#if !visibleFields.length}<p role="status">
+							No settings match your search. Raw source contains the complete file.
 						</p>{/if}
 					{#if fields.length}<div class="fields">
-							{#each fields.slice(0, 100) as field (field.start)}<div class="setting">
-									<div>
-										<label for={`setting-${field.start}`}>{field.hint.title}</label>
-										<p>{field.hint.help}</p>
-										{#if reference}{@const upstream = reference.options.find(
-												(option) =>
-													option.key === field.key &&
-													referenceMatches(option, field.section, referenceContext) &&
-													option.description
-											)}{#if upstream}<details class="field-reference">
-													<summary>Upstream explanation</summary>
-													<p>{upstream.description}</p>
-													<a href={referenceUrl(upstream)} target="_blank" rel="noreferrer"
-														>Read the full section ↗</a
-													>
-												</details>{/if}{/if}
-										<div class="source-ref">
-											<code>[{field.section}] {field.key}</code><span>Line {field.line}</span><a
-												href={`https://www.klipper3d.org/Config_Reference.html#${field.hint.section}`}
-												target="_blank"
-												rel="noreferrer">Klipper reference ↗</a
-											>
-										</div>
-									</div>
-									<div>
-										{#if field.editable}<input
-												id={`setting-${field.start}`}
-												type="number"
-												step="any"
-												min={field.hint.min}
-												max={field.hint.max}
-												value={field.value}
-												disabled={busy || !mounted}
-												onfocus={() => {
-													editingBaseline = {
-														path: source.path,
-														id: field.id,
-														text: current!.text
-													};
-												}}
-												oninput={(event) => {
-													invalidField = !editField(field.id, event.currentTarget.value);
-												}}
-												onchange={(event) => finishField(field.id, event.currentTarget)}
-											/>{:else}<code>{field.value || 'Multiline value'}</code>
-											<p class="muted small">
-												Ambiguous, repeated, or multiline: edit in raw source.
-											</p>{/if}
-									</div>
-								</div>{/each}
+							{#each fieldSections as section}<section
+									class="setting-group"
+									aria-label={`${section} settings`}
+								>
+									<h3>[{section}]</h3>
+									{#each visibleFields.filter((field) => field.section === section) as field (field.start)}<div
+											class="setting"
+										>
+											<div>
+												<label for={`setting-${field.start}`}>{field.hint.title}</label>
+												<details class="setting-help">
+													<summary>About this setting</summary>
+													<p>{field.hint.help}</p>
+													{#if reference}{@const upstream = reference.options.find(
+															(option) =>
+																option.key === field.key &&
+																referenceMatches(option, field.section, referenceContext) &&
+																option.description
+														)}{#if upstream}<details class="field-reference">
+																<summary>Upstream explanation</summary>
+																<p>{upstream.description}</p>
+																<a href={referenceUrl(upstream)} target="_blank" rel="noreferrer"
+																	>Read the full section ↗</a
+																>
+															</details>{/if}{/if}
+													<div class="source-ref">
+														<code>[{field.section}] {field.key}</code><span>Line {field.line}</span
+														><a
+															href={`https://www.klipper3d.org/Config_Reference.html#${field.hint.section}`}
+															target="_blank"
+															rel="noreferrer">Klipper reference ↗</a
+														>
+													</div>
+												</details>
+											</div>
+											<div>
+												{#if field.editable}<input
+														id={`setting-${field.start}`}
+														type="number"
+														step="any"
+														min={field.hint.min}
+														max={field.hint.max}
+														value={field.value}
+														disabled={busy || !mounted}
+														onfocus={() => {
+															editingBaseline = {
+																path: source.path,
+																id: field.id,
+																text: current!.text
+															};
+														}}
+														oninput={(event) => {
+															invalidField = !editField(field.id, event.currentTarget.value);
+														}}
+														onchange={(event) => finishField(field.id, event.currentTarget)}
+													/>{:else}<code>{field.value || 'Multiline value'}</code>
+													<p class="muted small">
+														Ambiguous, repeated, or multiline: edit in raw source.
+													</p>{/if}
+											</div>
+										</div>{/each}
+								</section>{/each}
 						</div>{/if}
 				{:else}<p class="raw-label">
 						Editable source <span class="muted small"
@@ -578,26 +649,6 @@
 							rel="noreferrer">About SAVE_CONFIG ↗</a
 						>
 					</section>{/if}
-				<footer>
-					<p class="muted small">
-						{revisionOf
-							? 'Saved revisions are read-only. Export or copy changes into the current file for review.'
-							: source.source === 'simulator'
-								? 'Saving creates a backup and changes the simulator file only. It does not apply or restart the printer.'
-								: applicationEnabled
-									? 'Reviewed application writes this file and restarts Klipper. A previous-file snapshot is kept for recovery. Syntax and hardware compatibility are not guaranteed.'
-									: 'Drafts stay in this tab until exported. No live file is written.'}
-					</p>
-					<div class="toolbar">
-						<button disabled={busy || !mounted || !!revisionOf || !dirty} onclick={discard}
-							>Discard draft…</button
-						><button
-							class="primary"
-							disabled={busy || !!revisionOf || !dirty || invalidField || conflict}
-							onclick={review}>Review changes…</button
-						>
-					</div>
-				</footer>
 			</section>
 			{#if source.source === 'simulator'}<section class="panel backups">
 					<h2>Previous versions</h2>
@@ -701,6 +752,9 @@
 		border-radius: 1rem;
 		padding: 1.5rem;
 		min-width: 0;
+	}
+	.file-browser-toggle {
+		display: none;
 	}
 	.file-list {
 		position: sticky;
@@ -827,6 +881,30 @@
 		background: var(--highlight);
 		color: var(--highlight-text);
 	}
+	.setting-search {
+		display: grid;
+		gap: 0.4rem;
+		margin-block: 1rem;
+	}
+	.setting-search input {
+		width: 100%;
+		min-width: 0;
+		padding: 0.7rem;
+		border: 1px solid var(--border);
+		border-radius: 0.5rem;
+		background: var(--canvas);
+		color: var(--text);
+		font: inherit;
+	}
+	.setting-group h3 {
+		color: var(--muted);
+		font-family: monospace;
+		font-size: 0.9rem;
+		margin: 1.2rem 0 0;
+	}
+	.setting-help summary {
+		margin: 0.4rem 0;
+	}
 	.fields {
 		display: grid;
 	}
@@ -834,8 +912,11 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 130px;
 		gap: 1.5rem;
-		padding: 1.4rem 0;
+		padding: 0.8rem 0;
 		border-bottom: 1px solid var(--border);
+	}
+	.setting input {
+		scroll-margin-top: 14rem;
 	}
 	.setting label {
 		font-weight: 600;
@@ -923,6 +1004,12 @@
 		margin: 0.8rem 0;
 	}
 	footer {
+		position: sticky;
+		top: 0;
+		z-index: 2;
+		background: var(--surface);
+		border-block: 1px solid var(--border);
+		padding: 0.65rem 0;
 		display: flex;
 		flex-wrap: wrap;
 		gap: 1rem;
@@ -971,6 +1058,27 @@
 		overflow: auto;
 	}
 	@media (max-width: 1050px) {
+		.file-browser-toggle {
+			display: flex;
+			gap: 0.5rem;
+			align-items: center;
+			justify-content: space-between;
+			width: 100%;
+			text-align: left;
+			padding: 0.4rem 0;
+			border: 0;
+			background: transparent;
+		}
+		.file-browser-toggle span:first-child {
+			color: var(--muted);
+			font-size: 0.8rem;
+			overflow-wrap: anywhere;
+			min-width: 0;
+		}
+		.file-browser-collapsed,
+		.file-list h2 {
+			display: none;
+		}
 		.workspace {
 			grid-template-columns: 1fr;
 		}

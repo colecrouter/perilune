@@ -96,7 +96,7 @@ try {
 	await page.getByRole('heading', { name: 'fixture-bracket.gcode', exact: true }).waitFor();
 	await page.locator('.inspection').getByText('1h 12m', { exact: true }).waitFor();
 	assert.equal(
-		await page.getByRole('button', { name: 'Review & start simulation', exact: true }).isDisabled(),
+		await page.getByRole('button', { name: 'Start simulation…', exact: true }).isDisabled(),
 		true
 	);
 	await page
@@ -117,14 +117,14 @@ try {
 	await second.getByRole('link', { name: 'fixture-bracket.gcode', exact: true }).waitFor();
 	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
-	await page.getByRole('button', { name: 'Review & start simulation', exact: true }).waitFor();
+	await page.getByRole('button', { name: 'Start simulation…', exact: true }).waitFor();
 	await page.waitForFunction(
 		() =>
 			![...document.querySelectorAll('button')].find(
-				(b) => b.textContent.trim() === 'Review & start simulation'
+				(b) => b.textContent.trim() === 'Start simulation…'
 			)?.disabled
 	);
-	await page.getByRole('button', { name: 'Review & start simulation', exact: true }).click();
+	await page.getByRole('button', { name: 'Start simulation…', exact: true }).click();
 	await page
 		.getByRole('dialog')
 		.getByText('1 manual filament change and 1 other pause requested by this file.', {
@@ -262,7 +262,7 @@ try {
 	await page.waitForFunction(
 		() => document.querySelector('[aria-label="Current job"]').dataset.jobState === 'cancelled'
 	);
-	await page.getByRole('button', { name: 'Review & start simulation', exact: true }).click();
+	await page.getByRole('button', { name: 'Start simulation…', exact: true }).click();
 	await page
 		.getByRole('dialog')
 		.getByRole('button', { name: 'Start simulated print', exact: true })
@@ -337,7 +337,7 @@ try {
 	await staticPage.getByRole('heading', { name: 'catalog-10.gcode', exact: true }).waitFor();
 	assert.match(staticPage.url(), /jobs\/[^?]+\?.*page=2/);
 	const staticDetailUrl = staticPage.url();
-	await staticPage.getByRole('button', { name: 'Review & start simulation', exact: true }).click();
+	await staticPage.getByRole('button', { name: 'Start simulation…', exact: true }).click();
 	await staticPage.getByRole('heading', { name: 'Start this print?', exact: true }).waitFor();
 	await staticPage
 		.getByText('1 manual filament change and 0 other pauses requested by this file.', {

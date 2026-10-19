@@ -18,9 +18,7 @@
 <AppShell {snapshot} active="Controls"
 	><div class="controls-page serif">
 		<header>
-			<p class="eyebrow">At your command</p>
 			<h1>Printer controls</h1>
-			<p>Review a destination, then move with clear limits and shared action state.</p>
 		</header>
 		<MotionControls
 			progressive
@@ -40,9 +38,5 @@
 	}
 	header {
 		margin-bottom: 1.5rem;
-	}
-	header > p:last-child {
-		color: var(--muted);
-		margin-top: 0.6rem;
 	}
 </style>

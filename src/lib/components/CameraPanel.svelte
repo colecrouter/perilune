@@ -216,10 +216,13 @@
 			</div>{/if}
 		{#if captureError}<p class="error-text" role="alert">{captureError}</p>{/if}
 	{:else}
-		<div class="camera-empty">
-			<Icon name="camera" size={52} />
-			<h3>Camera not connected</h3>
-			<p>Your camera will appear here through a secure app URL.</p>
-		</div>
+		<p class="camera-unconfigured muted">No camera configured.</p>
 	{/if}
 </section>
+
+<style>
+	.camera-unconfigured {
+		margin: 0;
+		font-size: 0.85rem;
+	}
+</style>

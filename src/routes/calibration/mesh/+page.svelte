@@ -85,8 +85,8 @@
 				simulator={snapshot.mode === 'simulator'}
 			/>
 		</div>
-		<section class="mesh-guide">
-			<h2>What does this tell me?</h2>
+		<details class="mesh-guide">
+			<summary>Understanding this mesh</summary>
 			<div class="guide-columns">
 				<div>
 					<h3>Shape, not a verdict</h3>
@@ -120,11 +120,15 @@
 			<a href="https://www.klipper3d.org/Bed_Mesh.html" target="_blank" rel="noreferrer"
 				>Understanding bed mesh in Klipper ↗</a
 			>
-		</section>
+		</details>
 	</div></AppShell
 >
 
 <style>
+	.mesh-guide summary {
+		cursor: pointer;
+		font-weight: 600;
+	}
 	.mesh-page {
 		max-width: 1200px;
 		margin: auto;
@@ -148,9 +152,6 @@
 		border: 1px solid var(--border);
 		border-radius: 1rem;
 	}
-	.mesh-guide h2 {
-		margin-top: 0;
-	}
 	.guide-columns {
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
@@ -167,6 +168,10 @@
 		font-size: 0.9rem;
 	}
 	@media (max-width: 750px) {
+		.mesh-guide summary {
+			cursor: pointer;
+			font-weight: 600;
+		}
 		.mesh-page {
 			padding: 1rem;
 		}

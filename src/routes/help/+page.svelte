@@ -7,14 +7,13 @@
 	><div class="help-page serif">
 		<p class="eyebrow">Your flight guide</p>
 		<h1>Help & setup</h1>
-		<p>
-			Perilune runs on a computer or server that can reach Moonraker. Your browser and slicer
-			connect to Perilune’s address.
-		</p>
+		<p>Find the next step for your printer, slicer, or device.</p>
 		<nav aria-label="Help topics">
-			<a href="#connecting">Connecting</a><a href="#printing">Printing & filament changes</a><a
+			<a href="#connecting">Connect a printer</a><a href="#printing">Print & change filament</a><a
 				href="#slicers">Slicers & pairing</a
-			><a href="#phones">Phones & notifications</a><a href="#updates">Updates & backups</a>
+			><a href="#phones">Phone notifications</a><a href="#updates">Update & backup</a><a
+				href="#access">Sign-in help</a
+			>
 		</nav>
 		<section id="connecting">
 			<h2>Connect a printer</h2>
@@ -22,16 +21,20 @@
 				If someone already hosts Perilune for you, open their panel address and sign in. You do not
 				need another installation on your computer or printer.
 			</p>
-			<p>
-				For a new installation, start in simulator mode, create an owner account using the server’s
-				setup token, then configure the backend’s Moonraker WebSocket address. Live connections
-				begin read-only; physical controls require separate server options and an attended test.
-			</p>
-			<a
-				href="https://github.com/colecrouter/perilune/blob/main/docs/getting-started.md"
-				target="_blank"
-				rel="noreferrer">Installation and connection instructions ↗</a
-			>
+			<details>
+				<summary>Hosting a new installation?</summary>
+				<p>
+					For a new installation, start in simulator mode, create an owner account using the
+					server’s setup token, then configure the backend’s Moonraker WebSocket address. Live
+					connections begin read-only; physical controls require separate server options and an
+					attended test.
+				</p>
+				<a
+					href="https://github.com/colecrouter/perilune/blob/main/docs/getting-started.md"
+					target="_blank"
+					rel="noreferrer">Installation and connection instructions ↗</a
+				>
+			</details>
 		</section>
 		<section id="printing">
 			<h2>Before you print</h2>
@@ -44,26 +47,32 @@
 				<li>Start the print explicitly. Uploading from the Jobs page never starts it.</li>
 				<li>Stay with the printer for the first layer and any planned filament changes.</li>
 			</ol>
-			<h3>Manual changes and pauses</h3>
-			<p>
-				File inspection recognizes explicit M600 filament changes and PAUSE, M0, M1, or M25 pause
-				commands in text G-code up to 20 MiB. “None found” means no recognized command was present;
-				“Not inspected” means we do not know. Custom macros can introduce additional pauses.
-			</p>
-			<p>
-				The printer’s macros determine unloading, parking, purging, heating, and resuming. Follow
-				the printer’s instructions. Some Resume macros perform a purge step and leave the print
-				paused; inspect the messages and use Resume again only when the printer is ready. Do not
-				assume the first click resumed printing.
-			</p>
 			<p>
 				Stop lets you choose nozzle and bed cooldown independently. Emergency stop immediately shuts
 				down movement and heating; motors may release. It is separate from an ordinary print
 				cancellation.
 			</p>
-			<a href="https://www.klipper3d.org/G-Codes.html#pause_resume" target="_blank" rel="noreferrer"
-				>Klipper pause and resume reference ↗</a
-			>
+			<details>
+				<summary>Manual changes and pauses</summary>
+				<p>
+					File inspection recognizes explicit M600 filament changes and PAUSE, M0, M1, or M25 pause
+					commands in text G-code up to 20 MiB. “None found” means no recognized command was
+					present; “Not inspected” means we do not know. Custom macros can introduce additional
+					pauses.
+				</p>
+				<p>
+					The printer’s macros determine unloading, parking, purging, heating, and resuming. Follow
+					the printer’s instructions. Some Resume macros perform a purge step and leave the print
+					paused; inspect the messages and use Resume again only when the printer is ready. Do not
+					assume the first click resumed printing.
+				</p>
+
+				<a
+					href="https://www.klipper3d.org/G-Codes.html#pause_resume"
+					target="_blank"
+					rel="noreferrer">Klipper pause and resume reference ↗</a
+				>
+			</details>
 		</section>
 		<section id="slicers">
 			<h2>Connect your slicer or another browser</h2>
@@ -90,7 +99,7 @@
 					use the browser’s Install or Add to Home Screen option.
 				</li>
 				<li>
-					Open <a href="/account">Account → Perilune on this device</a>, enable notifications, and
+					Open <a href="/account#notifications">Account → This device</a>, enable notifications, and
 					send a test.
 				</li>
 				<li>
@@ -130,6 +139,19 @@
 				rel="noreferrer">Backups and recovery ↗</a
 			>
 		</section>
+		<section id="access">
+			<h2>Need help signing in?</h2>
+			<p>
+				Try your password, a passkey, or <a href="/pair/start"
+					>approval from another signed-in browser</a
+				>. If none are available, ask the person hosting Perilune to recover your account.
+			</p>
+			<a
+				href="https://github.com/colecrouter/perilune/blob/main/docs/deployment.md"
+				target="_blank"
+				rel="noreferrer">Hosting and recovery guide ↗</a
+			>
+		</section>
 		<p>
 			<a href="https://github.com/colecrouter/perilune/issues" target="_blank" rel="noreferrer"
 				>Report a problem or follow development ↗</a
@@ -151,9 +173,6 @@
 	h2 {
 		font-size: 1.8rem;
 	}
-	h3 {
-		font-size: 1.25rem;
-	}
 	p,
 	li {
 		line-height: 1.7;
@@ -167,13 +186,32 @@
 	nav {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.7rem 1.2rem;
+		gap: 0.5rem;
 		margin: 1.5rem 0;
 	}
 	nav a {
 		min-height: 44px;
 		display: flex;
 		align-items: center;
+		padding: 0.6rem 0.8rem;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		text-decoration: none;
+	}
+	details {
+		margin-top: 1rem;
+		padding: 0.25rem 0.75rem;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		background: var(--surface);
+	}
+	summary {
+		cursor: pointer;
+		padding: 0.65rem 0;
+		min-height: 44px;
+		font-weight: 500;
+		color: var(--accent);
 	}
 	section {
 		border-top: 1px solid var(--border);

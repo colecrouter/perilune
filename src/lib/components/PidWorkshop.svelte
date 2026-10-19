@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
 	import { pidActive, pidReason } from '#lib/domain/pid.js';
 	import ActionForm from './ActionForm.svelte';
@@ -14,6 +15,14 @@
 	let heater = $state<'nozzle' | 'bed'>('nozzle');
 	let targets = $state({ nozzle: 200, bed: 60 });
 	let attended = $state(false);
+	let resultPanel: HTMLElement | undefined = $state();
+	let followResult = $state(false);
+	$effect(() => {
+		if (followResult && run && ['running', 'staged'].includes(run.stage) && resultPanel) {
+			followResult = false;
+			void tick().then(() => resultPanel?.focus({ preventScroll: false }));
+		}
+	});
 	const live = $derived(snapshot.mode === 'moonraker');
 	const run = $derived(snapshot.pid?.run);
 	const running = $derived(pidActive(snapshot.pid));
@@ -35,7 +44,13 @@
 {#if !live}<p class="notice">
 		Simulator · The example result is not measured and must not be applied to a real heater.
 	</p>{/if}
-{#if run}<section class="panel" aria-label="PID calibration result" aria-live="polite">
+{#if run}<section
+		bind:this={resultPanel}
+		tabindex="-1"
+		class="panel"
+		aria-label="PID calibration result"
+		aria-live="polite"
+	>
 		<p class="eyebrow">{run.heater === 'bed' ? 'Bed' : 'Nozzle'} · {run.target}°C</p>
 		<h2>
 			{run.stage === 'running'
@@ -63,6 +78,7 @@
 					<dd>{run.parameters.kd}</dd>
 				</div>
 			</dl>{/if}
+		{#if run.stage === 'running'}<p class="muted">Leaving this page does not stop the test.</p>{/if}
 		{#if run.stage === 'running' && live && role === 'owner'}
 			<p>
 				Stopping shuts down Klipper and all heaters. Motors may release. Inspect the printer before
@@ -100,79 +116,96 @@
 		mode={reviewMode}
 	/>{/if}
 
-<section class="panel preparation" aria-label="Prepare PID calibration">
-	<h2>Prepare a heater test</h2>
-	<p>
-		PID tuning helps a heater hold its target temperature. Use the normal printing temperature
-		appropriate for your material and hardware, with the usual cooling arrangement. Keep the bed
-		clear and stay with the printer throughout the heating cycles.
-	</p>
-	<p>
-		No homing or extrusion is requested. Turn off both heater targets first, finish any print, and
-		resolve pending configuration changes. The test can take several minutes; navigating away does
-		not stop it.
-	</p>
-	{#if live}<p>
-			Keep other printer clients idle. If you must stop a running tune, use Stop calibration or
-			Emergency stop. Ordinary G-code can remain queued behind the tune.
-		</p>{/if}
-	{#if reason}<p class="readiness" role="status">{reason}</p>{/if}
-	<ActionForm
-		fields={{ intent: 'pidCalibrate' }}
-		receipts={snapshot.actions}
-		onAccepted={() => (attended = false)}
-	>
-		{#snippet children({ pending, uncertain })}
-			<div class="preparation-fields">
-				<label
-					>Heater<select name="heater" bind:value={heater} disabled={pending || running}
-						><option value="nozzle">Nozzle</option><option value="bed">Bed</option></select
-					></label
-				>
-				<label
-					>Calibration target (°C)<input
-						type="number"
-						name="target"
-						min="30"
-						max={Math.min(300, (snapshot.pidTelemetry?.limits[heater]?.max ?? 310) - 10)}
-						step="1"
-						required
-						bind:value={() => targets[heater], (value) => (targets[heater] = value ?? NaN)}
-						disabled={pending || running}
-					/></label
-				>
-			</div>
-			<label class="confirmation"
-				><input
-					type="checkbox"
-					name="confirmed"
-					value="true"
-					bind:checked={attended}
-					required
-					disabled={pending || running || role !== 'owner'}
-				/> I am attending the printer, have checked the heater and cooling arrangement, and am ready for
-				this temperature test.</label
-			>
-			<button class="button primary" disabled={!!reason || pending || uncertain || !attended}
-				>{pending
-					? 'Calibration pending…'
-					: live
-						? 'Start heater calibration'
-						: 'Run simulator calibration'}</button
-			>
-		{/snippet}
-	</ActionForm>
-	<p>
-		<a href="/">Printer status and cooldown controls →</a> ·
-		<a
-			href="https://www.klipper3d.org/Config_checks.html#calibrate-pid-settings"
-			target="_blank"
-			rel="noreferrer">Klipper PID guide ↗</a
+{#if !live || !run || !['running', 'staged'].includes(run.stage)}
+	<section class="panel preparation" aria-label="Prepare PID calibration">
+		<h2>Prepare a heater test</h2>
+		<p>
+			Choose your usual printing temperature. Stay at the printer throughout the heating cycles.
+		</p>
+		<details class="guidance">
+			<summary>Preparation and safety</summary>
+			<ul>
+				<li>Clear the bed and use the usual cooling arrangement.</li>
+				<li>Finish any print, turn off both heater targets, and resolve pending settings first.</li>
+				<li>The test takes several minutes. Leaving this page does not stop it.</li>
+			</ul>
+			{#if live}<p>
+					Keep other printer clients idle. Stop calibration shuts down all heaters and may release
+					motors; ordinary queued commands may not stop a tune.
+				</p>{/if}
+		</details>
+		{#if reason}<p class="readiness" role="status">{reason}</p>{/if}
+		<ActionForm
+			fields={{ intent: 'pidCalibrate' }}
+			receipts={snapshot.actions}
+			onAccepted={() => {
+				attended = false;
+				followResult = true;
+			}}
 		>
-	</p>
-</section>
+			{#snippet children({ pending, uncertain })}
+				<div class="preparation-fields">
+					<label
+						>Heater<select name="heater" bind:value={heater} disabled={pending || running}
+							><option value="nozzle">Nozzle</option><option value="bed">Bed</option></select
+						></label
+					>
+					<label
+						>Calibration target (°C)<input
+							type="number"
+							name="target"
+							min="30"
+							max={Math.min(300, (snapshot.pidTelemetry?.limits[heater]?.max ?? 310) - 10)}
+							step="1"
+							required
+							bind:value={() => targets[heater], (value) => (targets[heater] = value ?? NaN)}
+							disabled={pending || running}
+						/></label
+					>
+				</div>
+				<label class="confirmation"
+					><input
+						type="checkbox"
+						name="confirmed"
+						value="true"
+						bind:checked={attended}
+						required
+						disabled={pending || running || role !== 'owner'}
+					/> I am attending the printer, have checked the heater and cooling arrangement, and am ready
+					for this temperature test.</label
+				>
+				<button class="button primary" disabled={!!reason || pending || uncertain || !attended}
+					>{pending
+						? 'Calibration pending…'
+						: live
+							? 'Start heater calibration'
+							: 'Run simulator calibration'}</button
+				>
+			{/snippet}
+		</ActionForm>
+		<p>
+			<a href="/">Printer status and cooldown controls →</a> ·
+			<a
+				href="https://www.klipper3d.org/Config_checks.html#calibrate-pid-settings"
+				target="_blank"
+				rel="noreferrer">Klipper PID guide ↗</a
+			>
+		</p>
+	</section>
+{/if}
 
 <style>
+	.guidance {
+		margin-block: 0.75rem;
+		color: var(--muted);
+		line-height: 1.5;
+	}
+	.guidance summary {
+		cursor: pointer;
+	}
+	.guidance ul {
+		padding-left: 1.2rem;
+	}
 	.result-actions {
 		display: flex;
 		flex-wrap: wrap;

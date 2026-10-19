@@ -140,7 +140,8 @@
 </script>
 
 <div class="workshop">
-	<section class="intro panel">
+	<details class="intro panel">
+		<summary>How the measurement works</summary>
 		<div>
 			<p class="eyebrow">A measured approach</p>
 			<h2>Does 50 mm really mean 50 mm?</h2>
@@ -168,7 +169,7 @@
 				y="119">Intake</text
 			>
 		</svg>
-	</section>
+	</details>
 	{#if failure || receipt?.status === 'failed' || receipt?.status === 'unknown'}<p
 			class="notice error"
 			role="alert"
@@ -236,8 +237,8 @@
 				><input type="checkbox" bind:checked={clear} disabled={active} />The nozzle has clearance
 				and extruded filament has somewhere to go.</label
 			>
-			<div class="handling">
-				<strong>Filament handling</strong><span>Feed or retract slowly · 1 mm/s</span>
+			<details class="handling">
+				<summary>Load or adjust filament</summary><span>Feed or retract slowly · 1 mm/s</span>
 				<div class="button-row">
 					{#each [-25, -10, -5, 5, 10, 25] as distance}<button
 							disabled={Boolean(reason) || active || pending || !loaded || !clear}
@@ -250,7 +251,7 @@
 								})}>{distance < 0 ? 'Retract' : 'Feed'} {Math.abs(distance)} mm</button
 						>{/each}
 				</div>
-			</div>
+			</details>
 			{#if !active && reason}<p class="muted" role="status">{reason}</p>{/if}
 		</section>
 	{/if}
@@ -266,8 +267,8 @@
 		{#if interactive && active}
 			<p>
 				Started by <strong>{session!.ownerName}</strong>. {owns
-					? 'You own this workflow.'
-					: 'Its owner controls the measurements.'}
+					? 'Enter your measurement below.'
+					: 'Only they can enter measurements.'}
 			</p>
 			{#if running}<p class="run-label">
 					{session!.stage === 'feeding'
@@ -282,7 +283,7 @@
 				></progress>
 				<p class="muted">
 					{live
-						? 'Waiting for movement acknowledgement and commanded position verification'
+						? 'Waiting for the printer to finish feeding'
 						: `${session!.completed} / ${Math.abs(session!.distance)} mm`} · 1 mm/s. Closing this page
 					does not stop the workflow.
 				</p>
@@ -439,8 +440,8 @@
 					: 'Filament movement finished.'}
 			</p>{/if}
 	</section>
-	<section class="panel guidance">
-		<h2>What comes after this?</h2>
+	<details class="panel guidance">
+		<summary>Travel, flow and pressure advance</summary>
 		<p>
 			Extruder travel checks the drive mechanism. Flow ratio is a slicer/material setting; pressure
 			advance compensates for pressure during speed changes. Neither should be used to hide slipping
@@ -451,14 +452,17 @@
 			target="_blank"
 			rel="noreferrer">Klipper’s extrusion-distance guide ↗</a
 		>
-		<p class="muted">
-			Configuration review and saving are the next milestone. Print-based tuning will get its own
-			workflows.
-		</p>
-	</section>
+	</details>
 </div>
 
 <style>
+	summary {
+		cursor: pointer;
+		font-weight: 600;
+	}
+	.intro summary {
+		grid-column: 1 / -1;
+	}
 	.workshop {
 		display: grid;
 		gap: 1.25rem;
@@ -479,7 +483,7 @@
 		line-height: 1.65;
 		max-width: 74ch;
 	}
-	.intro {
+	.intro[open] {
 		display: grid;
 		grid-template-columns: 1.5fr 1fr;
 		align-items: center;

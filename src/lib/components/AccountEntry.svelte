@@ -2,7 +2,9 @@
 	import MoonMark from './MoonMark.svelte';
 	import { onMount } from 'svelte';
 	import { authClient } from '#lib/client/auth.js';
-	let { mode }: { mode: 'login' | 'setup' | 'register' } = $props();
+	import { goto } from '$app/navigation';
+	let { mode, signedIn = false }: { mode: 'login' | 'setup' | 'register'; signedIn?: boolean } =
+		$props();
 	let token = $state('');
 	let name = $state('');
 	let email = $state('');
@@ -11,15 +13,21 @@
 	let message = $state('');
 	let reset = $state(false);
 	let destination = $state('/');
+	let recoveryHelp = $state(false);
 	onMount(() => {
 		const hash = location.hash.slice(1);
-		if (new URLSearchParams(location.search).get('next') === 'pair') destination = '/pair';
+		const query = new URLSearchParams(location.search);
+		if (query.get('next') === 'pair') destination = '/pair';
+		if (mode === 'login' && query.get('created') === '1')
+			message = 'Account created. Sign in to continue.';
 		if (mode === 'register') token = hash;
 		if (mode === 'login' && hash.startsWith('reset=')) {
 			token = hash.slice(6);
 			reset = true;
 		}
 		history.replaceState(null, '', location.pathname);
+		// Recovery tokens live in the fragment, so choose after inspecting it in the browser.
+		if (mode === 'login' && signedIn && !reset) void goto(destination, { replaceState: true });
 	});
 	async function submit(event: SubmitEvent) {
 		event.preventDefault();
@@ -51,7 +59,7 @@
 					const body = await response.json();
 					throw new Error(body.message ?? 'Could not create this account.');
 				}
-				location.assign('/login');
+				location.assign('/login?created=1');
 			}
 		} catch (cause) {
 			message = cause instanceof Error ? cause.message : 'Please try again.';
@@ -102,7 +110,7 @@
 						: 'Sign in to check on your printer and pick up where you left off.'}
 		</p>
 		{#if mode === 'login' && !reset}<p class="entry-help">
-				Sign-in lasts up to 90 days. You can sign out or revoke access sooner.
+				Use your password, a passkey, or approve this browser from another device.
 			</p>{/if}
 		<form onsubmit={submit}>
 			{#if mode === 'setup'}<label
@@ -113,7 +121,6 @@
 						spellcheck="false"
 					/></label
 				>
-				<p><a href="/pair/start">Sign in with another browser</a></p>
 				<p class="entry-help">
 					On the server, run <code>node scripts/auth.mjs setup</code> to generate a token. It expires
 					in 30 minutes.
@@ -134,8 +141,9 @@
 					autocomplete={mode === 'login' && !reset ? 'current-password' : 'new-password'}
 				/></label
 			>
-			{#if mode !== 'login' || reset}<p><a href="/pair/start">Sign in with another browser</a></p>
-				<p class="entry-help">Use at least 12 characters. A passphrase works well.</p>{/if}
+			{#if mode !== 'login' || reset}<p class="entry-help">
+					Use at least 12 characters. A passphrase works well.
+				</p>{/if}
 			{#if message}<p role="alert" class="entry-message">{message}</p>{/if}
 			<button class="button primary" type="submit" disabled={pending}
 				>{pending
@@ -153,11 +161,17 @@
 				disabled={pending}>Sign in with a passkey</button
 			>
 			<p><a href="/pair/start">Sign in with another browser</a></p>
-			<p class="entry-help">
-				Locked out? Stop Perilune, then recover an owner account on the server using <code
-					>node scripts/auth.mjs recover email --server-stopped</code
-				>.
-			</p>{/if}
+			<details bind:open={recoveryHelp} class="entry-recovery">
+				<summary>Need help signing in?</summary>
+				<p class="entry-help">
+					Sign-in lasts up to 90 days. If you have no working password, passkey, or signed-in
+					browser, ask the person hosting Perilune for help.
+				</p>
+				<p class="entry-help">
+					Hosting this installation? Stop Perilune, then recover an owner account on the server
+					using <code>node scripts/auth.mjs recover email --server-stopped</code>.
+				</p>
+			</details>{/if}
 	</section>
 </div>
 
@@ -250,7 +264,24 @@
 		cursor: pointer;
 	}
 	.entry-message {
-		color: var(--danger);
+		padding: 0.75rem;
+		border: 1px solid var(--border-strong);
+		border-radius: 8px;
+		background: var(--accent-soft);
+	}
+	.entry-recovery {
+		margin-top: 1rem;
+	}
+	.entry-recovery summary {
+		cursor: pointer;
+		min-height: 44px;
+		display: flex;
+		align-items: center;
+		font-size: 0.875rem;
+		color: var(--accent);
+	}
+	.entry-recovery p + p {
+		margin-top: 0.75rem;
 	}
 	code {
 		font-size: 0.8rem;

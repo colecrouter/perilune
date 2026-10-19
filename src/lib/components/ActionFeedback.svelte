@@ -1,20 +1,16 @@
 <script lang="ts">
 	import type { ActionRecord } from '#lib/domain/printer.js';
-	let { receipt, receiptBase = '/actions' }: { receipt: ActionRecord; receiptBase?: string } =
-		$props();
+	import { actionStatusLabel } from '#lib/client/action-label.js';
+	let {
+		receipt,
+		receiptBase = '/actions',
+		showCompleted = false
+	}: { receipt: ActionRecord; receiptBase?: string; showCompleted?: boolean } = $props();
 	const attention = $derived(receipt.status === 'unknown' || receipt.status === 'failed');
-	const statusLabel = $derived(
-		receipt.status === 'queued'
-			? 'Waiting to run'
-			: receipt.status === 'sending'
-				? 'In progress'
-				: receipt.status === 'unknown'
-					? 'Outcome uncertain'
-					: 'Failed'
-	);
+	const statusLabel = $derived(actionStatusLabel[receipt.status]);
 </script>
 
-{#if receipt.status !== 'completed'}
+{#if receipt.status !== 'completed' || showCompleted}
 	<div class="action-feedback" class:attention role={attention ? 'alert' : 'status'}>
 		<strong>{receipt.label}: {statusLabel}</strong>
 		{#if attention}

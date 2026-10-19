@@ -121,20 +121,26 @@ Oxfmt handles supported files; Prettier with its Svelte plugin handles `.svelte`
 files. Tabs are the default. Effect's language service is enabled in TypeScript
 and patched during prepare so its diagnostics also appear in checks.
 
-## Next milestones
+## Current milestones
 
-1. Completed: protocol-level Moonraker simulator and persistent read-only WebSocket adapter.
-2. Real command policies, reconciliation, cancellation macro behavior, priority stop.
-3. Completed: go2rtc camera gateway and source-change propagation; broader media protocols follow.
-4. Completed: built-in authentication; external identity remains optional future work.
-5. Completed: Jobs file library and upload-only slicer gateway; guided simulator calibration, opt-in live cold bed mesh, and the configuration workspace are implemented; broader live controls/configuration writes remain.
-6. Physical-device push/install acceptance and layout preferences.
+Persistent Moonraker integration, authenticated camera routing, local accounts,
+Jobs and slicer pairing, reviewed command/configuration workflows, opt-in live
+calibration, installability and notification delivery are implemented. Live
+capabilities remain explicitly enabled by deployment; physical operations and
+acceptance are coordinated with the owner. Internet exposure requires HTTPS and
+a configured origin.
 
-Built-in authentication protects browser-facing state, actions, and media. Compose
-binds only to loopback by default. Internet exposure requires a configured HTTPS origin. Live mode is read-only by default. The explicitly enabled live bed mesh controller
-can home, probe, manage mesh profiles, and save configuration through its reviewed
-workflow. Other real movement, heating, job commands, and configuration editing
-remain disabled. Simulator commands only alter demo state.
+Beta UX readiness refines the implemented workflows: explicit mobile navigation,
+reachable motion and console controls, local action outcomes, searchable settings
+and prominent draft review, consistent calibration results, direct account
+sections and contextual entry/notification guidance. See
+[beta-ux-readiness.md](beta-ux-readiness.md) for the accepted scope and verification
+criteria. The backend command and authentication contracts remain unchanged.
+
+Outstanding work includes coordinated hardware/platform acceptance, camera
+quality/codec processing, configurable overview layouts, race-safe rolling
+sessions, and optional email recovery. These are tracked separately from the beta
+UX milestone; current issue status is authoritative for individual follow-ups.
 
 ## Protocol references
 

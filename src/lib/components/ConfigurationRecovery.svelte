@@ -121,32 +121,39 @@
 		{#if application}<p>{application.message}</p>
 			{#if compact}<a href="/configuration#configuration-recovery">Open configuration recovery →</a
 				>{:else}
-				<p class="muted">
-					{application.path} · Updated {new Date(application.updatedAt).toLocaleString()}
-				</p>
-				<p class="snapshot-links">
-					<a href={`/api/configuration/application?snapshot=${application.id}&side=before`}
-						>Export previous file</a
-					>
-					·
-					<a href={`/api/configuration/application?snapshot=${application.id}&side=after`}
-						>Export proposed file</a
-					>
-				</p>
-				{#if application.diagnostic}<pre
-						aria-label="Klipper startup diagnostic">{application.diagnostic}</pre>{/if}
-				{#if !pending}<button disabled={busy} onclick={() => action('check')}
-						>Check printer and saved settings</button
-					>
-					{#if recovery?.enabled && (application.mode !== 'revert' ? application.writeVerified : application.phase === 'error')}<label
-							><input type="checkbox" bind:checked={confirmed} />Restore the snapshot and restart
-							Klipper. Unsaved runtime calibration changes may be lost.</label
+				<details open={application.phase !== 'ready'}>
+					<summary>Saved files & recovery</summary>
+					<p class="muted">
+						{application.path} · Updated {new Date(application.updatedAt).toLocaleString()}
+					</p>
+					<p class="snapshot-links">
+						<a href={`/api/configuration/application?snapshot=${application.id}&side=before`}
+							>Export previous file</a
 						>
-						<button class="restore" disabled={busy || !confirmed} onclick={() => action('revert')}
-							>{application.mode === 'revert'
-								? 'Retry restore and restart'
-								: 'Revert changes and restart'}</button
-						>{/if}{/if}
+						·
+						<a href={`/api/configuration/application?snapshot=${application.id}&side=after`}
+							>Export reviewed file</a
+						>
+					</p>
+					<p class="muted">
+						The previous file is the recovery copy from before this operation. The reviewed file is
+						the exact content submitted for verification; exporting it does not apply it.
+					</p>
+					{#if application.diagnostic}<pre
+							aria-label="Klipper startup diagnostic">{application.diagnostic}</pre>{/if}
+					{#if !pending}<button disabled={busy} onclick={() => action('check')}
+							>Check printer and saved settings</button
+						>
+						{#if recovery?.enabled && (application.mode !== 'revert' ? application.writeVerified : application.phase === 'error')}<label
+								><input type="checkbox" bind:checked={confirmed} />Restore the snapshot and restart
+								Klipper. Unsaved runtime calibration changes may be lost.</label
+							>
+							<button class="restore" disabled={busy || !confirmed} onclick={() => action('revert')}
+								>{application.mode === 'revert'
+									? 'Retry restore and restart'
+									: 'Revert changes and restart'}</button
+							>{/if}{/if}
+				</details>
 			{/if}
 		{/if}
 		{#if failure || networkFailure}<p role="alert">{failure || networkFailure}</p>

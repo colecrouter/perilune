@@ -105,7 +105,7 @@
 					class={`nav-trigger mobile-more ${!['Overview', 'Controls', 'Jobs', 'Console'].includes(active) ? 'active' : ''}`}
 					aria-label="More navigation"
 				>
-					<Icon name="account" /><span>More</span>
+					<Icon name="more" /><span>More</span>
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Portal
 					><DropdownMenu.Content

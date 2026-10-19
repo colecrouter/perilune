@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import MoonMark from './MoonMark.svelte';
 	let { approve = false, signedIn = false }: { approve?: boolean; signedIn?: boolean } = $props();
-	let name = $state('Desktop slicer');
+	let name = $state('My browser');
 	let code = $state('');
 	let request = $state<{ name: string; expires: number } | null>(null);
 	let grant = $state<{ code: string; token: string; expires: number; url: string } | null>(null);
@@ -87,90 +88,205 @@
 	});
 </script>
 
-<div class="pair-card serif">
-	<a href="/login">Perilune</a>
-	<h1>{approve ? 'Approve a browser' : 'Sign in with another browser'}</h1>
-	{#if approve}
-		<p>
-			Only approve a code displayed on a browser you are signing into yourself. Approval gives it
-			your account’s permissions.
-		</p>
-		{#if !signedIn}
-			<a class="button primary" href="/login?next=pair">Sign in to approve</a>
+<div class="pair-sky serif">
+	<div class="pair-card">
+		<a class="pair-brand" href="/login"><MoonMark /><span>Perilune</span></a>
+		<h1>{approve ? 'Approve a browser' : 'Sign in with another browser'}</h1>
+		{#if approve}
+			<p>
+				Only approve a code displayed on a browser you are signing into yourself. Approval gives it
+				your account’s permissions.
+			</p>
+			{#if !signedIn}
+				<a class="button primary" href="/login?next=pair">Sign in to approve</a>
+			{:else}
+				<form
+					onsubmit={(event) => {
+						event.preventDefault();
+						void action('inspect');
+					}}
+				>
+					<label
+						>Pairing code<input
+							bind:value={code}
+							autocomplete="off"
+							maxlength="11"
+							required
+						/></label
+					>
+					<button class="button primary" disabled={pending}
+						>{pending ? 'Checking…' : 'Check code'}</button
+					>
+				</form>
+				{#if request}
+					<div class="request-review">
+						<p class="eyebrow">Browser requesting access</p>
+						<h2>{request.name}</h2>
+						{#if integrations.length}<label
+								>Link to an integration<select
+									aria-label="Link to an integration"
+									bind:value={integrationId}
+									><option value="">Standalone browser</option
+									>{#each integrations as integration}<option value={integration.id}
+											>{integration.name}</option
+										>{/each}</select
+								></label
+							>{/if}
+						<p>
+							Compare code <strong>{inspectedCode}</strong> with the requesting browser. Browser names
+							are supplied by the requester.
+						</p>
+						<div class="pair-actions">
+							<button class="button primary" disabled={pending} onclick={() => action('approve')}
+								>Approve browser</button
+							><button class="button secondary" disabled={pending} onclick={() => action('deny')}
+								>Deny</button
+							>
+						</div>
+					</div>
+				{/if}
+			{/if}
+		{:else if grant}
+			<p>
+				In a browser where you can sign in, open <a
+					href={grant.url}
+					target="_blank"
+					rel="noreferrer">{grant.url}</a
+				> and enter:
+			</p>
+			<div class="pair-code">
+				<p class="code">{grant.code}</p>
+				<button
+					class="button secondary"
+					onclick={async () => {
+						try {
+							await navigator.clipboard.writeText(grant?.code ?? '');
+							message = 'Pairing code copied.';
+						} catch {
+							message = 'Select the code to copy it.';
+						}
+					}}>Copy code</button
+				>
+			</div>
+			<p class="waiting" role="status">Waiting for approval</p>
+			<p class="pair-help">
+				Expires at {new Date(grant.expires).toLocaleTimeString([], {
+					hour: 'numeric',
+					minute: '2-digit'
+				})}. Keep this page open.
+			</p>
+			<button
+				class="button secondary"
+				onclick={() => {
+					const current = grant;
+					grant = null;
+					if (current)
+						void api('cancel', { token: current.token }).catch(() => {
+							message = 'Could not cancel. The code expires after five minutes.';
+						});
+				}}>Cancel</button
+			>
 		{:else}
+			<p>Use your normal browser or phone to approve this browser. No passkey is needed here.</p>
 			<form
 				onsubmit={(event) => {
 					event.preventDefault();
-					void action('inspect');
+					void action('start');
 				}}
 			>
-				<label
-					>Pairing code<input bind:value={code} autocomplete="off" maxlength="11" required /></label
+				<label>Browser name<input bind:value={name} maxlength="80" required /></label>
+				<button class="button primary" disabled={pending}
+					>{pending ? 'Getting code…' : 'Get pairing code'}</button
 				>
-				<button disabled={pending}>Check code</button>
 			</form>
-			{#if request}
-				<h2>{request.name}</h2>
-				{#if integrations.length}<label
-						>Link to an integration<select
-							aria-label="Link to an integration"
-							bind:value={integrationId}
-							><option value="">Standalone browser</option
-							>{#each integrations as integration}<option value={integration.id}
-									>{integration.name}</option
-								>{/each}</select
-						></label
-					>{/if}
-				<p>
-					Compare code <strong>{inspectedCode}</strong> with the requesting browser. Browser names are
-					supplied by the requester.
-				</p>
-				<button disabled={pending} onclick={() => action('approve')}>Approve browser</button>
-				<button disabled={pending} onclick={() => action('deny')}>Deny</button>
-			{/if}
 		{/if}
-	{:else if grant}
-		<p>
-			In a browser where you can sign in, open <a href={grant.url} target="_blank" rel="noreferrer"
-				>{grant.url}</a
-			> and enter:
-		</p>
-		<p class="code">{grant.code}</p>
-		<p>Waiting for approval. This code expires in five minutes. Keep this page open.</p>
-		<button
-			onclick={() => {
-				const current = grant;
-				grant = null;
-				if (current)
-					void api('cancel', { token: current.token }).catch(() => {
-						message = 'Could not cancel. The code expires after five minutes.';
-					});
-			}}>Cancel</button
-		>
-	{:else}
-		<p>Use your normal browser or phone to approve this browser. No passkey is needed here.</p>
-		<form
-			onsubmit={(event) => {
-				event.preventDefault();
-				void action('start');
-			}}
-		>
-			<label>Browser name<input bind:value={name} maxlength="80" required /></label>
-			<button disabled={pending}>Get pairing code</button>
-		</form>
-	{/if}
-	{#if message}<p role="status">{message}</p>{/if}
+		{#if message}<p class="pair-feedback" role="status">{message}</p>{/if}
+	</div>
 </div>
 
 <style>
+	.pair-sky {
+		min-height: 100svh;
+		padding: clamp(1rem, 5vh, 3rem) 1rem;
+		display: grid;
+		place-items: center;
+		background: var(--rail);
+		position: relative;
+		isolation: isolate;
+	}
+	.pair-sky::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		background-image: var(--stars);
+		pointer-events: none;
+	}
 	.pair-card {
-		max-width: 600px;
-		margin: 8vh auto;
-		padding: 2rem;
+		width: min(100%, 34rem);
+		padding: clamp(1.25rem, 4vw, 2rem);
 		background: var(--surface);
 		border: 1px solid var(--border);
-		border-radius: 16px;
+		border-radius: 20px;
 	}
+	.pair-brand {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.6rem;
+		font:
+			2rem 'Newsreader Variable',
+			serif;
+		text-decoration: none;
+		color: var(--text);
+		margin-bottom: 1.5rem;
+	}
+	.pair-brand :global(svg) {
+		width: 28px;
+		height: 28px;
+	}
+	.pair-card h1 {
+		font-size: clamp(2rem, 6vw, 2.5rem);
+		margin-bottom: 1rem;
+	}
+	.pair-card p {
+		margin: 0.75rem 0;
+		overflow-wrap: anywhere;
+	}
+	.pair-card form {
+		margin-top: 1rem;
+	}
+	.pair-help {
+		color: var(--muted);
+		font-size: 0.875rem;
+	}
+	.pair-actions {
+		display: flex;
+		gap: 0.75rem;
+		flex-wrap: wrap;
+		margin-top: 1rem;
+	}
+	.request-review {
+		margin-top: 1.25rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--border);
+	}
+	.pair-code {
+		background: var(--accent-soft);
+		border: 1px solid var(--accent-border);
+		border-radius: 10px;
+		padding: 0.75rem;
+		text-align: center;
+		margin: 1rem 0;
+	}
+	.waiting {
+		font-weight: 600;
+	}
+	.pair-feedback {
+		padding: 0.75rem;
+		background: var(--accent-soft);
+		border-radius: 8px;
+	}
+
 	h1 {
 		font-size: 2.5rem;
 	}
@@ -183,13 +299,16 @@
 		gap: 1rem;
 	}
 	input,
-	select,
-	button {
+	select {
 		font: inherit;
 		padding: 0.75rem;
 		border: 1px solid var(--border-strong);
 		border-radius: 8px;
 		min-height: 44px;
+		max-width: 100%;
+		min-width: 0;
+		background: var(--surface);
+		color: var(--text);
 	}
 	button {
 		cursor: pointer;
