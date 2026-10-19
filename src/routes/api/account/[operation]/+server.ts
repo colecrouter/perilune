@@ -43,7 +43,13 @@ export async function POST(event: RequestEvent) {
 		const identity = requireIdentity(event, 'owner');
 		if (event.params.operation === 'invite') {
 			if (!roles.includes(body.role as Role)) error(400, 'Choose a valid role.');
-			return json({ url: authService!.invite(identity.user.id, body.role as Role) });
+			return json({
+				url: authService!.invite(
+					identity.user.id,
+					body.role as Role,
+					typeof body.email === 'string' ? body.email : undefined
+				)
+			});
 		}
 		if (event.params.operation === 'revoke-invite' && typeof body.hash === 'string')
 			authService!.revokeInvite(identity.user.id, body.hash);

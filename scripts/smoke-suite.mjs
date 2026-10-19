@@ -3,7 +3,13 @@ import { readFile } from 'node:fs/promises';
 
 // Each group runs serially; CI gives groups separate runners and isolated ports/data.
 const groups = {
-	platform: ['test:smoke', 'test:smoke:live', 'test:smoke:camera', 'test:smoke:auth'],
+	platform: [
+		'test:smoke',
+		'test:smoke:live',
+		'test:smoke:camera',
+		'test:smoke:auth',
+		'test:smoke:account-email'
+	],
 	calibration: ['test:smoke:calibration', 'test:smoke:mesh-probe', 'test:smoke:live-mesh'],
 	workspaces: ['test:smoke:jobs', 'test:smoke:extrusion', 'test:smoke:configuration'],
 	actions: ['test:smoke:console', 'test:smoke:progressive', 'test:smoke:live-actions']

@@ -39,8 +39,8 @@ export const handle: typeof integration.handle = async ({ event, resolve }) => {
 		const identity = await authService.identity(event.request.headers);
 		if (sessionEndpoints.has(path) && (!identity || !authService.valid(identity)))
 			return new Response('Please sign in.', { status: 401 });
-		if (path === '/get-session' && identity && !authService.valid(identity))
-			return Response.json(null, { headers: { 'Cache-Control': 'no-store' } });
+		if (path === '/get-session')
+			return Response.json(identity, { headers: { 'Cache-Control': 'no-store' } });
 		const headers = new Headers(event.request.headers);
 		headers.set('x-perilune-client-ip', event.getClientAddress());
 		const response = await authService.handle(new Request(event.request, { headers }));
@@ -56,7 +56,8 @@ export const handle: typeof integration.handle = async ({ event, resolve }) => {
 	event.locals.identity = resolved.response;
 	if (
 		event.url.pathname.startsWith('/api/account/') ||
-		event.url.pathname.startsWith('/api/pairing/')
+		event.url.pathname.startsWith('/api/pairing/') ||
+		event.url.pathname.startsWith('/api/access/')
 	) {
 		if (event.request.method !== 'GET') sameOrigin(event.request);
 	} else if (
@@ -66,6 +67,8 @@ export const handle: typeof integration.handle = async ({ event, resolve }) => {
 			'/pair/start',
 			'/setup',
 			'/register',
+			'/forgot-password',
+			'/verify-email',
 			'/health',
 			'/server/info',
 			'/server/files/upload',
@@ -83,7 +86,14 @@ export const handle: typeof integration.handle = async ({ event, resolve }) => {
 	}
 	const response = await integration.handle({ event, resolve });
 	response.headers.set('Cache-Control', 'no-store');
-	response.headers.set('Referrer-Policy', 'same-origin');
+	response.headers.set(
+		'Referrer-Policy',
+		['/login', '/register', '/forgot-password', '/verify-email', '/setup'].includes(
+			event.url.pathname
+		)
+			? 'no-referrer'
+			: 'same-origin'
+	);
 	for (const cookie of resolved.headers.getSetCookie())
 		response.headers.append('Set-Cookie', cookie);
 	return response;

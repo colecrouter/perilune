@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { getAccess } from './account.remote.js';
 	import { onMount } from 'svelte';
 	import { Tabs } from 'bits-ui';
 	import DisplayPreferences from '#lib/components/DisplayPreferences.svelte';
@@ -13,26 +14,28 @@
 		{ id: 'integrations', label: 'Slicers & browsers' },
 		{ id: 'preferences', label: 'Display' }
 	];
+	const access = getAccess();
+	const initialAccess = await access;
+	let recovery = $state(initialAccess.recovery);
+	let inviteEmail = $state(''),
+		sendEmail = $state(false);
 	let active = $state('access');
 	function selectSection(value: string) {
 		active = value;
 		// Updating the address directly keeps tab changes from scrolling to fragment targets.
 		history.replaceState(history.state, '', `#${value}`);
 	}
-	let accounts = $state<{ id: string; name: string; email: string; role: string }[]>([]);
-	let invitations = $state<
-		{ hash: string; role: string; expires: number; claimed: number | null }[]
-	>([]);
+	let accounts = $state(initialAccess.accounts);
+	let invitations = $state(initialAccess.invitations);
 	let role = $state('operator');
 	let link = $state('');
 	let messages = $state<Record<string, string>>({});
 	let pending = $state<Record<string, boolean>>({});
-	let loaded = $state(false);
+	let loaded = $state(true);
 	async function refresh() {
-		if (data.user?.role !== 'owner') return;
-		const response = await fetch('/api/account/manage');
-		if (!response.ok) throw new Error('Could not load accounts and invitations. Try again.');
-		const result = await response.json();
+		await access.refresh();
+		const result = await access;
+		recovery = result.recovery;
 		accounts = result.accounts;
 		invitations = result.invitations;
 		loaded = true;
@@ -52,13 +55,13 @@
 		};
 		followHash();
 		window.addEventListener('hashchange', followHash);
-		void load();
 		return () => window.removeEventListener('hashchange', followHash);
 	});
 	async function action(operation: string, body: unknown, scope: string) {
 		if (pending[scope]) return;
 		pending[scope] = true;
 		messages[scope] = '';
+		if (operation === 'invite') link = '';
 		try {
 			const response = await fetch(`/api/account/${operation}`, {
 				method: 'POST',
@@ -68,7 +71,12 @@
 			const result = await response.json();
 			if (!response.ok) throw new Error(result.message ?? 'Action failed.');
 			if (result.url) link = result.url;
-			messages[scope] = operation === 'invite' ? 'Invitation ready to share.' : 'Access revoked.';
+			messages[scope] =
+				operation === 'invite'
+					? sendEmail
+						? 'Invitation email queued; the link is also available below.'
+						: 'Invitation ready to share.'
+					: 'Access revoked.';
 			await load();
 			if (operation === 'revoke-account') messages.accountsResult = 'Account access revoked.';
 			if (operation === 'revoke-invite') messages.invitationsResult = 'Invitation revoked.';
@@ -101,6 +109,25 @@
 		} catch (cause) {
 			messages.security = cause instanceof Error ? cause.message : 'Could not sign out.';
 			pending.security = false;
+		}
+	}
+	async function recoveryAction(operation: string) {
+		pending.recovery = true;
+		messages.recovery = '';
+		try {
+			const response = await fetch('/api/access/' + operation, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: '{}'
+			});
+			const result = await response.json();
+			if (!response.ok) throw Error(result.message);
+			messages.recovery = result.message;
+			await refresh();
+		} catch (cause) {
+			messages.recovery = cause instanceof Error ? cause.message : 'Please try again.';
+		} finally {
+			pending.recovery = false;
 		}
 	}
 	async function copyInvitation() {
@@ -146,10 +173,63 @@
 					</div>
 					{#if messages.security}<p class="feedback" role="status">{messages.security}</p>{/if}
 				</section>
+				<section class="account-card" aria-labelledby="recovery-heading">
+					<h2 id="recovery-heading">Account recovery</h2>
+					<p>
+						{recovery.email} · {recovery.verified
+							? 'Verified recovery address'
+							: 'Not verified for recovery'}
+					</p>
+					{#if recovery.enabled}<p>
+							Password resets sign out browser sessions. Passkeys, slicer keys and notification
+							registrations stay in place. Verify your email before relying on this recovery method.
+						</p>
+						<div class="actions">
+							{#if !recovery.verified}<button
+									class="button primary"
+									disabled={pending.recovery}
+									onclick={() => recoveryAction('request-verification')}
+									>Verify recovery email</button
+								>{/if}{#if data.user?.role === 'owner'}<button
+									class="button secondary"
+									disabled={pending.recovery}
+									onclick={() => recoveryAction('test')}>Send test email</button
+								>{/if}<button class="button secondary" disabled={pending.recovery} onclick={load}
+								>Refresh email status</button
+							>
+						</div>
+						{#each recovery.deliveries as mail}<p class="help">
+								{String(mail.kind)} · {mail.status === 'sent'
+									? 'Accepted by mail server'
+									: mail.status === 'unknown'
+										? 'Send outcome unknown; no automatic retry'
+										: String(mail.status)} · {new Date(Number(mail.created)).toLocaleString()}
+							</p>{/each}
+					{:else}<p>
+							Email is not configured. Keep a working password or passkey, or use another signed-in
+							browser to pair. The host can perform emergency recovery from the server.
+						</p>
+						{#if data.user?.role === 'owner'}<p class="help">
+								To enable email, configure SMTP on the server. <a href="/help#account-email"
+									>Email setup instructions</a
+								>
+							</p>{/if}{/if}
+					{#if messages.recovery}<p role="status">{messages.recovery}</p>{/if}
+				</section>
 				{#if data.user?.role === 'owner'}
 					<section class="account-card" aria-labelledby="invite-heading">
 						<h2 id="invite-heading">Invite someone</h2>
 						<div class="invite-form">
+							{#if recovery.enabled}<label
+									><input type="checkbox" bind:checked={sendEmail} />Send by email</label
+								>{#if sendEmail}<label
+										>Recipient email<input
+											type="email"
+											bind:value={inviteEmail}
+											maxlength="254"
+											required
+										/></label
+									>{/if}{/if}
 							<label
 								>Access<select bind:value={role}
 									><option value="viewer">Viewer</option><option value="operator">Operator</option
@@ -157,8 +237,10 @@
 								></label
 							><button
 								class="button primary"
-								disabled={pending.invite}
-								onclick={() => action('invite', { role }, 'invite')}
+								disabled={pending.invite ||
+									(sendEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail.trim()))}
+								onclick={() =>
+									action('invite', { role, email: sendEmail ? inviteEmail : undefined }, 'invite')}
 								>{pending.invite ? 'Creating…' : 'Create invitation'}</button
 							>
 						</div>
@@ -210,11 +292,17 @@
 						{#if messages.invitationsResult}<p class="feedback" role="status">
 								{messages.invitationsResult}
 							</p>{/if}
-						{#each invitations.filter((invite) => !invite.claimed && invite.expires > Date.now()) as invite}<div
-								class="crew-row"
-							>
+						{#each invitations as invite}<div class="crew-row">
 								<div>
-									<strong>{invite.role}</strong><small
+									<strong
+										>{invite.role} · {invite.revoked
+											? 'Revoked'
+											: invite.claimed
+												? 'Used'
+												: invite.expires <= Date.now()
+													? 'Expired'
+													: 'Ready'}</strong
+									>{#if invite.email}<small>{invite.email}</small>{/if}<small
 										>Expires {new Date(invite.expires).toLocaleString()}</small
 									>{#if messages[invite.hash]}<p class="feedback" role="status">
 											{messages[invite.hash]}
@@ -222,7 +310,10 @@
 								</div>
 								<button
 									class="button danger-outline"
-									disabled={pending[invite.hash]}
+									disabled={pending[invite.hash] ||
+										!!invite.revoked ||
+										!!invite.claimed ||
+										invite.expires <= Date.now()}
 									onclick={() => action('revoke-invite', { hash: invite.hash }, invite.hash)}
 									>Revoke invitation</button
 								>

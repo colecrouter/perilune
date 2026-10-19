@@ -1,3 +1,5 @@
+import { accountMailLayer } from './account-mail-service.js';
+import { mailConfig } from './auth/mail-config.js';
 import { FilamentChangeStoreLive } from './filament-change-settings.js';
 import { PreferenceServiceLive } from './preference-service.js';
 import { SafetyServiceLive, SafetySettings, SafetyDisabled } from './safety-service.js';
@@ -216,6 +218,7 @@ const cameraSetupLayer = CameraSetupServiceLive.pipe(
 export const runtime = ManagedRuntime.make(
 	Layer.mergeAll(
 		cameraSetupLayer,
+		accountMailLayer(authService, mailConfig()),
 		FilamentChangeStoreLive.pipe(Layer.provide(databaseLayer)),
 		...(moonrakerUrl ? [liveServices] : []),
 		configurationLayer,
