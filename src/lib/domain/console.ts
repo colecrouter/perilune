@@ -1,3 +1,4 @@
+import { printerLockNotices, type PrinterLockNotice } from './printer-locks.js';
 import type { PrinterSnapshot } from './printer.js';
 import { calibrationActive } from './calibration.js';
 import { meshProbeActive } from './mesh-probe.js';
@@ -26,6 +27,7 @@ export interface ConsoleSnapshot {
 	mode: 'simulator' | 'moonraker';
 	connection: PrinterSnapshot['connection'];
 	reason: string | null;
+	guidance?: PrinterLockNotice;
 	macros: PrinterMacro[];
 	responses: ConsoleLine[];
 	receipts: ConsoleReceipt[];
@@ -114,7 +116,12 @@ export function consoleReason(state: PrinterSnapshot): string | null {
 			state.motion.busy !== false ||
 			state.motion.calibration)
 	)
-		return 'Finish or recover the current printer operation before running a console command.';
+		return (
+			(!state.liveRecovery && !state.safety?.halted
+				? printerLockNotices(state)[0]?.message
+				: undefined) ??
+			'Finish or recover the current printer operation before running a console command.'
+		);
 	if (state.storage !== 'healthy') return 'Action storage is unavailable.';
 	if (
 		state.configurationBusy ||
@@ -122,7 +129,10 @@ export function consoleReason(state: PrinterSnapshot): string | null {
 		meshProbeActive(state.meshProbe) ||
 		extrusionActive(state.extrusion)
 	)
-		return 'A calibration or configuration workflow owns the printer.';
+		return (
+			printerLockNotices(state)[0]?.message ??
+			'A calibration or configuration workflow owns the printer.'
+		);
 	if (state.actions.some((action) => ['queued', 'sending'].includes(action.status)))
 		return 'Another printer action is pending.';
 	return null;
@@ -186,4 +196,10 @@ export function liveConsoleScript(input: string): string {
 			'Use the dedicated job, calibration, configuration or emergency controls for this operation.'
 		);
 	return script;
+}
+
+/** Only attach a destination when it explains the actual admission reason. */
+export function consoleGuidance(state: PrinterSnapshot): PrinterLockNotice | undefined {
+	const notice = printerLockNotices(state)[0];
+	return notice && consoleReason(state) === notice.message ? notice : undefined;
 }
