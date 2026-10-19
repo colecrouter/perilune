@@ -1347,3 +1347,29 @@ configuration fetch was added, and incoming notices preserve local drafts.
 
 Future controls should follow this convention (issue #117). A notice links to the
 existing recovery flow; it is never a dismiss button for an active interlock.
+
+## Guided filament changes: capability and setup foundation
+
+Issue #84 is in progress. `/filament`, linked from printer controls, uses an
+SSR-awaited remote query for owner/operator discovery and an owner-only remote
+command to save a per-printer setup plan. A saved plan does not yet enable
+physical commands. Loaded `gcode_macro` objects establish macro presence without
+relying on the optional help listing; raw macro bodies remain backend-only.
+Detection explicitly does not certify compatibility. Configuration fingerprints
+invalidate reviewed plans when any configuration section or
+registered objects change. Revision compare-and-swap prevents simultaneous tabs
+from replacing one another's setup. SQLite retains the plan across restarts.
+
+The process-scoped Moonraker connection now subscribes to `pause_resume.is_paused`
+separately from print status. Missing pause telemetry remains unknown. No printer
+movement, heating, configuration write or macro installation is introduced by
+this foundation.
+
+Remaining for #84: dedicated persisted swap ownership and command stages in the
+shared live-action worker; macro acknowledgement plus same-run/pause verification;
+explicit assisted parking/extrusion setup; manual intervention/load/purge/resume
+UI; pause notifications; stale/revoked-user, reconnect/restart and unknown-outcome
+validation; attended owner acceptance. Existing idle extrusion calibration must
+not be reused for paused print extrusion, and an arbitrary M600 must never receive
+a second implicit park/unload. Process-local run IDs change on reconnect, so
+recovery must explicitly adopt fresh identity rather than match by filename.

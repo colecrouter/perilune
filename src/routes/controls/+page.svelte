@@ -19,6 +19,7 @@
 	><div class="controls-page page-frame serif">
 		<header>
 			<h1>Printer controls</h1>
+			{#if data.user?.role !== 'viewer'}<a href="/filament">Filament-change setup →</a>{/if}
 		</header>
 		<MotionControls
 			progressive

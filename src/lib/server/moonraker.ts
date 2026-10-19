@@ -1,3 +1,4 @@
+import { filamentChangeCapability } from './filament-change-capability.js';
 import { createHash } from 'node:crypto';
 import { pidParameters, type PidTelemetry } from '#lib/domain/pid.js';
 import {
@@ -29,6 +30,9 @@ export class MoonrakerConfig extends Context.Service<MoonrakerConfig, MoonrakerS
 ) {}
 export type KlippyState = 'unknown' | 'ready' | 'startup' | 'shutdown' | 'error' | 'disconnected';
 export interface MoonrakerSnapshot {
+	/** Owner/operator-only discovery; never copied to the public dashboard. */
+	paused?: boolean | null;
+	filamentChange?: import('#lib/domain/filament-change.js').FilamentChangeCapability | null;
 	/** Latest successfully queried history identity; null means an empty history. */
 	historyCursor?: string | null;
 	pidTelemetry?: PidTelemetry;
@@ -117,6 +121,7 @@ export class MoonrakerService extends Context.Service<
 
 type ObjectStatus = Record<string, Record<string, unknown>>;
 const wanted: Record<string, string[]> = {
+	pause_resume: ['is_paused'],
 	configfile: ['config', 'save_config_pending', 'save_config_pending_items'],
 	bed_mesh: ['profile_name', 'mesh_min', 'mesh_max', 'probed_matrix', 'profiles'],
 	webhooks: ['state'],
@@ -211,6 +216,9 @@ export function normalizeMoonrakerStatus(
 				})
 			)
 		},
+		paused:
+			typeof status.pause_resume?.is_paused === 'boolean' ? status.pause_resume.is_paused : null,
+		filamentChange: filamentChangeCapability(previous.availableObjects, status.configfile?.config),
 		zProbe: normalizeZProbe(status),
 
 		filament: {
