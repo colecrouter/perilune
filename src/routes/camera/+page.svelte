@@ -290,7 +290,7 @@
 									also supported; the camera’s viewer page is not a stream endpoint.
 								</p>{/if}
 							<label
-								>Connection type<select bind:value={mediaKind}
+								>Connection type<select bind:value={mediaKind} disabled={!controller}
 									><option value="network">Video stream</option><option value="snapshot"
 										>Snapshot-only camera</option
 									></select
