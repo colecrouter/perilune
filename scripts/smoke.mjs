@@ -446,9 +446,27 @@ try {
 	await first.getByLabel('Quiet hours', { exact: true }).check();
 	await first.getByLabel('From', { exact: true }).fill('21:30');
 	// Account section changes preserve unsaved device drafts and remain directly addressable.
-	await first.getByRole('link', { name: 'Display', exact: true }).click();
+	await first.evaluate(() => window.scrollTo(0, 0));
+	await first.getByRole('tab', { name: 'Display', exact: true }).click();
+	assert.equal(
+		await first.evaluate(() => scrollY),
+		0,
+		'Selecting an account tab must not jump to a fragment target'
+	);
+	assert.equal(
+		await first.getByRole('tab', { name: 'Display', exact: true }).getAttribute('aria-selected'),
+		'true'
+	);
 	await first.getByRole('checkbox', { name: 'Serif headings', exact: true }).waitFor();
-	await first.getByRole('link', { name: 'This device', exact: true }).click();
+	// Keyboard activation follows the tabs pattern while all device drafts stay mounted.
+	await first.getByRole('tab', { name: 'Display', exact: true }).press('Home');
+	await first.getByRole('tab', { name: 'Access & people', exact: true }).press('ArrowRight');
+	assert.equal(
+		await first
+			.getByRole('tab', { name: 'This device', exact: true })
+			.getAttribute('aria-selected'),
+		'true'
+	);
 	assert.equal(await first.getByLabel('From', { exact: true }).inputValue(), '21:30');
 	assert.equal(new URL(first.url()).hash, '#notifications');
 	await first.screenshot({ path: 'test-results/device-settings-mobile.png', fullPage: true });

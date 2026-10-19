@@ -97,6 +97,22 @@
 </section>
 
 <style>
+	.job-panel {
+		display: flex;
+		flex-direction: column;
+		gap: 0.85rem;
+	}
+	.job-panel .section-header {
+		padding-bottom: 0.85rem;
+		margin-bottom: 0;
+	}
+	.job-heading :global(svg) {
+		flex-shrink: 0;
+	}
+	.job-heading h3 {
+		overflow-wrap: anywhere;
+	}
+
 	.compact {
 		margin-bottom: 1.2rem;
 	}
