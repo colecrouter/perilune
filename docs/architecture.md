@@ -1211,8 +1211,16 @@ PID checkpoint; interrupted or restarted work is never replayed. Native command
 capability checks reject overridden PID/cooldown commands. A long-running RPC is
 followed by fresh pending-gain, idle-state and targets-off verification.
 
-Staged gains link to the existing all-pending configuration review and separate
-save/restart workflow. Synthetic simulator gains are labelled examples and cannot
+Staged gains offer inline Save and Discard dialogs rather than navigating to the
+configuration editor. Each loads every pending setting for owner review and requires
+explicit confirmation. Read-only review works without enabling configuration writes.
+Saving remains gated by the configuration application opt-in; discard is gated by
+live controls and never uploads a file or sends SAVE_CONFIG. Both use the process-owned
+configuration worker, durable operation record, source/pending fingerprints, shared
+admission and safety interlocks, expiry and unknown-outcome handling. Discard verifies
+fresh startup, heaters off, pending settings cleared and unchanged saved bytes; it
+never enables a file revert. Closing the dialog leaves staged values untouched.
+Synthetic simulator gains are labelled examples and cannot
 be applied to hardware. The separate `PERILUNE_LIVE_PID` opt-in stays false until
 owner-coordinated heater acceptance. See [PID calibration](pid-calibration.md) for
 implemented behavior and the outstanding physical acceptance checklist.

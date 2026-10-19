@@ -30,7 +30,7 @@ import type {
 } from '#lib/domain/config-application.js';
 export class ConfigurationApplicationSettings extends Context.Service<
 	ConfigurationApplicationSettings,
-	{ enabled: boolean; verifyMs?: number; pollMs?: number }
+	{ enabled: boolean; discardEnabled?: boolean; verifyMs?: number; pollMs?: number }
 >()('perilune/ConfigurationApplicationSettings') {}
 export class ConfigurationApplicationService extends Context.Service<
 	ConfigurationApplicationService,
@@ -70,6 +70,15 @@ const authorize = (actor: ConfigActor) => {
 };
 const pending = (record: ConfigApplication) =>
 	['queued', 'writing', 'restarting'].includes(record.phase);
+const pendingCleared = (config: {
+	save_config_pending?: unknown;
+	save_config_pending_items?: unknown;
+}) =>
+	config.save_config_pending === false &&
+	config.save_config_pending_items !== null &&
+	typeof config.save_config_pending_items === 'object' &&
+	!Array.isArray(config.save_config_pending_items) &&
+	Object.keys(config.save_config_pending_items).length === 0;
 const convert = (cause: unknown) =>
 	cause instanceof ConfigurationError
 		? cause
@@ -88,6 +97,8 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 		const gate = printerAdmission(printer.state);
 		const interlock = printerInterlock(printer.state);
 		const enabled = options.enabled && Boolean(settings.moonrakerUrl);
+		const discardEnabled =
+			(options.discardEnabled ?? options.enabled) && Boolean(settings.moonrakerUrl);
 		const base = settings.moonrakerUrl ? new URL(settings.moonrakerUrl) : null;
 		if (base) {
 			base.protocol = base.protocol === 'wss:' ? 'https:' : 'http:';
@@ -240,10 +251,10 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 					const freshPending = await idle(
 						signal,
 						record.mode === 'revert',
-						record.mode === 'calibration'
+						record.mode === 'calibration' || record.mode === 'discard'
 					);
 					if (
-						record.mode === 'calibration' &&
+						(record.mode === 'calibration' || record.mode === 'discard') &&
 						pendingFingerprint(pendingManifest(freshPending?.save_config_pending_items)) !==
 							record.pending
 					)
@@ -251,7 +262,9 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 					if (record.sources) {
 						const sources = await Effect.runPromise(
 							files.sources(
-								record.mode === 'calibration' ? '@main' : record.sources.root,
+								record.mode === 'calibration' || record.mode === 'discard'
+									? '@main'
+									: record.sources.root,
 								job.actor
 							),
 							{
@@ -273,10 +286,32 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 						);
 					await update(
 						'writing',
-						'Snapshot stored. Uploading the reviewed file; an acknowledgement loss will not trigger a retry.'
+						record.mode === 'discard'
+							? 'Snapshot stored. Saved configuration will not be written.'
+							: 'Snapshot stored. Uploading the reviewed file; an acknowledgement loss will not trigger a retry.'
 					);
 					authorize(job.actor);
-					if (record.mode === 'calibration') {
+					if (record.mode === 'discard') {
+						await update(
+							'restarting',
+							'Discarding reviewed pending settings with one Klipper restart. Saved configuration is unchanged.'
+						);
+						const latest = await idle(signal, false, true);
+						if (
+							Date.now() >= job.row.expires_at ||
+							pendingFingerprint(pendingManifest(latest?.save_config_pending_items)) !==
+								record.pending
+						)
+							throw failure('Pending settings changed or the review expired. No restart was sent.');
+						authorize(job.actor);
+						attempted = true;
+						await call(
+							'/printer/restart',
+							signal,
+							{ method: 'POST' },
+							() => interlock.allows(job.epoch) && job.actor.authorized()
+						);
+					} else if (record.mode === 'calibration') {
 						await update(
 							'restarting',
 							'Reviewed pending settings snapshotted. Requesting SAVE_CONFIG once and verifying saved bytes and fresh startup.'
@@ -352,7 +387,9 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 								).slice(0, 32768);
 								await update(
 									'error',
-									'File saved, but Klipper reported an error. Review the diagnostic or restore the previous file.'
+									record.mode === 'discard'
+										? 'Klipper reported a startup error after discarding. The saved file was not changed; inspect the diagnostic.'
+										: 'File saved, but Klipper reported an error. Review the diagnostic or restore the previous file.'
 								);
 								await busy(false);
 								return;
@@ -364,12 +401,19 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 									throw failure(
 										'The file changed during restart. Startup cannot verify this operation.'
 									);
-								record.writeVerified = true;
+								if (record.mode === 'discard') {
+									const cleared = await idle(signal, false, true);
+									if (!pendingCleared(cleared))
+										throw failure('Pending settings remain after restart.');
+								}
+								record.writeVerified = record.mode !== 'discard';
 								await update(
 									'ready',
-									record.mode === 'revert'
-										? 'Previous file restored and fresh Klipper startup verified.'
-										: 'Reviewed file saved and fresh Klipper startup verified.'
+									record.mode === 'discard'
+										? 'Pending settings discarded; saved configuration unchanged and fresh Klipper startup verified.'
+										: record.mode === 'revert'
+											? 'Previous file restored and fresh Klipper startup verified.'
+											: 'Reviewed file saved and fresh Klipper startup verified.'
 								);
 								await busy(false);
 								return;
@@ -419,13 +463,12 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 				Effect.tryPromise({
 					try: async (signal) => {
 						authorize(actor);
-						if (!enabled)
-							throw failure('Live configuration application is disabled on this server.');
+						if (!base) throw failure('No live printer is configured.');
 						const config = await idle(signal, false, true);
 						const manifest = pendingManifest(config?.save_config_pending_items);
 						const sources = await Effect.runPromise(files.sources('@main', actor), { signal });
 						const current = await Effect.runPromise(files.read(sources.root, actor), { signal });
-						pendingConfigurationText(current.text, sources, manifest);
+						if (enabled) pendingConfigurationText(current.text, sources, manifest);
 						authorize(actor);
 						return {
 							path: sources.root,
@@ -442,7 +485,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 						authorize(actor);
 						const rows = await readRows();
 						authorize(actor);
-						return { enabled, application: rows[0] ? recordOf(rows[0]) : null };
+						return { enabled, discardEnabled, application: rows[0] ? recordOf(rows[0]) : null };
 					},
 					catch: convert
 				}),
@@ -451,8 +494,8 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 					Effect.tryPromise({
 						try: async (signal) => {
 							authorize(actor);
-							if (!enabled)
-								throw failure('Live configuration application is disabled on this server.');
+							if ('discard' in request && request.discard ? !discardEnabled : !enabled)
+								throw failure('This configuration operation is disabled on this server.');
 							if (!/^[a-f0-9-]{36}$/i.test(request.id) || request.confirmedRestart !== true)
 								throw failure('Supply a unique operation ID and explicitly confirm restart.');
 							const fingerprint = hash(JSON.stringify(request));
@@ -518,7 +561,9 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 								path = sources.root;
 								const current = await Effect.runPromise(files.read(path, actor), { signal });
 								before = current.text;
-								after = pendingConfigurationText(before, sources, manifest);
+								after = request.discard
+									? before
+									: pendingConfigurationText(before, sources, manifest);
 								const session = (await Effect.runPromise(SubscriptionRef.get(printer.state))).liveZ
 									?.session;
 								if (session?.stage === 'staged' && session.setting && session.candidate !== null) {
@@ -595,7 +640,13 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 								sources: 'sources' in request ? request.sources : undefined,
 								id: request.id,
 								path,
-								mode: revertOf ? 'revert' : 'pending' in request ? 'calibration' : 'apply',
+								mode: revertOf
+									? 'revert'
+									: 'pending' in request
+										? request.discard
+											? 'discard'
+											: 'calibration'
+										: 'apply',
 								pending: 'pending' in request ? request.pending : undefined,
 								phase: 'queued',
 								message: 'Reviewed operation admitted. Snapshot stored before any printer write.',
@@ -665,7 +716,14 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 							record.diagnostic = ['error', 'shutdown'].includes(state.state)
 								? String(state.state_message ?? '').slice(0, 32768)
 								: record.diagnostic;
-							if (current.text === row.after_text) {
+							if (record.mode === 'discard' && current.text === row.before_text) {
+								const latest = await idle(signal, false, true);
+								record.phase = pendingCleared(latest) ? 'ready' : 'unknown';
+								record.writeVerified = false;
+								record.message = pendingCleared(latest)
+									? 'No pending settings remain and the saved file is unchanged. No restart was replayed.'
+									: 'Pending settings are not verified clear. No restart was replayed; inspect the printer before continuing.';
+							} else if (current.text === row.after_text) {
 								record.writeVerified = true;
 								record.phase = 'error';
 								record.message =

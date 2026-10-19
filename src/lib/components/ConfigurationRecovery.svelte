@@ -1,8 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { ConfigRecovery } from '#lib/domain/config-application.js';
-	let { compact = false, onEnabled }: { compact?: boolean; onEnabled?: (value: boolean) => void } =
-		$props();
+	let {
+		compact = false,
+		onEnabled,
+		onDiscardEnabled
+	}: {
+		compact?: boolean;
+		onEnabled?: (value: boolean) => void;
+		onDiscardEnabled?: (value: boolean) => void;
+	} = $props();
 	let recovery = $state<ConfigRecovery | null>(null),
 		failure = $state(''),
 		networkFailure = $state(''),
@@ -37,9 +44,16 @@
 					!['queued', 'writing', 'restarting', 'unknown'].includes(result.application?.phase)
 				)
 			);
+			onDiscardEnabled?.(
+				Boolean(
+					(result.discardEnabled ?? result.enabled) &&
+					!['queued', 'writing', 'restarting', 'unknown'].includes(result.application?.phase)
+				)
+			);
 			networkFailure = '';
 		} catch (cause) {
 			onEnabled?.(false);
+			onDiscardEnabled?.(false);
 			if (!request.signal.aborted)
 				networkFailure = cause instanceof Error ? cause.message : 'Recovery status unavailable.';
 		}

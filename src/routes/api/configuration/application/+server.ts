@@ -62,7 +62,7 @@ export const POST = async (event) => {
 			)
 		);
 	}
-	if (body.action === 'savePending') {
+	if (body.action === 'savePending' || body.action === 'discardPending') {
 		const sources = body.sources as { root?: unknown; fingerprint?: unknown } | undefined;
 		if (
 			typeof body.pending !== 'string' ||
@@ -72,6 +72,7 @@ export const POST = async (event) => {
 		)
 			error(400, 'Review all pending calibration settings first.');
 		const request = {
+			...(body.action === 'discardPending' ? { discard: true as const } : {}),
 			id,
 			pending: body.pending,
 			sources: { root: sources.root, fingerprint: sources.fingerprint },

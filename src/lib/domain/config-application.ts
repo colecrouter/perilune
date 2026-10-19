@@ -2,7 +2,7 @@ export type ApplicationPhase = 'queued' | 'writing' | 'restarting' | 'ready' | '
 export interface ConfigApplication {
 	id: string;
 	path: string;
-	mode: 'apply' | 'revert' | 'calibration';
+	mode: 'apply' | 'revert' | 'calibration' | 'discard';
 	phase: ApplicationPhase;
 	message: string;
 	diagnostic: string | null;
@@ -14,6 +14,7 @@ export interface ConfigApplication {
 }
 export interface ConfigRecovery {
 	enabled: boolean;
+	discardEnabled?: boolean;
 	application: ConfigApplication | null;
 }
 export interface ApplyConfiguration {
@@ -32,6 +33,7 @@ export interface PendingConfigurationReview {
 	sources: { root: string; fingerprint: string };
 }
 export interface SavePendingConfiguration {
+	discard?: true;
 	id: string;
 	pending: string;
 	sources: { root: string; fingerprint: string };

@@ -1,4 +1,21 @@
 <script lang="ts">
+	import { onMount, onDestroy } from 'svelte';
+	let {
+		autoInspect = false,
+		saveEnabled = true,
+		mode = 'save',
+		compact = false
+	}: {
+		autoInspect?: boolean;
+		saveEnabled?: boolean;
+		mode?: 'save' | 'discard';
+		compact?: boolean;
+	} = $props();
+	let controller: AbortController | undefined;
+	onMount(() => {
+		if (autoInspect) void inspect();
+	});
+	onDestroy(() => controller?.abort());
 	import type { PendingConfigurationReview } from '#lib/domain/config-application.js';
 	let review = $state<PendingConfigurationReview | null>(null);
 	let busy = $state(false),
@@ -8,6 +25,7 @@
 	async function request(body?: unknown) {
 		const response = await fetch('/api/configuration/application' + (body ? '' : '?pending'), {
 			cache: 'no-store',
+			...(!body ? { signal: controller?.signal } : {}),
 			...(body
 				? {
 						method: 'POST',
@@ -21,6 +39,8 @@
 		return value;
 	}
 	async function inspect() {
+		controller?.abort();
+		controller = new AbortController();
 		busy = true;
 		message = '';
 		confirmed = false;
@@ -34,20 +54,22 @@
 		}
 	}
 	async function save() {
-		if (!review || !confirmed || busy || submitted) return;
+		if (!review || !saveEnabled || !confirmed || busy || submitted) return;
 		busy = true;
 		submitted = true;
 		const id = crypto.randomUUID();
 		try {
 			await request({
-				action: 'savePending',
+				action: mode === 'discard' ? 'discardPending' : 'savePending',
 				id,
 				pending: review.fingerprint,
 				sources: review.sources,
 				confirmedRestart: true
 			});
 			message =
-				'Submitted. Follow configuration recovery above for the saved bytes and startup result.';
+				mode === 'discard'
+					? 'Submitted. Configuration status will show whether pending settings cleared and the saved file stayed unchanged.'
+					: 'Submitted. Configuration status will show the saved bytes and startup result.';
 		} catch (cause) {
 			message =
 				(cause instanceof Error ? cause.message : 'Submission is unconfirmed.') +
@@ -58,20 +80,31 @@
 	}
 </script>
 
-<section class="panel pending-settings">
-	<p class="eyebrow">Calibration → configuration</p>
-	<h2>Pending printer settings</h2>
-	<p>
-		Review everything Klipper has staged before saving. Saving updates the main configuration and
-		restarts Klipper. Your previous file is kept for recovery.
-	</p>
-	<button type="button" onclick={inspect} disabled={busy || submitted}
-		>Review pending settings</button
+<section class="panel pending-settings" class:compact>
+	{#if !compact}
+		<p class="eyebrow">Calibration → configuration</p>
+		<h2>Staged settings</h2>
+	{/if}
+	{#if message && !submitted}<p role="alert">{message}</p>{/if}
+	{#if !compact}<p>
+			These changes are staged in Klipper and are not saved yet. Review <strong
+				>every pending setting</strong
+			>, including changes from other calibrations or printer apps. Saving updates the main
+			configuration, keeps a recovery copy, and restarts Klipper.
+		</p>{/if}
+	<button class="button secondary" type="button" onclick={inspect} disabled={busy || submitted}
+		>{busy && !review
+			? 'Loading pending settings…'
+			: review
+				? 'Refresh pending settings'
+				: autoInspect
+					? 'Try reviewing again'
+					: 'Review pending settings'}</button
 	>
 	{#if review}
 		<p>
-			Saving to <strong>{review.path}</strong>. Includes and the pending values will be checked
-			again before dispatch.
+			{mode === 'discard' ? 'The saved file stays unchanged:' : 'These settings will be saved to'}
+			<strong>{review.path}</strong>.
 		</p>
 		<dl>
 			{#each Object.entries(review.manifest) as [section, options]}{#each Object.entries(options) as [key, value]}<div
@@ -80,20 +113,49 @@
 						<dd><code>{value}</code></dd>
 					</div>{/each}{/each}
 		</dl>
+		{#if !saveEnabled}<p class="muted">
+				{mode === 'discard'
+					? 'Discarding is currently unavailable.'
+					: 'Saving is currently unavailable.'} Check configuration status before continuing.
+			</p>{/if}
 		<label
-			><input type="checkbox" bind:checked={confirmed} disabled={busy || submitted} />I reviewed
-			every pending setting and am ready to restart the printer.</label
+			><input
+				type="checkbox"
+				bind:checked={confirmed}
+				disabled={busy || submitted || !saveEnabled}
+			/>I reviewed every pending setting and {mode === 'discard'
+				? 'want to discard them all'
+				: 'am ready to save them all'} and restart the printer.</label
 		>
-		<button class="primary" type="button" onclick={save} disabled={!confirmed || busy || submitted}
-			>Save settings & restart</button
+		<button
+			class={mode === 'discard' ? 'button danger-outline' : 'button primary'}
+			type="button"
+			onclick={save}
+			disabled={!saveEnabled || !confirmed || busy || submitted}
+			>{mode === 'discard' ? 'Discard settings & restart' : 'Save settings & restart'}</button
 		>
 	{/if}
-	{#if message}<p role="status">{message}</p>{/if}
+	{#if message && submitted}<p role="status">{message}</p>{/if}
 </section>
 
 <style>
+	.pending-settings.compact {
+		padding: 0;
+		margin: 0;
+		border: 0;
+		background: transparent;
+	}
 	.pending-settings {
 		margin-bottom: 1.25rem;
+	}
+	.pending-settings > p {
+		margin: 0.75rem 0;
+	}
+	input[type='checkbox'] {
+		width: 18px;
+		height: 18px;
+		flex-shrink: 0;
+		accent-color: var(--accent);
 	}
 	h2 {
 		margin: 0.4rem 0;

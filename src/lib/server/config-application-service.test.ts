@@ -138,6 +138,12 @@ async function fixture() {
 				result = { item: { path: 'printer.cfg', root: 'config' } };
 			} else if (request.url === '/printer/restart') {
 				f.restarts++;
+				f.pending = false;
+				f.manifest = {} as typeof f.manifest;
+				if (f.dropped) {
+					request.socket.destroy();
+					return;
+				}
 				f.ticks = f.noTransition ? 0 : 2;
 				f.error = f.text.includes('bad:');
 				result = 'ok';
@@ -163,7 +169,8 @@ async function app(
 	url: string,
 	filename = ':memory:',
 	enabled = true,
-	klipperWorkingDirectory?: string
+	klipperWorkingDirectory?: string,
+	discardEnabled?: boolean
 ) {
 	const database = SqliteClient.layer({ filename });
 	const settings = Layer.succeed(ConfigurationSettings, {
@@ -187,7 +194,12 @@ async function app(
 			Layer.provide(settings),
 			Layer.provide(printer),
 			Layer.provide(
-				Layer.succeed(ConfigurationApplicationSettings, { enabled, verifyMs: 160, pollMs: 10 })
+				Layer.succeed(ConfigurationApplicationSettings, {
+					enabled,
+					discardEnabled,
+					verifyMs: 160,
+					pollMs: 10
+				})
 			),
 			Layer.provideMerge(database)
 		)
@@ -634,4 +646,110 @@ it('permits snapshot recovery after a fresh startup error despite stale pre-rest
 	);
 	expect((await a.terminal()).phase).toBe('ready');
 	expect(f.text).toBe(before);
+});
+
+async function discardFixture(options: { enabled?: boolean; discardEnabled?: boolean } = {}) {
+	const { f, url } = await fixture();
+	f.pending = true;
+	const a = await app(url, ':memory:', options.enabled ?? true, undefined, options.discardEnabled);
+	const review = await a.runtime.runPromise(a.service.reviewPending(owner));
+	const request = {
+		id: randomUUID(),
+		pending: review.fingerprint,
+		sources: review.sources,
+		confirmedRestart: true as const,
+		discard: true as const
+	};
+	return { f, url, a, request };
+}
+it('discards reviewed pending changes with one restart and no saved-file write when saving is disabled', async () => {
+	const { f, a, request } = await discardFixture({ enabled: false, discardEnabled: true });
+	const before = f.text;
+	expect(await a.status()).toMatchObject({ enabled: false, discardEnabled: true });
+	await expect(
+		a.runtime.runPromise(a.service.submit({ ...request, discard: undefined }, owner))
+	).rejects.toThrow('disabled');
+	await a.runtime.runPromise(a.service.submit(request, owner));
+	expect(await a.terminal()).toMatchObject({
+		phase: 'ready',
+		mode: 'discard',
+		writeVerified: false
+	});
+	expect(f.restarts).toBe(1);
+	expect(f.saves).toBe(0);
+	expect(f.uploads).toBe(0);
+	expect(f.text).toBe(before);
+	expect(f.pending).toBe(false);
+	await a.runtime.runPromise(a.service.submit(request, owner));
+	expect(f.restarts).toBe(1);
+	await expect(
+		a.runtime.runPromise(
+			a.service.submit({ id: randomUUID(), revertOf: request.id, confirmedRestart: true }, owner)
+		)
+	).rejects.toThrow();
+});
+it('rejects changed pending state, disabled discard and revoked owners before a restart', async () => {
+	const { f, a, request } = await discardFixture({ enabled: false, discardEnabled: false });
+	await expect(a.runtime.runPromise(a.service.submit(request, owner))).rejects.toThrow('disabled');
+	expect(f.restarts).toBe(0);
+	const other = await discardFixture();
+	other.f.manifest.probe.z_offset = '2.0';
+	await expect(
+		other.a.runtime.runPromise(other.a.service.submit(other.request, owner))
+	).rejects.toThrow('changed');
+	await expect(
+		other.a.runtime.runPromise(
+			other.a.service.submit(other.request, { ...owner, authorized: () => false })
+		)
+	).rejects.toThrow('authorized');
+	expect(other.f.restarts).toBe(0);
+});
+it('keeps a lost discard acknowledgement unknown without replay and checks pending state separately', async () => {
+	const { f, a, request } = await discardFixture();
+	f.dropped = true;
+	await a.runtime.runPromise(a.service.submit(request, owner));
+	expect(await a.terminal()).toMatchObject({
+		phase: 'unknown',
+		mode: 'discard',
+		writeVerified: false
+	});
+	await a.runtime.runPromise(a.service.submit(request, owner));
+	expect(f.restarts).toBe(1);
+	expect(f.saves).toBe(0);
+	expect(f.uploads).toBe(0);
+	expect(await a.runtime.runPromise(a.service.check(request.id, owner))).toMatchObject({
+		phase: 'ready',
+		writeVerified: false
+	});
+	expect(f.restarts).toBe(1);
+});
+it('requires fresh startup verification and never reheats during discard', async () => {
+	const { f, a, request } = await discardFixture();
+	f.noTransition = true;
+	await a.runtime.runPromise(a.service.submit(request, owner));
+	expect(await a.terminal()).toMatchObject({ phase: 'unknown', mode: 'discard' });
+	expect(f.restarts).toBe(1);
+	expect(f.target).toBe(0);
+	expect(f.extraTarget).toBe(0);
+});
+
+it('keeps discard recovery unknown when the pending flag contradicts nonempty settings', async () => {
+	const { f, a, request } = await discardFixture();
+	f.dropped = true;
+	await a.runtime.runPromise(a.service.submit(request, owner));
+	expect(await a.terminal()).toMatchObject({ phase: 'unknown' });
+	f.pending = false;
+	f.manifest = { probe: { z_offset: '3.0' } };
+	expect(await a.runtime.runPromise(a.service.check(request.id, owner))).toMatchObject({
+		phase: 'unknown',
+		writeVerified: false
+	});
+	expect((await a.runtime.runPromise(SubscriptionRef.get(a.state))).configurationBusy).toBe(true);
+	expect(f.restarts).toBe(1);
+	f.manifest = {} as typeof f.manifest;
+	expect(await a.runtime.runPromise(a.service.check(request.id, owner))).toMatchObject({
+		phase: 'ready',
+		writeVerified: false
+	});
+	expect(f.restarts).toBe(1);
 });
