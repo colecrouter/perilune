@@ -111,19 +111,20 @@
 	>
 		<h2>
 			{pending
-				? 'Applying configuration'
+				? application?.mode === 'discard'
+					? 'Discarding pending settings'
+					: 'Applying configuration'
 				: application?.phase === 'ready'
 					? 'Configuration startup verified'
 					: 'Configuration needs attention'}
 		</h2>
 		{#if application}<p>{application.message}</p>
-			{#if compact}<a href="/configuration">Open configuration recovery →</a>{:else}
+			{#if compact}<a href="/configuration#configuration-recovery">Open configuration recovery →</a
+				>{:else}
 				<p class="muted">
-					{application.path} · {application.mode} · {new Date(
-						application.updatedAt
-					).toLocaleString()}
+					{application.path} · Updated {new Date(application.updatedAt).toLocaleString()}
 				</p>
-				<p>
+				<p class="snapshot-links">
 					<a href={`/api/configuration/application?snapshot=${application.id}&side=before`}
 						>Export previous file</a
 					>
@@ -135,7 +136,7 @@
 				{#if application.diagnostic}<pre
 						aria-label="Klipper startup diagnostic">{application.diagnostic}</pre>{/if}
 				{#if !pending}<button disabled={busy} onclick={() => action('check')}
-						>Check saved bytes and printer state</button
+						>Check printer and saved settings</button
 					>
 					{#if recovery?.enabled && (application.mode !== 'revert' ? application.writeVerified : application.phase === 'error')}<label
 							><input type="checkbox" bind:checked={confirmed} />Restore the snapshot and restart
@@ -164,7 +165,7 @@
 	}
 	h2 {
 		margin: 0 0 0.6rem;
-		font-family: var(--font-heading);
+		font-family: 'Newsreader Variable', Georgia, serif;
 		font-size: 1.4rem;
 	}
 	p {
@@ -208,7 +209,8 @@
 		margin: 1rem 0;
 	}
 	.restore {
-		border-color: var(--accent);
+		border-color: var(--danger-border);
+		color: var(--danger);
 	}
 	a {
 		color: var(--accent);

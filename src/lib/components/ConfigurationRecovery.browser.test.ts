@@ -50,7 +50,7 @@ test('unknown outcomes offer checking and exports without an unverified revert',
 	);
 	const screen = await render(ConfigurationRecovery);
 	await expect
-		.element(screen.getByRole('button', { name: 'Check saved bytes and printer state' }))
+		.element(screen.getByRole('button', { name: 'Check printer and saved settings' }))
 		.toBeVisible();
 	await expect.element(screen.getByRole('link', { name: 'Export previous file' })).toBeVisible();
 	await expect
