@@ -255,10 +255,9 @@
 
 <svelte:head><title>Jobs · Perilune</title></svelte:head>
 <AppShell {snapshot} active="Jobs"
-	><div class="jobs-page serif">
+	><div class="jobs-page page-frame serif">
 		<header>
 			<div>
-				<p class="eyebrow">From slice to orbit</p>
 				<h1>Jobs</h1>
 				<p class="muted">Your files, their print settings, and a clear path to the next job.</p>
 			</div>
@@ -383,7 +382,6 @@
 				aria-label="Job inspection"
 			>
 				{#if selected}<a class="back-library" href={listHref}>← Back to library</a>
-					<p class="eyebrow">Before you print</p>
 					<h2>{selected.name}</h2>
 					{#if data.inspectionError}<p role="alert" class="muted">
 							{data.inspectionError} Last known details are retained.
@@ -483,7 +481,6 @@
 							}}>Remove file…</button
 						>{/if}
 				{:else}<div class="empty-inspection">
-						<p class="eyebrow">Before you print</p>
 						<h2>
 							{data.missingFile
 								? 'This file is no longer available.'
@@ -601,20 +598,12 @@
 />
 
 <style>
-	.jobs-page {
-		max-width: 1500px;
-		margin: auto;
-		padding: clamp(1rem, 3vw, 2.5rem);
-	}
 	header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
 		gap: 1rem;
 		margin-bottom: 1.8rem;
-	}
-	header h1 {
-		margin: 0.3rem 0 0.7rem;
 	}
 	.mode-label {
 		font-size: 0.78rem;
@@ -860,9 +849,6 @@
 		}
 		.run {
 			gap: 0.5rem;
-		}
-		.jobs-page {
-			padding: 1rem;
 		}
 	}
 </style>

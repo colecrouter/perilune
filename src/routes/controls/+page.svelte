@@ -16,7 +16,7 @@
 
 <svelte:head><title>Printer controls · Perilune</title></svelte:head>
 <AppShell {snapshot} active="Controls"
-	><div class="controls-page serif">
+	><div class="controls-page page-frame serif">
 		<header>
 			<h1>Printer controls</h1>
 		</header>
@@ -32,9 +32,7 @@
 
 <style>
 	.controls-page {
-		max-width: 1200px;
-		margin: auto;
-		padding: clamp(1rem, 4vw, 2.5rem);
+		--page-content-max: 75rem;
 	}
 	header {
 		margin-bottom: 1.5rem;

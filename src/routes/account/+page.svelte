@@ -115,10 +115,9 @@
 
 <svelte:head><title>Account · Perilune</title></svelte:head>
 <AppShell active="Account">
-	<div class="account-page serif">
+	<div class="account-page page-frame serif">
 		<header class="account-header">
 			<div>
-				<p class="eyebrow">Your space</p>
 				<h1>Your account</h1>
 				<p>{data.user?.name} · {data.user?.role}</p>
 			</div>
@@ -237,14 +236,10 @@
 
 <style>
 	.account-page {
-		max-width: 64rem;
-		padding: clamp(1rem, 3vw, 2rem);
+		--page-content-max: 64rem;
 	}
 	.account-header {
 		margin-bottom: 1rem;
-	}
-	.account-header h1 {
-		margin: 0.25rem 0 0.5rem;
 	}
 	.account-header p {
 		color: var(--muted);

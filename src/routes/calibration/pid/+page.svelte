@@ -36,9 +36,8 @@
 
 <svelte:head><title>PID heater calibration · Perilune</title></svelte:head>
 <AppShell {snapshot} active="Calibration"
-	><div class="pid-page serif">
+	><div class="pid-page page-frame serif">
 		<header>
-			<p class="eyebrow">Calibration workshop</p>
 			<h1>PID heater calibration</h1>
 			<p>Give your heater a steadier orbit.</p>
 		</header>
@@ -58,16 +57,10 @@
 
 <style>
 	.pid-page {
-		max-width: 76rem;
-		margin: auto;
-		padding: clamp(1rem, 3vw, 2.5rem);
+		--page-content-max: 76rem;
 	}
 	header {
 		margin-bottom: 1.75rem;
-	}
-	h1 {
-		font-size: clamp(2rem, 5vw, 3rem);
-		margin: 0.4rem 0;
 	}
 	header > p:last-child {
 		color: var(--muted);

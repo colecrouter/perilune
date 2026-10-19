@@ -4,8 +4,7 @@
 
 <svelte:head><title>Help & setup · Perilune</title></svelte:head>
 <AppShell active="Help"
-	><div class="help-page serif">
-		<p class="eyebrow">Your flight guide</p>
+	><div class="help-page page-frame serif">
 		<h1>Help & setup</h1>
 		<p>Find the next step for your printer, slicer, or device.</p>
 		<nav aria-label="Help topics">
@@ -163,12 +162,7 @@
 
 <style>
 	.help-page {
-		max-width: 56rem;
-		padding: clamp(1rem, 4vw, 3rem);
-		margin: auto;
-	}
-	h1 {
-		font-size: clamp(2rem, 5vw, 3rem);
+		--page-content-max: 56rem;
 	}
 	h2 {
 		font-size: 1.8rem;

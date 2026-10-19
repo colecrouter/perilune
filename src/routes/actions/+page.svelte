@@ -10,7 +10,7 @@
 
 <svelte:head><title>Review printer action · Perilune</title></svelte:head>
 <AppShell active="Controls"
-	><div class="result serif">
+	><div class="result page-frame serif">
 		{#if form?.message}<h1>Action not submitted</h1>
 			<p role="alert">{form.message}</p>{/if}
 		{#if data.review}<h1>
@@ -63,8 +63,7 @@
 
 <style>
 	.result {
-		padding: 2rem;
-		max-width: 50rem;
+		--page-content-max: 50rem;
 	}
 	p {
 		margin: 1rem 0;

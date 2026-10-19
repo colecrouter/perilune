@@ -222,3 +222,38 @@ test('the composer follows stable history and keeps a wide send action with keyb
 	expect(history.clientHeight).toBe(height);
 	await expect.element(screen.getByText('Physical keyboard:', { exact: false })).toBeVisible();
 });
+
+test('history commands recall exact multiline drafts by click or keyboard without executing', async () => {
+	const script = 'G90\nG1 X12.50 Y20 ; keep spacing';
+	const onSubmit = vi.fn(async (input) => ({ ...receipt, ...input }));
+	const screen = await render(PrinterConsole, {
+		snapshot: {
+			...initial,
+			receipts: [{ ...receipt, script, status: 'completed' }],
+			responses: [
+				{ id: 'response', at: Date.now(), kind: 'response', text: 'Printer response only' }
+			]
+		},
+		connected: true,
+		onSubmit,
+		onFind: vi.fn(),
+		onPin: vi.fn()
+	});
+	const input = screen.getByRole('textbox', { name: 'Command', exact: true });
+	await input.fill('replace this draft');
+	const recall = screen.getByRole('button', { name: `Copy command to draft: ${script}` });
+	await recall.click();
+	await expect.element(input).toHaveValue(script);
+	await expect.element(input).toHaveFocus();
+	expect(onSubmit).not.toHaveBeenCalled();
+	await input.fill('another draft');
+	(recall.element() as HTMLButtonElement).focus();
+	await userEvent.keyboard('{Enter}');
+	await expect.element(input).toHaveValue(script);
+	expect(onSubmit).not.toHaveBeenCalled();
+	await expect
+		.element(screen.getByRole('button', { name: 'Copy command to draft: Printer response only' }))
+		.not.toBeInTheDocument();
+	await screen.getByRole('button', { name: 'Send command', exact: true }).click();
+	expect(onSubmit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ script }));
+});

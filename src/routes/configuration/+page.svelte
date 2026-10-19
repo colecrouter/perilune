@@ -73,7 +73,7 @@
 
 <svelte:head><title>Configuration · Perilune</title></svelte:head>
 <AppShell active="Configuration"
-	><div class="config-page serif">
+	><div class="config-page page-frame serif">
 		<header>
 			<h1>Configuration</h1>
 		</header>
@@ -121,15 +121,8 @@
 >
 
 <style>
-	.config-page {
-		padding: clamp(1rem, 3vw, 2.5rem);
-	}
 	header {
 		margin-bottom: 2rem;
-	}
-	h1 {
-		margin: 0.4rem 0;
-		font-size: clamp(2.2rem, 5vw, 3rem);
 	}
 	.panel {
 		padding: 1.5rem;

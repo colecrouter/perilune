@@ -316,6 +316,21 @@ try {
 		.getByText('Command completed', { exact: true })
 		.waitFor();
 	assert.equal(status.heater_bed.target, 40);
+	const allActivity = page.getByRole('tab', { name: 'All actions', exact: true });
+	const attentionActivity = page.getByRole('tab', { name: /Needs attention/ });
+	assert.equal(await allActivity.getAttribute('aria-selected'), 'true');
+	const activityUrl = page.url();
+	await allActivity.press('ArrowRight');
+	assert.equal(await attentionActivity.getAttribute('aria-selected'), 'true');
+	assert.equal(
+		await page.getByRole('link', { name: 'Set bed to 40°C', exact: true }).count(),
+		0,
+		'Completed actions are excluded from attention'
+	);
+	assert.equal(page.url(), activityUrl, 'Filtering activity does not navigate');
+	await attentionActivity.press('ArrowLeft');
+	assert.equal(await allActivity.getAttribute('aria-selected'), 'true');
+	await page.getByRole('link', { name: 'Set bed to 40°C', exact: true }).waitFor();
 	await page.goto(base + '/jobs');
 	await page.getByRole('link', { name: /fixture.gcode/ }).click();
 	await page.getByRole('button', { name: 'Start print…', exact: true }).click();

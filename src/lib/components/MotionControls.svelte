@@ -223,81 +223,82 @@
 					><small>{snapshot.motion.homed.includes(axis as Axis) ? 'Homed' : 'Not homed'}</small>
 				</div>{/each}
 		</div>
-		<div class="motion-tools">
-			<div>
-				<h3>Quick movement</h3>
-				<fieldset class="step-switch">
-					<legend>Step</legend>
-					<div class="step-options">
-						{#each [0.1, 1, 10] as amount}<label
-								><input type="radio" name="movement-step" value={amount} bind:group={step} /><span
-									>{amount} mm</span
-								></label
+		<div class="motion-primary">
+			<div class="motion-tools">
+				<div>
+					<h3>Quick movement</h3>
+					<fieldset class="step-switch">
+						<legend>Step</legend>
+						<div class="step-options">
+							{#each [0.1, 1, 10] as amount}<label
+									><input type="radio" name="movement-step" value={amount} bind:group={step} /><span
+										>{amount} mm</span
+									></label
+								>{/each}
+						</div>
+					</fieldset>
+					<p class="help">Jog steps stop at the configured travel boundary.</p>
+					{#if reason}<p class="help" role="status">{reason}</p>{/if}
+
+					<div class="jog-buttons">
+						{#each [['X −', 'x', -1], ['X +', 'x', 1], ['Y −', 'y', -1], ['Y +', 'y', 1], ['Z −', 'z', -1], ['Z +', 'z', 1]] as [name, axis, direction]}<button
+								class="button secondary"
+								disabled={!!reason ||
+									pending ||
+									jogDestination(snapshot.motion, axis as Axis, Number(direction) * step) ===
+										snapshot.motion.position[axis as Axis]}
+								title={`${Number(direction) > 0 ? 'Increase' : 'Decrease'} ${String(axis).toUpperCase()}${axis === 'z' ? ' height' : ' position'}`}
+								onclick={() => jog(axis as Axis, Number(direction) * step)}>{name}</button
 							>{/each}
 					</div>
-				</fieldset>
-				<p class="help">Jog steps stop at the configured travel boundary.</p>
-				{#if reason}<p class="help" role="status">{reason}</p>{/if}
-
-				<div class="jog-buttons">
-					{#each [['X −', 'x', -1], ['X +', 'x', 1], ['Y −', 'y', -1], ['Y +', 'y', 1], ['Z −', 'z', -1], ['Z +', 'z', 1]] as [name, axis, direction]}<button
+				</div>
+			</div>
+			<div class="setup-controls">
+				<div>
+					<h3>Home the printer</h3>
+					<div class="jog-buttons">
+						{#if progressive}<ActionForm fields={{ intent: 'home', axes: 'all' }}
+								>{#snippet children({ pending: submitting, uncertain })}<button
+										class="button primary home-all"
+										disabled={!!homeAllReason || pending || submitting || uncertain || alreadyHomed}
+										title={alreadyHomed
+											? 'All axes are already homed.'
+											: (homeAllReason ?? undefined)}>Home All</button
+									>{/snippet}</ActionForm
+							>{:else}
+							<button
+								class="button primary home-all"
+								disabled={!!homeAllReason || pending || alreadyHomed}
+								title={alreadyHomed ? 'All axes are already homed.' : (homeAllReason ?? undefined)}
+								onclick={() => submit({ type: 'home', axes: 'all' })}>Home All</button
+							>{/if}
+					</div>
+					<p class="help">
+						Homing establishes the printer's position.{alreadyHomed
+							? ' All axes are already homed.'
+							: homeAllReason
+								? ` ${homeAllReason}`
+								: ''}
+					</p>
+				</div>
+				<div>
+					<h3>Disengage motors</h3>
+					<div class="jog-buttons">
+						<Dialog.Trigger
 							class="button secondary"
-							disabled={!!reason ||
-								pending ||
-								jogDestination(snapshot.motion, axis as Axis, Number(direction) * step) ===
-									snapshot.motion.position[axis as Axis]}
-							title={`${Number(direction) > 0 ? 'Increase' : 'Decrease'} ${String(axis).toUpperCase()}${axis === 'z' ? ' height' : ' position'}`}
-							onclick={() => jog(axis as Axis, Number(direction) * step)}>{name}</button
-						>{/each}
-				</div>
-			</div>
-		</div>
-		<div class="setup-controls">
-			<div>
-				<h3>Home the printer</h3>
-				<div class="jog-buttons">
-					{#if progressive}<ActionForm fields={{ intent: 'home', axes: 'all' }}
-							>{#snippet children({ pending: submitting, uncertain })}<button
-									class="button primary home-all"
-									disabled={!!homeAllReason || pending || submitting || uncertain || alreadyHomed}
-									title={alreadyHomed
-										? 'All axes are already homed.'
-										: (homeAllReason ?? undefined)}>Home All</button
-								>{/snippet}</ActionForm
-						>{:else}
-						<button
-							class="button primary home-all"
-							disabled={!!homeAllReason || pending || alreadyHomed}
-							title={alreadyHomed ? 'All axes are already homed.' : (homeAllReason ?? undefined)}
-							onclick={() => submit({ type: 'home', axes: 'all' })}>Home All</button
-						>{/if}
-				</div>
-				<p class="help">
-					Homing establishes the printer's position.{alreadyHomed
-						? ' All axes are already homed.'
-						: homeAllReason
-							? ` ${homeAllReason}`
+							disabled={!!releaseReason || pending}
+							title={releaseReason ?? undefined}
+							onclick={() => (error = '')}>Disengage motors</Dialog.Trigger
+						>
+					</div>
+					<p class="help">
+						Home again before moving after disengaging motors.{releaseReason
+							? ` ${releaseReason}`
 							: ''}
-				</p>
-			</div>
-			<div>
-				<h3>Disengage motors</h3>
-				<div class="jog-buttons">
-					<Dialog.Trigger
-						class="button secondary"
-						disabled={!!releaseReason || pending}
-						title={releaseReason ?? undefined}
-						onclick={() => (error = '')}>Disengage motors</Dialog.Trigger
-					>
+					</p>
 				</div>
-				<p class="help">
-					Home again before moving after disengaging motors.{releaseReason
-						? ` ${releaseReason}`
-						: ''}
-				</p>
 			</div>
 		</div>
-
 		{#if active}<p class="notice" role="status">
 				Pending: {active.label} · {actionStatusLabel[active.status]}
 			</p>{/if}
@@ -486,6 +487,28 @@
 </Dialog.Root>
 
 <style>
+	.motion-primary {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 1.5rem;
+		border-bottom: 1px solid var(--border);
+		padding-bottom: 1rem;
+	}
+	.motion-primary .setup-controls {
+		grid-template-columns: minmax(0, 1fr);
+		padding: 0.75rem 0 0;
+		border: 0;
+	}
+	.motion-primary .motion-tools {
+		min-width: 0;
+	}
+	@media (min-width: 1100px) {
+		.motion-primary {
+			grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+			gap: 2rem;
+		}
+	}
+
 	.destination-form > .primary {
 		width: 100%;
 		margin-top: 0.75rem;

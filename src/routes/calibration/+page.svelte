@@ -171,7 +171,7 @@
 
 <svelte:head><title>Calibration · Perilune</title></svelte:head>
 <AppShell {snapshot} active="Calibration"
-	>{#if snapshot.mode === 'moonraker'}<div class="calibration-page serif">
+	>{#if snapshot.mode === 'moonraker'}<div class="calibration-page page-frame serif">
 			<h1>Z calibration</h1>
 			<LiveZCalibration
 				{snapshot}
@@ -181,10 +181,9 @@
 				onSubmit={(command, id) => submitAction({ id, command })}
 			/>
 		</div>{:else}
-		<div class="calibration-page serif">
+		<div class="calibration-page page-frame serif">
 			<header>
 				<div>
-					<p class="eyebrow">A better first layer</p>
 					<h1>Z-offset workshop</h1>
 					<p class="muted">
 						Understand the gap, make small changes, and know exactly what you’ve kept.
@@ -258,7 +257,6 @@
 				{#if session.stage === 'adjusting'}
 					<section class="panel adjustment">
 						<div>
-							<p class="eyebrow">Small steps, clear direction</p>
 							<h2>Find your clearance</h2>
 							<p class="muted">
 								Try the controls to see how a relative offset changes clearance. On a real printer,
@@ -344,7 +342,6 @@
 					</section>
 				{:else if session.stage === 'first-layer'}
 					<section class="panel">
-						<p class="eyebrow">Learn what to look for</p>
 						<h2>Read the first layer</h2>
 						<p class="muted">
 							These examples explain the effect of clearance. Choose the example you would aim for
@@ -395,7 +392,6 @@
 						</div>
 					</section>
 				{:else}<section class="panel finish">
-						<p class="eyebrow">No surprises when you finish</p>
 						<h2>Keep this adjustment?</h2>
 						<div class="candidate-value">{offsetLabel(candidate)}</div>
 						<p class="muted">
@@ -459,7 +455,6 @@
 				</section>
 			{:else}
 				{#if session}<section class="panel outcome" role="status">
-						<p class="eyebrow">Session {session.stage}</p>
 						<h2>
 							{session.stage === 'saved'
 								? 'Saved for your next session.'
@@ -472,7 +467,6 @@
 						<p>{session.message}</p>
 					</section>{/if}
 				<section class="panel preparation">
-					<p class="eyebrow">Before we begin</p>
 					<h2>Prepare your workspace</h2>
 					<p class="muted">
 						A real paper test needs a clean nozzle and bed at room temperature. Here, the checklist
@@ -633,20 +627,15 @@
 
 <style>
 	.calibration-page {
+		--page-content-max: 75rem;
 		display: grid;
 		gap: 1.2rem;
-		max-width: 1160px;
-		margin: 0 auto;
-		padding: clamp(1rem, 3vw, 2.5rem);
 	}
 	header {
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
 		gap: 1rem;
-	}
-	header h1 {
-		margin: 0.5rem 0;
 	}
 	header p {
 		max-width: 600px;

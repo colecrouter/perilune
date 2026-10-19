@@ -6,7 +6,7 @@
 
 <svelte:head><title>Action receipt · Perilune</title></svelte:head>
 <AppShell active="Controls"
-	><div class="receipt serif">
+	><div class="receipt page-frame serif">
 		<h1>{data.receipt.label}</h1>
 		<p role="status">{actionStatusLabel[data.receipt.status]}</p>
 		{#if data.receipt.message}<p>{data.receipt.message}</p>{/if}
@@ -26,8 +26,7 @@
 
 <style>
 	.receipt {
-		padding: 2rem;
-		max-width: 50rem;
+		--page-content-max: 50rem;
 	}
 	p {
 		margin: 1rem 0;

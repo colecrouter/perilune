@@ -6,18 +6,17 @@
 
 <svelte:head><title>Printer safety · Perilune</title></svelte:head>
 <AppShell
-	><main>
+	><div class="safety-page page-frame serif">
 		{#if form?.message}<p role="alert">{form.message}</p>{/if}<SafetyConfirmation
 			intent={data.intent}
 			snapshot={data.snapshot}
 		/>
 		<p><a href="/">Return to overview</a></p>
-	</main></AppShell
+	</div></AppShell
 >
 
 <style>
-	main {
-		padding: 2rem;
-		max-width: 42rem;
+	.safety-page {
+		--page-content-max: 42rem;
 	}
 </style>

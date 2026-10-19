@@ -4,7 +4,7 @@
 
 <svelte:head><title>Development · Perilune</title></svelte:head>
 <AppShell active=""
-	><div class="roadmap">
+	><div class="roadmap page-frame serif">
 		<h1>Building Perilune</h1>
 		<p class="muted">
 			Perilune now supports persistent live printer connectivity and a self-hosted daily-use
