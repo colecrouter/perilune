@@ -472,7 +472,7 @@
 							if (reason || missing || submitting || stale || !catalog.available) return;
 							startOpen = true;
 							failure = '';
-						}}>Review & start {live ? 'print' : 'simulation'}</a
+						}}>{live ? 'Start print…' : 'Start simulation…'}</a
 					>
 					{#if canOperate && (!live || snapshot.liveControls)}<button
 							class="button secondary start-button"

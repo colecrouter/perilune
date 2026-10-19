@@ -119,10 +119,7 @@ try {
 	await page.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
 	await page.getByRole('button', { name: 'Start simulation…', exact: true }).waitFor();
 	await page.waitForFunction(
-		() =>
-			![...document.querySelectorAll('button')].find(
-				(b) => b.textContent.trim() === 'Start simulation…'
-			)?.disabled
+		() => document.querySelector('a.start-button')?.getAttribute('aria-disabled') === 'false'
 	);
 	await page.getByRole('button', { name: 'Start simulation…', exact: true }).click();
 	await page
@@ -141,6 +138,7 @@ try {
 		.waitFor();
 	await page.getByRole('button', { name: 'Pause print', exact: true }).click();
 	await second.getByRole('button', { name: 'Resume print', exact: true }).waitFor();
+	const removedFileName = await page.locator('.inspection h2').innerText();
 	await page.getByRole('button', { name: 'Remove file…', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Remove file', exact: true }).click();
 	await page.getByRole('dialog').getByRole('alert').waitFor();
@@ -289,9 +287,14 @@ try {
 	);
 	await page.getByRole('button', { name: 'Remove file…', exact: true }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Remove file', exact: true }).click();
+	await page.getByRole('heading', { name: 'File library', exact: true }).waitFor();
 	await page
-		.getByRole('heading', { name: 'A little preparation goes a long way.', exact: true })
-		.waitFor();
+		.getByRole('heading', { name: removedFileName, exact: true })
+		.waitFor({ state: 'hidden' });
+	await page
+		.locator('.library')
+		.getByRole('link', { name: removedFileName, exact: true })
+		.waitFor({ state: 'hidden' });
 	await page.reload();
 	await page
 		.locator('.history .run')

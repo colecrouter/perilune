@@ -323,11 +323,11 @@
 			<p class="muted small">
 				{snapshot.mode === 'simulator'
 					? 'The simulator supports M105, M114, HELP and the listed example macros. Other commands produce a clear error.'
-					: 'Commands and macros run on the real printer and may move or heat it. Check each command and the printer’s macro configuration before sending.'}
+					: 'Check each command and the printer’s macro configuration before sending.'}
 			</p>
 		</details>
 		{#if snapshot.mode === 'moonraker'}<p class="muted small">
-				Commands can move or heat the printer.
+				Commands and macros run on the real printer and may move or heat it.
 			</p>{/if}
 		<button
 			class="button primary"
