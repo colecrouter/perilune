@@ -25,11 +25,76 @@ export function filamentChangeCapability(
 		.update(JSON.stringify([objects.slice().sort(), canonical(sections)]))
 		.digest('hex');
 	const m600 = macros.includes('M600');
+	const record = (value: unknown): Record<string, unknown> =>
+		value && typeof value === 'object' && !Array.isArray(value)
+			? (value as Record<string, unknown>)
+			: {};
+	const extruder = record(sections.extruder),
+		printer = record(sections.printer);
+	const positive = (value: unknown) => {
+		const result = Number(value);
+		return Number.isFinite(result) && result > 0 ? result : null;
+	};
+	const nozzle = positive(extruder.nozzle_diameter),
+		diameter = positive(extruder.filament_diameter),
+		velocity = positive(printer.max_velocity);
+	const defaultVelocity =
+		nozzle && diameter && velocity
+			? (velocity * 4 * nozzle ** 2) / (Math.PI * (diameter / 2) ** 2)
+			: null;
+	const maxVelocity = positive(extruder.max_extrude_only_velocity ?? defaultVelocity);
+	const maxDistance = positive(extruder.max_extrude_only_distance ?? 50);
+	const native = [
+		'G0',
+		'G1',
+		'G90',
+		'G91',
+		'M82',
+		'M83',
+		'M220',
+		'M221',
+		'M400',
+		'SAVE_GCODE_STATE',
+		'RESTORE_GCODE_STATE'
+	];
+	const reason = !['cartesian', 'corexy'].includes(String(printer.kinematics))
+		? 'Assisted handling currently supports Cartesian and CoreXY printers.'
+		: objects.some(
+					(name) =>
+						/^extruder\d+$/.test(name) ||
+						[
+							'dual_carriage',
+							'skew_correction',
+							'bed_tilt',
+							'axis_twist_compensation',
+							'z_thermal_adjust'
+						].includes(name) ||
+						name.startsWith('manual_stepper ')
+			  )
+			? 'Use printer macros for multiple tools, dual carriages or skew correction.'
+			: !objects.includes('extruder') || !objects.includes('gcode_move')
+				? 'Extruder and G-code position telemetry are required for assisted handling.'
+				: objects.some(
+							(name) =>
+								name.startsWith('gcode_macro ') && native.includes(name.slice(12).toUpperCase())
+					  )
+					? 'Native movement or state commands are overridden. Use reviewed printer macros instead.'
+					: !maxDistance || !maxVelocity
+						? 'Configured extrusion distance and velocity limits are required.'
+						: null;
+
 	return {
 		fingerprint,
 		macros,
 		pauseResume: objects.includes('pause_resume'),
 		m600,
+		assisted: {
+			supported: reason === null,
+			reason,
+			maxDistance,
+			maxVelocity,
+			customPause: objects.some((name) => name.toUpperCase() === 'GCODE_MACRO PAUSE')
+		},
 		findings: [
 			m600
 				? 'M600 is registered as a printer macro. Its behavior has not been verified.'

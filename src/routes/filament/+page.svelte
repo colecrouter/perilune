@@ -3,7 +3,8 @@
 	import FilamentChangeWorkflow from '#lib/components/FilamentChangeWorkflow.svelte';
 	import {
 		filamentChangeActive,
-		defaultFilamentChangeSettings
+		defaultFilamentChangeSettings,
+		defaultAssistedFilamentProfile
 	} from '#lib/domain/filament-change.js';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import { getPrinter } from '../printer.remote.js';
@@ -27,9 +28,10 @@
 	let mode = $state(initial.settings.mode);
 	let changeMacro = $state(initial.settings.changeMacro);
 	let resumeMacro = $state(initial.settings.resumeMacro);
+	let assisted = $state({ ...defaultAssistedFilamentProfile, ...initial.settings.assisted });
 	let reviewedTuple = $state('');
 	const reviewTuple = $derived(
-		JSON.stringify([mode, changeMacro, resumeMacro, setup.capability?.fingerprint])
+		JSON.stringify([mode, changeMacro, resumeMacro, assisted, setup.capability?.fingerprint])
 	);
 	const reviewed = $derived(reviewedTuple === reviewTuple);
 	let revision = $state(initial.settings.revision);
@@ -52,6 +54,7 @@
 			await saveFilamentSetup({
 				revision,
 				mode,
+				assisted: mode === 'assisted' ? assisted : undefined,
 				changeMacro,
 				resumeMacro,
 				reviewed,
@@ -59,7 +62,7 @@
 			});
 			revision = (await query).settings.revision;
 			message =
-				'Setup plan saved. Guided changes use these macros; physical compatibility still needs an attended test.';
+				'Setup plan saved. Guided changes use this plan; physical compatibility still needs an attended test.';
 		} catch (cause) {
 			message = cause instanceof Error ? cause.message : 'Setup could not be saved.';
 		} finally {
@@ -73,7 +76,7 @@
 	><div class="page-frame serif filament-page">
 		<header>
 			<h1>Filament changes</h1>
-			<p>Use your printer’s existing change workflow without adding duplicate movements.</p>
+			<p>Use a reviewed printer macro or explicit assisted steps for a paused print.</p>
 		</header>
 		{#if !allowed}<section class="panel">
 				<h2>Operator access required</h2>
@@ -82,6 +85,7 @@
 			<FilamentChangeWorkflow
 				{snapshot}
 				settingsRevision={setup.settings.revision}
+				settings={setup.settings}
 				setupReason={setup.reason}
 				userId={data.user!.id}
 				role={data.user!.role}
@@ -107,10 +111,7 @@
 			</section>
 			<section class="panel">
 				<h2>Change method</h2>
-				<p>
-					This selects the macros used by guided filament changes. Configuration changes invalidate
-					review.
-				</p>
+				<p>Choose how to pause and handle filament. Configuration changes invalidate review.</p>
 				<form
 					onsubmit={(event) => {
 						event.preventDefault();
@@ -125,7 +126,8 @@
 						<option value="disabled">Not enabled</option><option value="printer"
 							>Use my printer’s macros</option
 						>
-					</select>
+						<option value="assisted">Perilune-assisted steps</option></select
+					>
 					{#if mode === 'printer'}
 						<label for="change-macro">Change macro</label><select
 							id="change-macro"
@@ -138,6 +140,54 @@
 							{#each setup.capability?.macros ?? [] as name}<option value={name}>{name}</option
 								>{/each}
 						</select>
+					{/if}
+					{#if mode === 'assisted'}
+						<p>
+							Pause first, then choose one bounded step at a time. A custom PAUSE may already
+							retract or park. Resume uses the printer’s saved pause position.
+						</p>
+						<label for="parking">Parking</label><select
+							id="parking"
+							bind:value={assisted.parking}
+							disabled={!hydrated || !owner || pending}
+							><option value="printer">Printer parks; I inspect nozzle clearance</option><option
+								value="perilune">Perilune lifts Z then parks XY</option
+							></select
+						>
+						{#if assisted.parking === 'perilune'}<p>
+								Available with native PAUSE and no active bed mesh. Review clearance over the print;
+								travel limits alone do not prove a clear path.
+							</p>{/if}
+						{#each ['parkX', 'parkY', 'zLift', 'unload', 'load', 'purge', 'speed'] as const as field}
+							{#if assisted.parking === 'perilune' || !['parkX', 'parkY', 'zLift'].includes(field)}
+								<label for={'assist-' + field}
+									>{{
+										parkX: 'Park X (mm)',
+										parkY: 'Park Y (mm)',
+										zLift: 'Z lift (mm)',
+										unload: 'Unload per step (mm)',
+										load: 'Load per step (mm)',
+										purge: 'Purge per step (mm)',
+										speed: 'Extrusion speed (mm/s)'
+									}[field]}</label
+								>
+								<input
+									id={'assist-' + field}
+									type="number"
+									step="0.1"
+									bind:value={assisted[field]}
+									disabled={!hydrated || !owner || pending}
+									required
+								/>
+							{/if}{/each}
+						<p>
+							Single-extruder Cartesian/CoreXY only. Each extrusion step is limited to 50 mm and 90
+							seconds, and to the printer’s configured limits. Longer paths require a new inspected
+							step.
+						</p>
+						{#if setup.capability?.assisted?.reason}<p>{setup.capability.assisted.reason}</p>{/if}
+					{/if}
+					{#if mode !== 'disabled'}
 						<label for="resume-macro">Resume command</label><select
 							id="resume-macro"
 							bind:value={resumeMacro}
@@ -156,8 +206,8 @@
 									reviewedTuple = event.currentTarget.checked ? reviewTuple : '';
 								}}
 								disabled={!hydrated || !owner || pending}
-							/>I reviewed these macros’ parking, unloading and resume behavior. I will attend the
-							first test.</label
+							/>I reviewed this plan’s parking, extrusion distances, speed and resume behavior. I
+							will attend the first test.</label
 						>
 					{/if}
 					{#if owner}<button
@@ -177,8 +227,10 @@
 			<section class="panel">
 				<h2>No suitable macro?</h2>
 				<p>
-					Perilune-assisted changes need explicit parking and extrusion settings. That workflow is
-					being built; this setup does not install or replace M600.
+					Perilune-assisted changes need explicit parking and extrusion settings. This setup does
+					not install or replace M600. For a planned slicer change without M600, emit PAUSE and open
+					guidance after the print pauses. A pause does not identify whether a runout or filament
+					change caused it.
 				</p>
 				<p>
 					Review Klipper’s <a
@@ -213,7 +265,8 @@
 		gap: 0.8rem;
 		max-width: 36rem;
 	}
-	select {
+	select,
+	input[type='number'] {
 		width: 100%;
 		min-height: 44px;
 		padding: 0.65rem 0.8rem;

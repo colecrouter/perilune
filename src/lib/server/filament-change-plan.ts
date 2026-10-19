@@ -7,6 +7,7 @@ import {
 } from '#lib/domain/filament-change.js';
 import type { CalibrationActor } from '#lib/domain/calibration.js';
 import type { MoonrakerSnapshot, ControlOperation } from './moonraker.js';
+import { assistedFilamentPlan, sameFilamentPosition } from './filament-change-assisted.js';
 
 export function filamentChangePlan(
 	command: FilamentChangeCommand,
@@ -61,6 +62,7 @@ export function filamentChangePlan(
 				generation: fresh.generation,
 				settingsRevision: settings.revision,
 				fingerprint: settings.fingerprint,
+				assisted: settings.mode === 'assisted' ? { parked: false } : undefined,
 				step: 1,
 				stage: 'waiting',
 				startedAt: now,
@@ -69,7 +71,11 @@ export function filamentChangePlan(
 					? 'Reviewing this existing pause; no change macro was sent.'
 					: 'Waiting for the change macro and a verified pause.'
 			},
-			operations: command.adoptPaused ? [] : macro(settings.changeMacro)
+			operations: command.adoptPaused
+				? []
+				: settings.mode === 'assisted'
+					? [{ type: 'job', method: 'pause' }]
+					: macro(settings.changeMacro)
 		};
 	}
 	if (
@@ -129,9 +135,12 @@ export function filamentChangePlan(
 				generation: fresh.generation,
 				step: session.step + 1,
 				stage: 'paused',
+				assisted: session.assisted ? { parked: false } : undefined,
+				pendingMove: undefined,
 				expiresAt: Date.now() + 30 * 60_000,
-				message:
-					'Owner reviewed the current paused print and took over guidance. No command was replayed.'
+				message: session.assisted
+					? 'Owner reviewed the current paused print. Parking must be inspected again. An earlier lift may already have occurred; any new park starts from the current position. No command was replayed.'
+					: 'Owner reviewed the current paused print and took over guidance. No command was replayed.'
 			},
 			operations: []
 		};
@@ -147,6 +156,18 @@ export function filamentChangePlan(
 		throw Error(
 			'Position is no longer trusted. Do not home into a paused print; inspect and recover it manually.'
 		);
+	if (command.type === 'filamentChangePark' || command.type === 'filamentChangeFeed')
+		return assistedFilamentPlan(command, session, settings, fresh);
+	if (
+		settings.mode === 'assisted' &&
+		(!session.assisted?.parked ||
+			!sameFilamentPosition(fresh.gcodePosition, session.assisted.position) ||
+			!sameFilamentPosition(
+				fresh.motion.position as { x: number; y: number; z: number },
+				session.assisted.physicalPosition
+			))
+	)
+		throw Error('Verify parking before resuming an assisted change.');
 	if (!fresh.filament?.canExtrude || !fresh.heaters.nozzle.target)
 		throw Error(
 			'The nozzle is cold or its target is off. Set an appropriate target explicitly and wait before resuming.'

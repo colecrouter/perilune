@@ -200,6 +200,10 @@ export function actionLabel(command: PrinterCommand): string {
 	if (command.type === 'pidCalibrate')
 		return `PID calibration · ${command.heater} at ${command.target}°C`;
 	switch (command.type) {
+		case 'filamentChangePark':
+			return 'Prepare filament parking';
+		case 'filamentChangeFeed':
+			return `Filament ${command.operation}`;
 		case 'filamentChangeBegin':
 			return 'Change filament';
 		case 'filamentChangeResume':
@@ -277,6 +281,8 @@ export function applyCommand(
 	actionId?: string
 ): PrinterSnapshot {
 	if (
+		command.type === 'filamentChangePark' ||
+		command.type === 'filamentChangeFeed' ||
 		command.type === 'filamentChangeBegin' ||
 		command.type === 'filamentChangeResume' ||
 		command.type === 'filamentChangeEnd' ||
