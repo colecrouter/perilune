@@ -1,0 +1,10 @@
+# Private companion control API. Only Perilune publishes authenticated media.
+api:
+  listen: ':1984'
+rtsp:
+  listen: ':8554'
+webrtc:
+  listen: ''
+streams: {}
+log:
+  level: warn

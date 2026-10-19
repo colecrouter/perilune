@@ -26,6 +26,7 @@ import { PrinterServiceLive, makePrinterService } from './printer-service.js';
 import { MoonrakerConfig, MoonrakerServiceLive } from './moonraker.js';
 import { MoonrakerBridgeLive } from './moonraker-bridge.js';
 import { CameraConfig, CameraServiceLive } from './camera.js';
+import { CameraSetupServiceLive, CameraSetupSettings } from './camera-setup-service.js';
 import { JobServiceLive, JobsConfig } from './job-service.js';
 import { LiveMeshServiceLive, LiveMeshDisabled } from './live-mesh-service.js';
 import { WebcamBridgeLive } from './webcam-discovery.js';
@@ -68,7 +69,9 @@ const printerLayer = (moonrakerUrl ? makePrinterService('moonraker') : PrinterSe
 );
 const moonrakerConfigLayer = Layer.succeed(MoonrakerConfig, {
 	url: moonrakerUrl ?? '',
-	discoverWebcams: Boolean(cameraBaseUrl && !cameraSource),
+	discoverWebcams: Boolean(
+		process.env.PERILUNE_CAMERA_COMPANION_URL || (cameraBaseUrl && !cameraSource)
+	),
 	liveMeshEnabled: process.env.PERILUNE_LIVE_MESH === 'true',
 	liveControlsEnabled: process.env.PERILUNE_LIVE_CONTROLS === 'true',
 	pidCalibrationEnabled:
@@ -204,9 +207,20 @@ const slicerLayer = SlicerServiceLive.pipe(
 	Layer.provide(databaseLayer),
 	Layer.provideMerge(consoleLayer)
 );
+const cameraSetupLayer = CameraSetupServiceLive.pipe(
+	Layer.provide(
+		Layer.succeed(CameraSetupSettings, {
+			baseUrl: process.env.PERILUNE_CAMERA_COMPANION_URL?.trim() ?? '',
+			webOrigin: process.env.PERILUNE_PRINTER_WEB_ORIGIN?.trim() || undefined
+		})
+	),
+	Layer.provide(databaseLayer),
+	Layer.provideMerge(slicerLayer)
+);
 export const runtime = ManagedRuntime.make(
 	Layer.mergeAll(
-		slicerLayer,
+		cameraSetupLayer,
+		...(moonrakerUrl ? [liveServices] : []),
 		configurationLayer,
 		PreferenceServiceLive.pipe(Layer.provide(databaseLayer))
 	)

@@ -1,0 +1,20 @@
+# docker compose -f compose.yaml -f compose.camera.yaml up -d
+# No camera or control ports are published to the host.
+services:
+  perilune:
+    environment:
+      PERILUNE_CAMERA_COMPANION_URL: http://camera:1984/
+      PERILUNE_PRINTER_WEB_ORIGIN: ${PERILUNE_PRINTER_WEB_ORIGIN:-}
+    depends_on:
+      - camera
+  camera:
+    image: alexxit/go2rtc:1.9.14@sha256:675c318b23c06fd862a61d262240c9a63436b4050d177ffc68a32710d9e05bae
+    command: ['-config', '/config/go2rtc.yaml']
+    volumes:
+      - ./docker/camera/go2rtc.yaml:/config/go2rtc.yaml:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    mem_limit: ${PERILUNE_CAMERA_MEMORY:-384m}
+    cpus: ${PERILUNE_CAMERA_CPUS:-2}
+    restart: unless-stopped

@@ -378,3 +378,68 @@ describe('continuous MSE camera output', () => {
 		await Promise.all([...responses.slice(1), next].map((response) => response.body!.cancel()));
 	});
 });
+
+describe('managed camera sources', () => {
+	it.each(['', 'http://legacy.invalid/'])(
+		'rewrites HLS against the managed companion with legacy base %s',
+		async (baseUrl) => {
+			const fetcher = vi.fn().mockResolvedValueOnce(playlist(master));
+			vi.stubGlobal('fetch', fetcher);
+			const { runtime, camera } = await service({ baseUrl, source: undefined });
+			await runtime.runPromise(
+				camera.setManagedSource({
+					source: 'managed',
+					name: 'Managed',
+					baseUrl: 'http://companion.invalid/',
+					qualities: { original: 'managed', balanced: 'managed_balanced' }
+				})
+			);
+			const response = await runtime.runPromise(
+				camera.proxy('stream.m3u8', request('?quality=balanced'))
+			);
+			expect(response.status).toBe(200);
+			expect(await response.text()).toContain('/api/camera/playlist.m3u8?session=');
+			expect(fetcher.mock.calls[0][0].toString()).toBe(
+				'http://companion.invalid/api/stream.m3u8?src=managed_balanced&video=h264'
+			);
+		}
+	);
+	it('sends HTTP snapshot credentials as a private authorization header', async () => {
+		const fetcher = vi
+			.fn()
+			.mockResolvedValue(
+				new Response(new Uint8Array([255, 216, 255]), { headers: { 'Content-Type': 'image/jpeg' } })
+			);
+		vi.stubGlobal('fetch', fetcher);
+		const { runtime, camera } = await service();
+		await runtime.runPromise(
+			camera.setManagedSource({
+				source: 'managed',
+				name: 'Managed',
+				baseUrl: 'http://companion.invalid/',
+				snapshotUrl: 'http://test-user:test-password@snapshot.example.invalid/image'
+			})
+		);
+		const response = await runtime.runPromise(camera.proxy('snapshot', request()));
+		expect(response.status).toBe(200);
+		expect(fetcher.mock.calls[0][0].toString()).toBe('http://snapshot.example.invalid/image');
+		expect(fetcher.mock.calls[0][1].headers.Authorization).toBe(
+			`Basic ${Buffer.from('test-user:test-password').toString('base64')}`
+		);
+		expect(response.headers.get('Authorization')).toBeNull();
+	});
+	it('keeps managed selection through discovery updates and restores discovery after clearing', async () => {
+		const { runtime, camera } = await service({ source: undefined });
+		await runtime.runPromise(
+			camera.setManagedSource({
+				source: 'managed',
+				name: 'Managed',
+				baseUrl: 'http://companion.invalid/'
+			})
+		);
+		await runtime.runPromise(camera.updateSource({ source: 'discovered', name: 'Discovered' }));
+		expect((await runtime.runPromise(camera.getDescriptor)).name).toBe('Managed');
+		await runtime.runPromise(camera.setManagedSource(null));
+		expect((await runtime.runPromise(camera.getDescriptor)).name).toBe('Discovered');
+	});
+});

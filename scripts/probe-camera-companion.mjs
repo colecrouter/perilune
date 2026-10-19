@@ -15,7 +15,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 try {
 	await writeFile(
 		join(directory, 'go2rtc.yaml'),
-		`api:\n  listen: ":1984"\nrtsp:\n  listen: ":8554"\nwebrtc:\n  listen: ""\nstreams:\n  fixture: ffmpeg:virtual?video=testsrc2&size=640x360&rate=10#video=mjpeg\n  balanced: ffmpeg:fixture#video=h264#width=320\n  http: ffmpeg:http://127.0.0.1:1984/api/stream.mjpeg?src=fixture#video=h264#width=320\n  native: ffmpeg:virtual?video=testsrc2&size=640x360&rate=10#video=h264\n  hevc: ffmpeg:virtual?video=testsrc2&size=640x360&rate=10#video=h265\n  compatible: ffmpeg:hevc#video=h264#width=320\n`
+		`api:\n  listen: ":1984"\nrtsp:\n  listen: ":8554"\nwebrtc:\n  listen: ""\nstreams:\n  fixture: ffmpeg:virtual?video=testsrc2&size=640x360&rate=10#video=mjpeg\n  balanced: ffmpeg:fixture#video=h264#width=320\n  http: ffmpeg:http://127.0.0.1:1984/api/stream.mjpeg?src=fixture#video=h264#width=320\n  native: ffmpeg:virtual?video=testsrc2&size=640x360&rate=10#video=h264\n  hevc: ffmpeg:virtual?video=testsrc2&size=640x360&rate=10#video=h265\n  compatible: ffmpeg:hevc#video=h264#width=320\n  http_encoded: ffmpeg:http://127.0.0.1:1984/api/stream.mp4?src=native&video=h264#video=copy\n`
 	);
 	container = docker(
 		'run',
@@ -69,6 +69,7 @@ try {
 		['balanced', 2],
 		['http', 2],
 		['native', 1],
+		['http_encoded', 2],
 		['compatible', 2]
 	]) {
 		const one = await open(`api/stream.mp4?src=${profile}&video=h264`);

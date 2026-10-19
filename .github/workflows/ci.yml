@@ -98,10 +98,34 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
 
+  camera:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm install --global pnpm@12.11.2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - uses: actions/download-artifact@v8
+        with:
+          name: production-build
+          path: build/
+      - run: node scripts/smoke-camera-setup.mjs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: camera-setup-evidence
+          path: test-results/
+          if-no-files-found: ignore
+
   # Stable required check: never green when a dependency fails or is skipped.
   validate:
     if: always()
-    needs: [checks, build, smoke, container]
+    needs: [checks, build, smoke, container, camera]
     runs-on: ubuntu-latest
     steps:
       - name: Require every validation group
@@ -110,8 +134,10 @@ jobs:
           BUILD: ${{ needs.build.result }}
           SMOKE: ${{ needs.smoke.result }}
           CONTAINER: ${{ needs.container.result }}
+          CAMERA: ${{ needs.camera.result }}
         run: |
           test "$CHECKS" = success
           test "$BUILD" = success
           test "$SMOKE" = success
           test "$CONTAINER" = success
+          test "$CAMERA" = success
