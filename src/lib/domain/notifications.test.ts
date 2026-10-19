@@ -46,3 +46,19 @@ it('migrates old device preferences to account-only notices and rejects malforme
 	expect(() => checkNoticePreferences({ ...old, allPrints: 'true' })).toThrow();
 	expect(() => checkNoticePreferences({ ...old, sharedErrors: null })).toThrow();
 });
+
+it('announces each observed pause without guessing its cause or repeating stable pauses', () => {
+	const printing = initialSnapshot();
+	const paused = { ...printing, job: { ...printing.job, state: 'paused' as const } };
+	expect(noticeTransition(undefined, paused)).toBeUndefined();
+	expect(noticeTransition(printing, paused)?.kind).toBe('paused');
+	expect(noticeTransition(paused, paused)).toBeUndefined();
+	expect(noticeTransition(printing, paused)?.id).not.toBe(noticeTransition(printing, paused)?.id);
+	expect(noticeTransition({ ...printing, telemetryReady: false }, paused)).toBeUndefined();
+	expect(
+		noticeTransition(printing, { ...paused, job: { ...paused.job, runId: undefined } })
+	).toBeUndefined();
+	const { paused: _paused, ...legacy } = defaultNoticePreferences;
+	expect(checkNoticePreferences(legacy).paused).toBe(false);
+	expect(() => checkNoticePreferences({ ...legacy, paused: 'true' })).toThrow();
+});

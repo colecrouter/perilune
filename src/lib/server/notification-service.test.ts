@@ -279,3 +279,32 @@ it('rechecks authorization after a pending camera capture before storing images 
 	expect(f.send).not.toHaveBeenCalled();
 	expect(await f.runtime.runPromise(sql`SELECT id FROM push_images`)).toHaveLength(0);
 });
+it('pause notices require opt-in, respect job ownership, deduplicate stable pauses and skip reconnects', async () => {
+	const f = await fixture();
+	await f.register('other', 'other', { ...defaultNoticePreferences, paused: true });
+	await f.register('all', 'all', { ...defaultNoticePreferences, paused: true, allPrints: true });
+	await f.register('quiet', 'owner', {
+		...defaultNoticePreferences,
+		paused: true,
+		quiet: true,
+		quietStart: '00:00',
+		quietEnd: '00:00'
+	});
+	await f.manage('save', { ...defaultNoticePreferences, paused: true, snapshot: true });
+	const printing = await f.runtime.runPromise(SubscriptionRef.get(f.state));
+	const paused = { ...printing, job: { ...printing.job, state: 'paused' as const } };
+	await f.runtime.runPromise(SubscriptionRef.set(f.state, paused));
+	await vi.waitFor(() => expect(f.send).toHaveBeenCalledTimes(2));
+	expect(f.capture).toHaveBeenCalled();
+	expect(JSON.parse(f.send.mock.calls[0][1]).kind).toBe('paused');
+	await f.runtime.runPromise(SubscriptionRef.set(f.state, paused));
+	await f.runtime.runPromise(
+		SubscriptionRef.set(f.state, { ...printing, connection: 'reconnecting' as const })
+	);
+	await f.runtime.runPromise(SubscriptionRef.set(f.state, paused));
+	await new Promise((resolve) => setTimeout(resolve, 50));
+	expect(f.send).toHaveBeenCalledTimes(2);
+	await f.runtime.runPromise(SubscriptionRef.set(f.state, printing));
+	await f.runtime.runPromise(SubscriptionRef.set(f.state, paused));
+	await vi.waitFor(() => expect(f.send).toHaveBeenCalledTimes(4));
+});

@@ -45,7 +45,7 @@ it('discovers loaded macros without gcode.help and never returns macro bodies', 
 	expect(filamentSetupReason(settings, cap)).toBeNull();
 	expect(filamentSetupReason(settings, modified)).toContain('changed');
 	expect(filamentSetupReason({ ...settings, reviewed: false }, cap)).toContain('Review');
-	expect(filamentSetupReason({ ...settings, mode: 'assisted' }, cap)).toContain('not enabled');
+	expect(filamentSetupReason({ ...settings, mode: 'assisted' }, cap)).toContain('Cartesian');
 });
 it('keeps pause_resume telemetry independent from print_stats guesses', () => {
 	const previous = emptyMoonrakerSnapshot();
@@ -138,4 +138,20 @@ it('prevents setup replacement while any action reservation or filament session 
 	} finally {
 		await runtime.dispose();
 	}
+});
+
+it('keeps parser extrusion verification private and rejects malformed or extra-axis coordinates', () => {
+	const previous = emptyMoonrakerSnapshot();
+	expect(
+		normalizeMoonrakerStatus({ gcode_move: { position: [1, 2, 3, 4] } }, previous).gcodePosition
+	).toEqual({ x: 1, y: 2, z: 3, e: 4 });
+	for (const position of [
+		[1, 2, 3],
+		[1, 2, 3, 4, 5],
+		[1, 2, 3, NaN],
+		[1, 2, 3, '4']
+	])
+		expect(
+			normalizeMoonrakerStatus({ gcode_move: { position } }, previous).gcodePosition
+		).toBeNull();
 });

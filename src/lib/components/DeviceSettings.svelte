@@ -189,6 +189,10 @@
 					><input type="checkbox" bind:checked={preferences.sharedErrors} />Include printer errors
 					when I have no active print</label
 				>
+				<label
+					><input type="checkbox" bind:checked={preferences.paused} />Paused prints · may need
+					filament or attention</label
+				>
 				<label><input type="checkbox" bind:checked={preferences.complete} />Completed prints</label>
 				<label><input type="checkbox" bind:checked={preferences.failed} />Failed prints</label>
 				<label

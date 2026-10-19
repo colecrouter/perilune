@@ -6,6 +6,7 @@ import {
 	type FilamentChangeSettings,
 	type FilamentChangeCommand
 } from '#lib/domain/filament-change.js';
+import { sameFilamentPosition } from './filament-change-assisted.js';
 import { filamentChangePlan } from './filament-change-plan.js';
 import { recordJobOwner } from './job-attribution.js';
 import { pidActive, pidReason, samePid, type PidState } from '#lib/domain/pid.js';
@@ -97,6 +98,8 @@ const authorized = (actor: CalibrationActor) => {
 const recoveryMessage =
 	'A live action has an unknown outcome. Inspect the printer, then review recovery in Controls. No command was replayed.';
 const supported = new Set([
+	'filamentChangePark',
+	'filamentChangeFeed',
 	'filamentChangeBegin',
 	'filamentChangeResume',
 	'filamentChangeEnd',
@@ -343,7 +346,12 @@ export const LiveActionServiceLive = Layer.effect(
 				throw reject('Live console is disabled on this server.');
 			if (request.command.type.startsWith('zProbe') && !settings.zEnabled)
 				throw reject('Live Z calibration is disabled on this server.');
-			if (request.command.type.startsWith('extrusion') && !settings.filamentEnabled)
+			if (
+				(request.command.type.startsWith('extrusion') ||
+					request.command.type === 'filamentChangeFeed' ||
+					request.command.type === 'filamentChangePark') &&
+				!settings.filamentEnabled
+			)
 				throw reject('Live filament controls are disabled on this server.');
 			if (!authorized(actor)) throw reject('An authorized operator is required.');
 			if (!supported.has(request.command.type))
@@ -671,15 +679,53 @@ export const LiveActionServiceLive = Layer.effect(
 							}
 							if (!observed.motion.calibration && observed.motion.busy === false) {
 								if (observed.job.state === 'paused' && observed.paused === true) {
+									const move = swapResult.pendingMove;
+									if (move) {
+										const xyz =
+											move.kind === 'park' ? move.position : swapResult.assisted?.position;
+										const physical =
+											move.kind === 'park'
+												? move.physicalPosition
+												: swapResult.assisted?.physicalPosition;
+										if (
+											!sameFilamentPosition(observed.gcodePosition, xyz) ||
+											!sameFilamentPosition(
+												observed.motion.position as { x: number; y: number; z: number },
+												physical
+											) ||
+											(move.kind === 'feed' &&
+												(!observed.gcodePosition ||
+													Math.abs(observed.gcodePosition.e - move.startE - move.distance) >= 0.05))
+										) {
+											return yield* Effect.fail(
+												reject(
+													'The assisted move could not be verified. Inspect the printer; this move will not be repeated.'
+												)
+											);
+										}
+										swapResult = {
+											...swapResult,
+											pendingMove: undefined,
+											assisted: { parked: true, position: xyz, physicalPosition: physical },
+											message:
+												move.kind === 'park'
+													? 'Parking verified. Choose one attended unload, load or purge step.'
+													: `${move.operation} movement verified. Inspect the filament before choosing another step or Resume.`
+										};
+									}
 									swapResult = {
 										...swapResult,
 										stage: 'paused',
 										message:
 											command.type === 'filamentChangeResume'
 												? 'Resume macro completed; this print remains paused. Follow the printer instructions and remove purged material before another deliberate Resume.'
-												: command.type === 'filamentChangeRecover'
+												: command.type === 'filamentChangeRecover' ||
+													  command.type === 'filamentChangePark' ||
+													  command.type === 'filamentChangeFeed'
 													? swapResult.message
-													: 'Print paused and stationary. Follow your printer macro’s unload/load instructions. Perilune has not added any park or extrusion moves.'
+													: swapResult.assisted
+														? 'Print paused and stationary. Inspect the nozzle clearance and verify parking before extrusion. No unload or load was sent.'
+														: 'Print paused and stationary. Follow your printer macro’s unload/load instructions. Perilune has not added any park or extrusion moves.'
 									};
 									return;
 								}
@@ -1031,7 +1077,13 @@ export const LiveActionServiceLive = Layer.effect(
 						hardware.filamentChange?.fingerprint !== activeSwap!.fingerprint ||
 						hardware.job.runId !== activeSwap!.runId ||
 						hardware.job.filename !== activeSwap!.filename ||
-						Date.now() >= activeSwap!.expiresAt;
+						Date.now() >= activeSwap!.expiresAt ||
+						(!!activeSwap!.assisted?.parked &&
+							(!sameFilamentPosition(hardware.gcodePosition, activeSwap!.assisted.position) ||
+								!sameFilamentPosition(
+									hardware.motion.position as { x: number; y: number; z: number },
+									activeSwap!.assisted.physicalPosition
+								)));
 					const ended =
 						!interrupted &&
 						(['complete', 'cancelled', 'standby', 'error'].includes(hardware.job.state) ||

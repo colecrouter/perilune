@@ -1395,7 +1395,57 @@ fixture, including staged Resume, navigation/reload, unknown acknowledgements,
 revocation, checkpoint failures, restart, ownership, stale setup and mobile layout.
 No physical printer acceptance has been performed for this workflow.
 
-Remaining for #84: explicit assisted parking/bounded load-purge setup, intervention
-notifications and attended owner acceptance. Process-local run IDs change on
+The assisted and notification increment is described below. Attended owner
+acceptance remains outstanding for #84. Process-local run IDs change on
 reconnect; recovery explicitly adopts fresh identity rather than matching by
 filename. No managed M600 is silently installed or substituted.
+
+## Guided filament changes: assisted steps and paused-print notices
+
+The assisted method is owner-reviewed and opt-in. It uses the same durable guided
+session, worker, admission and uncertain-outcome policies as the macro method.
+Begin requests PAUSE, then verifies a stationary same-job pause before offering
+any handling step. It never installs or substitutes M600. For planned slicer
+changes without M600, configure PAUSE and explicitly adopt the paused print.
+A pause alone does not identify a filament-change or runout event.
+
+Initial support is single-extruder Cartesian/CoreXY. Configuration discovery
+rejects multiple tools, extra carriages, unsupported motion transforms and
+native movement/state command overrides. Review covers parking mode, coordinates,
+Z lift, per-step unload/load/purge distances, extrusion speed and resume command.
+Each extrusion is at most 50 mm and 90 seconds and must fit the printer's own
+configured distance/velocity limits. Longer paths need separately attended steps.
+No automatic reheat, repeated extrusion or automatic return move is provided.
+
+Printer parking requires explicit inspection and sends no additional park move.
+Generated parking requires native PAUSE and no active/unverified bed mesh, checks
+parser and physical XYZ travel/headroom, lifts Z before XY and saves/restores
+G-code state without MOVE. Unsupported transforms use printer macros instead.
+Extrusion requires unchanged verified parking, homed axes, the expected active
+extruder and fresh can_extrude with an enabled target. Native M220/M221 normalize
+speed/flow inside the saved state. Fresh parser E displacement verifies commanded
+extrusion; it cannot prove that filament physically fed through the extruder.
+Native RESUME owns the saved pause return. Custom PAUSE/RESUME behavior requires
+owner review, including any existing retraction, parking or staged resume.
+
+Unknown movement is never retried. Recovery invalidates parking, warns that an
+earlier relative lift may already have occurred, and requires new inspection.
+Position drift invalidates guidance. A deliberately requested new park starts
+from the current position. Server live-filament opt-in gates assisted park/feed.
+
+Paused-print push notices default off, including existing device registrations.
+An observed printing-to-paused transition with the same known run identity emits
+one event per pause occurrence. Startup/reconnect establishes a baseline instead
+of inferring a pause. Existing job attribution, all-prints opt-in, authorization,
+quiet hours, expiring private snapshots and durable delivery claims apply. Text
+reports a pause without guessing its cause.
+
+Research references: Klipper [G-code state implementation](https://github.com/Klipper3d/klipper/blob/master/klippy/extras/gcode_move.py),
+[extruder limits](https://github.com/Klipper3d/klipper/blob/master/klippy/kinematics/extruder.py),
+[pause/resume implementation](https://github.com/Klipper3d/klipper/blob/master/klippy/extras/pause_resume.py),
+and [state-saving guidance](https://www.klipper3d.org/Command_Templates.html#save-restore-state-for-g-code-moves).
+These establish native modal/scale semantics; custom macro behavior is not inferred.
+
+Remaining for #84: attended physical owner acceptance of the configured printer
+macro or assisted plan and pause notifications. All automated movement acceptance
+uses isolated synthetic printers.

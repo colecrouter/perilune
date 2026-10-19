@@ -30,6 +30,8 @@ export class MoonrakerConfig extends Context.Service<MoonrakerConfig, MoonrakerS
 ) {}
 export type KlippyState = 'unknown' | 'ready' | 'startup' | 'shutdown' | 'error' | 'disconnected';
 export interface MoonrakerSnapshot {
+	/** Parser coordinates before mesh transforms, private to physical workflow verification. */
+	gcodePosition?: { x: number; y: number; z: number; e: number } | null;
 	/** Owner/operator-only discovery; never copied to the public dashboard. */
 	paused?: boolean | null;
 	filamentChange?: import('#lib/domain/filament-change.js').FilamentChangeCapability | null;
@@ -122,6 +124,7 @@ export class MoonrakerService extends Context.Service<
 type ObjectStatus = Record<string, Record<string, unknown>>;
 const wanted: Record<string, string[]> = {
 	pause_resume: ['is_paused'],
+	gcode_move: ['position'],
 	configfile: ['config', 'save_config_pending', 'save_config_pending_items'],
 	bed_mesh: ['profile_name', 'mesh_min', 'mesh_max', 'probed_matrix', 'profiles'],
 	webhooks: ['state'],
@@ -218,6 +221,17 @@ export function normalizeMoonrakerStatus(
 		},
 		paused:
 			typeof status.pause_resume?.is_paused === 'boolean' ? status.pause_resume.is_paused : null,
+		gcodePosition:
+			Array.isArray(status.gcode_move?.position) &&
+			status.gcode_move.position.length === 4 &&
+			status.gcode_move.position.every((v: unknown) => typeof v === 'number' && Number.isFinite(v))
+				? {
+						x: status.gcode_move.position[0],
+						y: status.gcode_move.position[1],
+						z: status.gcode_move.position[2],
+						e: status.gcode_move.position[3]
+					}
+				: null,
 		filamentChange: filamentChangeCapability(previous.availableObjects, status.configfile?.config),
 		zProbe: normalizeZProbe(status),
 

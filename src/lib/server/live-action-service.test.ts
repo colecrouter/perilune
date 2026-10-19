@@ -152,11 +152,31 @@ async function fixture(
 						const heaters = structuredClone(s.heaters);
 						for (const match of op.script.matchAll(/HEATER=(heater_bed|extruder) TARGET=(\d+)/g))
 							heaters[match[1] === 'heater_bed' ? 'bed' : 'nozzle'].target = Number(match[2]);
+						if (
+							op.script.startsWith('SAVE_GCODE_STATE NAME=perilune_swap_') &&
+							op.script.includes('G91')
+						) {
+							const lift = Number(op.script.match(/G1 Z([\d.]+)/)![1]);
+							const xy = op.script.match(/G1 X(-?[\d.]+) Y(-?[\d.]+)/)!;
+							const position = {
+								x: s.motion.position.x! + Number(xy[1]),
+								y: s.motion.position.y! + Number(xy[2]),
+								z: s.motion.position.z! + lift
+							};
+							return {
+								...s,
+								motion: { ...s.motion, position },
+								gcodePosition: { ...position, e: s.gcodePosition!.e }
+							};
+						}
 						const feed = op.script.match(/G1 E(-?[\d.]+) F60/);
 						if (feed)
 							return {
 								...s,
-								filament: { ...s.filament!, position: s.filament!.position! + Number(feed[1]) }
+								filament: { ...s.filament!, position: s.filament!.position! + Number(feed[1]) },
+								gcodePosition: s.gcodePosition
+									? { ...s.gcodePosition, e: s.gcodePosition.e + Number(feed[1]) }
+									: null
 							};
 						if (op.script.startsWith('SET_HEATER_TEMPERATURE')) return { ...s, heaters };
 						if (
@@ -1744,4 +1764,177 @@ it('turns changed macro configuration into review without dispatching another ph
 	await f.finished();
 	expect((await f.snapshot()).actions[0].status).toBe('failed');
 	expect(f.operations).toHaveLength(0);
+});
+
+async function prepareAssisted(f: Awaited<ReturnType<typeof fixture>>) {
+	const common = await prepareSwap(f, true);
+	const sql = await f.runtime.runPromise(SqlClient);
+	const target = createHash('sha256').update('fixture').digest('hex');
+	const rows = await f.runtime.runPromise(
+		sql<{ value: string }>`SELECT value FROM filament_change_settings WHERE target=${target}`
+	);
+	const settings = {
+		...JSON.parse(rows[0].value),
+		mode: 'assisted',
+		assisted: {
+			parking: 'printer',
+			parkX: 0,
+			parkY: 0,
+			zLift: 5,
+			unload: 20,
+			load: 20,
+			purge: 5,
+			speed: 1
+		}
+	};
+	await f.runtime.runPromise(
+		sql`UPDATE filament_change_settings SET value=${JSON.stringify(settings)} WHERE target=${target}`
+	);
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			gcodePosition: { x: 100, y: 100, z: 20, e: 100 },
+			filamentChange: {
+				...s.filamentChange!,
+				assisted: {
+					supported: true,
+					reason: null,
+					maxDistance: 50,
+					maxVelocity: 5,
+					customPause: true
+				}
+			}
+		}))
+	);
+	return common;
+}
+it('assisted parking is explicit, bounded extrusion preserves state and duplicate UUIDs never repeat it', async () => {
+	const f = await fixture();
+	const common = await prepareAssisted(f);
+	await f.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: true });
+	await f.finished();
+	let session = (await f.snapshot()).filamentChange!;
+	const step = () => ({
+		sessionId: session.id,
+		expectedStep: session.step,
+		expectedJob: common.expectedJob,
+		confirmed: true
+	});
+	await f.submit({ type: 'filamentChangeFeed', operation: 'unload', ...step() });
+	await f.finished();
+	expect(f.operations).toHaveLength(0);
+	await f.submit({ type: 'filamentChangePark', ...step() });
+	await f.finished();
+	session = (await f.snapshot()).filamentChange!;
+	expect(session.assisted?.parked).toBe(true);
+	expect(f.operations).toHaveLength(0);
+	const id = crypto.randomUUID(),
+		command = { type: 'filamentChangeFeed' as const, operation: 'unload' as const, ...step() };
+	await f.submit(command, owner, id);
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('completed');
+	expect(f.operations).toHaveLength(1);
+	expect(f.operations[0]).toMatchObject({
+		script: expect.stringContaining('M83\nM220 S100\nM221 S100\nG1 E-20.000 F60.000')
+	});
+	expect(f.operations[0]).toMatchObject({
+		script: expect.stringMatching(/RESTORE_GCODE_STATE NAME=perilune_swap_[a-f0-9]+$/)
+	});
+	await f.submit(command, owner, id);
+	expect(f.operations).toHaveLength(1);
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			gcodePosition: { ...s.gcodePosition!, x: 101 }
+		}))
+	);
+	await expect.poll(async () => (await f.snapshot()).filamentChange?.stage).toBe('review');
+	expect((await f.snapshot()).filamentChange?.assisted?.parked).toBe(false);
+});
+it('an uncertain assisted extrusion is never retried and invalidates parking', async () => {
+	const f = await fixture();
+	const common = await prepareAssisted(f);
+	await f.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: true });
+	await f.finished();
+	let session = (await f.snapshot()).filamentChange!;
+	await f.submit({
+		type: 'filamentChangePark',
+		sessionId: session.id,
+		expectedStep: session.step,
+		expectedJob: common.expectedJob,
+		confirmed: true
+	});
+	await f.finished();
+	session = (await f.snapshot()).filamentChange!;
+	f.setBehavior('drop');
+	const command = {
+			type: 'filamentChangeFeed' as const,
+			operation: 'purge' as const,
+			sessionId: session.id,
+			expectedStep: session.step,
+			expectedJob: common.expectedJob,
+			confirmed: true
+		},
+		id = crypto.randomUUID();
+	await f.submit(command, owner, id);
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('unknown');
+	expect((await f.snapshot()).filamentChange).toMatchObject({
+		stage: 'review',
+		assisted: { parked: false }
+	});
+	await f.submit(command, owner, id);
+	expect(f.operations).toHaveLength(1);
+});
+
+it('generated assisted parking lifts once before feeding and respects server opt-in', async () => {
+	const f = await fixture();
+	const common = await prepareAssisted(f);
+	const sql = await f.runtime.runPromise(SqlClient),
+		target = createHash('sha256').update('fixture').digest('hex');
+	const rows = await f.runtime.runPromise(
+		sql<{ value: string }>`SELECT value FROM filament_change_settings WHERE target=${target}`
+	);
+	const setup = JSON.parse(rows[0].value);
+	setup.assisted.parking = 'perilune';
+	setup.assisted.parkX = 10;
+	setup.assisted.parkY = 20;
+	await f.runtime.runPromise(
+		sql`UPDATE filament_change_settings SET value=${JSON.stringify(setup)} WHERE target=${target}`
+	);
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			filamentChange: {
+				...s.filamentChange!,
+				assisted: { ...s.filamentChange!.assisted!, customPause: false }
+			}
+		}))
+	);
+	await f.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: true });
+	await f.finished();
+	let session = (await f.snapshot()).filamentChange!;
+	const park = {
+		type: 'filamentChangePark' as const,
+		sessionId: session.id,
+		expectedStep: session.step,
+		expectedJob: common.expectedJob,
+		confirmed: true
+	};
+	await f.submit(park);
+	await f.finished();
+	expect((await f.snapshot()).actions[0].status).toBe('completed');
+	session = (await f.snapshot()).filamentChange!;
+	expect(session.assisted).toMatchObject({ parked: true, position: { x: 10, y: 20, z: 25 } });
+	await f.submit({ ...park, expectedStep: session.step });
+	await f.finished();
+	expect(f.operations).toHaveLength(1);
+	const disabled = await fixture(':memory:', false),
+		disabledCommon = await prepareAssisted(disabled);
+	await disabled.submit({ type: 'filamentChangeBegin', ...disabledCommon, adoptPaused: true });
+	await disabled.finished();
+	const disabledSession = (await disabled.snapshot()).filamentChange!;
+	await expect(
+		disabled.submit({ ...park, sessionId: disabledSession.id, expectedStep: disabledSession.step })
+	).rejects.toThrow('disabled');
 });

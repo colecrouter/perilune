@@ -265,7 +265,7 @@ try {
 	await livePage.unroute(entryScript);
 	await livePage.getByRole('heading', { name: 'Filament changes', exact: true }).waitFor();
 	await livePage.getByLabel('Method', { exact: true }).selectOption('printer');
-	const review = livePage.getByRole('checkbox', { name: /I reviewed these macros/ });
+	const review = livePage.getByRole('checkbox', { name: /I reviewed this plan/ });
 	await review.check();
 	await livePage.getByRole('button', { name: 'Save plan', exact: true }).click();
 	await livePage.getByText(/Setup plan saved/).waitFor();

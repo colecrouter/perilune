@@ -1,17 +1,23 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { filamentChangeActive, type FilamentChangeCommand } from '#lib/domain/filament-change.js';
+	import {
+		filamentChangeActive,
+		type FilamentChangeCommand,
+		type FilamentChangeSettings
+	} from '#lib/domain/filament-change.js';
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
 	import { submitAction } from '../../routes/printer.remote.js';
 	let {
 		snapshot,
 		settingsRevision,
+		settings,
 		setupReason,
 		userId,
 		role
 	}: {
 		snapshot: PrinterSnapshot;
 		settingsRevision: number;
+		settings: FilamentChangeSettings;
 		setupReason: string | null;
 		userId: string;
 		role: string;
@@ -55,7 +61,10 @@
 			!!snapshot.liveRecovery ||
 			!!snapshot.safety?.halted
 	);
-	async function send(type: FilamentChangeCommand['type']) {
+	async function send(
+		type: FilamentChangeCommand['type'],
+		operation?: 'unload' | 'load' | 'purge'
+	) {
 		if (
 			type === 'filamentChangeEnd' && role === 'owner'
 				? !hydrated || pending || !confirmed || snapshot.storage !== 'healthy'
@@ -69,7 +78,23 @@
 		const command: FilamentChangeCommand =
 			type === 'filamentChangeBegin'
 				? { type, ...common, settingsRevision, adoptPaused: snapshot.job.state === 'paused' }
-				: { type, ...common, sessionId: session!.id, expectedStep: session!.step };
+				: operation
+					? {
+							type: 'filamentChangeFeed',
+							operation,
+							...common,
+							sessionId: session!.id,
+							expectedStep: session!.step
+						}
+					: {
+							type: type as Exclude<
+								FilamentChangeCommand['type'],
+								'filamentChangeBegin' | 'filamentChangeFeed'
+							>,
+							...common,
+							sessionId: session!.id,
+							expectedStep: session!.step
+						};
 		try {
 			await submitAction({ id: lastId, command });
 		} catch (cause) {
@@ -105,13 +130,21 @@
 				Review the uncertain command in <a href="/controls">Controls</a> before continuing. No command
 				will be replayed.
 			</p>{/if}
+		{#if settings.mode === 'assisted' && !snapshot.liveFilament}<p>
+				Assisted parking and extrusion are disabled on this server. An owner must enable live
+				filament controls before using these steps.
+			</p>{/if}
 		{#if active || snapshot.job.state === 'printing' || snapshot.job.state === 'paused'}
 			<p>
-				{active
-					? 'Follow your printer macro’s unload/load instructions. Check the filament path and remove purged material before resuming. If heaters timed out, explicitly reheat first. Do not home into a paused print.'
-					: snapshot.job.state === 'paused'
-						? 'This print is already paused. Starting guidance sends no change macro; a pause alone does not identify an M600 event.'
-						: 'The configured change macro may move or unload the printer. Stay with it. Perilune will not add a second park or unload.'}
+				{active && settings.mode === 'assisted'
+					? 'Inspect parking and the filament path before each step. A custom PAUSE may already have retracted filament. Remove purged material before Resume. If heaters timed out, explicitly reheat first. Do not home into a paused print.'
+					: active
+						? 'Follow your printer macro’s unload/load instructions. Check the filament path and remove purged material before resuming. If heaters timed out, explicitly reheat first. Do not home into a paused print.'
+						: snapshot.job.state === 'paused'
+							? 'This print is already paused. Starting guidance sends no change macro; a pause alone does not identify an M600 event.'
+							: settings.mode === 'assisted'
+								? 'Pause the print first. No assisted parking or extrusion is sent until you choose the next step.'
+								: 'The configured change macro may move or unload the printer. Stay with it. Perilune will not add a second park or unload.'}
 			</p>
 			<label class="check"
 				><input
@@ -130,12 +163,38 @@
 						onclick={() => send('filamentChangeBegin')}
 						>{snapshot.job.state === 'paused'
 							? 'Guide this paused print'
-							: 'Run change macro'}</button
+							: settings.mode === 'assisted'
+								? 'Pause for filament change'
+								: 'Run change macro'}</button
 					>
 				{:else if session}
-					{#if owned && session.stage === 'paused'}<button
+					{#if owned && session.stage === 'paused'}
+						{#if session.assisted && !session.assisted.parked}{#if settings.assisted?.parking === 'perilune'}<p
+								>
+									Inspect the current position and clearance. An interrupted park may already have
+									lifted Z. Choosing Lift Z and park XY sends a new relative lift from the current
+									position; it does not replay or finish an earlier move.
+								</p>{/if}
+							<button
+								class="button primary"
+								disabled={blocked || !snapshot.liveFilament}
+								onclick={() => send('filamentChangePark')}
+								>{settings.assisted?.parking === 'printer'
+									? 'Nozzle is clear; verify parking'
+									: 'Lift Z and park XY'}</button
+							>{/if}
+						{#if session.assisted?.parked && settings.assisted}
+							{#each ['unload', 'load', 'purge'] as const as operation}<button
+									class="button secondary"
+									disabled={blocked || !snapshot.liveFilament}
+									onclick={() => send('filamentChangeFeed', operation)}
+									>{operation === 'unload' ? 'Unload' : operation === 'load' ? 'Load' : 'Purge'}
+									{settings.assisted[operation]} mm · {settings.assisted.speed} mm/s</button
+								>{/each}
+						{/if}
+						<button
 							class="button primary"
-							disabled={blocked}
+							disabled={blocked || (!!session.assisted && !session.assisted.parked)}
 							onclick={() => send('filamentChangeResume')}>Resume print</button
 						>{/if}
 					{#if role === 'owner' && (session.stage === 'review' || !owned)}<button

@@ -1,5 +1,5 @@
 import type { PrinterSnapshot } from './printer.js';
-export type NoticeKind = 'complete' | 'failed' | 'printerError';
+export type NoticeKind = 'complete' | 'failed' | 'printerError' | 'paused';
 export interface Notice {
 	id: string;
 	kind: NoticeKind;
@@ -9,6 +9,7 @@ export interface Notice {
 export interface NoticePreferences {
 	allPrints: boolean;
 	sharedErrors: boolean;
+	paused: boolean;
 	complete: boolean;
 	failed: boolean;
 	printerError: boolean;
@@ -21,6 +22,7 @@ export interface NoticePreferences {
 export const defaultNoticePreferences: NoticePreferences = {
 	allPrints: false,
 	sharedErrors: false,
+	paused: false,
 	complete: true,
 	failed: true,
 	printerError: true,
@@ -52,6 +54,18 @@ export function noticeTransition(
 		(previous.job.runId && next.job.runId && previous.job.runId !== next.job.runId)
 	)
 		return;
+	if (
+		previous.job.state === 'printing' &&
+		next.job.state === 'paused' &&
+		previous.job.runId &&
+		next.job.runId === previous.job.runId
+	)
+		return {
+			id: `${next.job.runId}:paused:${crypto.randomUUID()}`,
+			kind: 'paused',
+			title: 'Print paused',
+			body: 'The print is paused and may need your attention. Check the printer instructions in Perilune.'
+		};
 	const kind =
 		next.job.state === 'complete' ? 'complete' : next.job.state === 'error' ? 'failed' : undefined;
 	if (!kind) return;
@@ -69,7 +83,7 @@ export function checkNoticePreferences(value: unknown): NoticePreferences {
 	if (!value || typeof value !== 'object') throw new Error('Choose notification preferences.');
 	const p = value as NoticePreferences;
 	if (
-		!['allPrints', 'sharedErrors'].every(
+		!['allPrints', 'sharedErrors', 'paused'].every(
 			(k) =>
 				p[k as keyof NoticePreferences] === undefined ||
 				typeof p[k as keyof NoticePreferences] === 'boolean'
@@ -87,6 +101,7 @@ export function checkNoticePreferences(value: unknown): NoticePreferences {
 	return {
 		allPrints: p.allPrints ?? false,
 		sharedErrors: p.sharedErrors ?? false,
+		paused: p.paused ?? false,
 		complete: p.complete,
 		failed: p.failed,
 		printerError: p.printerError,

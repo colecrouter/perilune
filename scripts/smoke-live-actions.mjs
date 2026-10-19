@@ -24,6 +24,7 @@ const status = {
 	print_stats: { state: 'complete', filename: 'fixture.gcode', print_duration: 0 },
 	virtual_sdcard: { progress: 0 },
 	pause_resume: { is_paused: false },
+	gcode_move: { position: [100, 100, 20, 100] },
 	'gcode_macro M600': {},
 	extruder: { temperature: 25, target: 0, can_extrude: true },
 	heater_bed: { temperature: 25, target: 0 },
@@ -32,7 +33,13 @@ const status = {
 			'gcode_macro M600': { gcode: 'PAUSE' },
 			pause_resume: {},
 			bltouch: { x_offset: '-24', y_offset: '-13', z_offset: '1.2' },
-			extruder: { min_temp: '0', max_temp: '280' },
+			printer: { kinematics: 'corexy', max_velocity: '300' },
+			extruder: {
+				min_temp: '0',
+				max_temp: '280',
+				nozzle_diameter: '0.4',
+				filament_diameter: '1.75'
+			},
 			heater_bed: { min_temp: '0', max_temp: '130' }
 		},
 		save_config_pending: false,
@@ -166,7 +173,10 @@ protocol.on('connection', (socket) => {
 				}
 
 				const extrusion = script.match(/G1 E(-?[\d.]+) F60/);
-				if (extrusion) status.toolhead.position[3] += Number(extrusion[1]);
+				if (extrusion) {
+					status.toolhead.position[3] += Number(extrusion[1]);
+					status.gcode_move.position[3] += Number(extrusion[1]);
+				}
 				for (const m of script.matchAll(/HEATER=(heater_bed|extruder) TARGET=([\d.]+)/g))
 					status[m[1]].target = Number(m[2]);
 				if (script === 'M84') status.toolhead.homed_axes = '';
@@ -365,7 +375,7 @@ try {
 	publish();
 	await page.goto(base + '/filament');
 	await page.getByLabel('Method', { exact: true }).selectOption('printer');
-	await page.getByRole('checkbox', { name: /I reviewed these macros/ }).check();
+	await page.getByRole('checkbox', { name: /I reviewed this plan/ }).check();
 	await page.getByRole('button', { name: 'Save plan', exact: true }).click();
 	await page.getByText(/Setup plan saved/).waitFor();
 	const attend = () =>
@@ -401,6 +411,41 @@ try {
 		.waitFor();
 	assert.equal(operations.filter((op) => op.script === 'M600\nM400').length, 1);
 	assert.equal(operations.filter((op) => op.script === 'RESUME\nM400').length, 2);
+	// Assisted steps pause independently, require inspected parking, and remain explicit after reload.
+	await page.getByLabel('Method', { exact: true }).selectOption('assisted');
+	await page.getByRole('checkbox', { name: /I reviewed this plan/ }).check();
+	await page.getByRole('button', { name: 'Save plan', exact: true }).click();
+	await page.getByText(/Setup plan saved/).waitFor();
+	await attend();
+	await page.getByRole('button', { name: 'Pause for filament change', exact: true }).click();
+	await page.getByText('Print paused and stationary.', { exact: false }).waitFor();
+	assert.equal(operations.filter((op) => op.script === 'M600\nM400').length, 1);
+	await attend();
+	await page.getByRole('button', { name: 'Nozzle is clear; verify parking', exact: true }).click();
+	await page.getByText('Parking verified.', { exact: false }).waitFor();
+	await page.reload();
+	await page.getByText('Parking verified.', { exact: false }).waitFor();
+	assert.equal(
+		await page.getByRole('checkbox', { name: /I am at the printer/ }).isChecked(),
+		false
+	);
+	await page.setViewportSize({ width: 390, height: 844 });
+	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+	await page.screenshot({ path: 'test-results/filament-assisted-mobile.png', fullPage: true });
+	await attend();
+	await page.getByRole('button', { name: 'Unload 20 mm · 1 mm/s', exact: true }).click();
+	await page.getByText('unload movement verified.', { exact: false }).waitFor();
+	assert.equal(status.gcode_move.position[3], 80);
+	await attend();
+	await page.getByRole('button', { name: 'Load 20 mm · 1 mm/s', exact: true }).click();
+	await page.getByText(/^load movement verified\./).waitFor();
+	assert.equal(status.gcode_move.position[3], 100);
+	await attend();
+	await page.getByRole('button', { name: 'Resume print', exact: true }).click();
+	await page
+		.getByText('The same print is running again. Filament guidance is complete.', { exact: true })
+		.waitFor();
+	await page.setViewportSize({ width: 1280, height: 900 });
 	// Restore the original fixture heater state for the following stop-dialog assertions.
 	status.extruder.target = 0;
 	status.extruder.temperature = 25;
