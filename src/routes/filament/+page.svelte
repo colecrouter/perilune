@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { defaultFilamentChangeSettings } from '#lib/domain/filament-change.js';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import { getPrinter } from '../printer.remote.js';
@@ -30,10 +30,14 @@
 	const reviewed = $derived(reviewedTuple === reviewTuple);
 	let revision = $state(initial.settings.revision);
 	let pending = $state(false);
+	let hydrated = $state(false);
+	onMount(() => {
+		hydrated = true;
+	});
 	let message = $state('');
 	const owner = $derived(data.user?.role === 'owner');
 	async function save() {
-		if (!query) return;
+		if (!query || !hydrated) return;
 		pending = true;
 		message = '';
 		try {
@@ -80,8 +84,10 @@
 					Detection does not certify parking clearance, unload distance, heater behavior or safe
 					resumption.
 				</p>
-				<button class="button secondary" disabled={pending} onclick={() => query?.refresh()}
-					>Refresh discovery</button
+				<button
+					class="button secondary"
+					disabled={!hydrated || pending}
+					onclick={() => query?.refresh()}>Refresh discovery</button
 				>
 			</section>
 			<section class="panel">
@@ -96,7 +102,7 @@
 					<label for="filament-method">Method</label><select
 						id="filament-method"
 						bind:value={mode}
-						disabled={!owner || pending}
+						disabled={!hydrated || !owner || pending}
 					>
 						<option value="disabled">Not enabled</option><option value="printer"
 							>Use my printer’s macros</option
@@ -106,7 +112,7 @@
 						<label for="change-macro">Change macro</label><select
 							id="change-macro"
 							bind:value={changeMacro}
-							disabled={!owner || pending}
+							disabled={!hydrated || !owner || pending}
 						>
 							{#if !setup.capability?.macros.includes(changeMacro)}<option value={changeMacro}
 									>{changeMacro} · unavailable</option
@@ -117,7 +123,7 @@
 						<label for="resume-macro">Resume command</label><select
 							id="resume-macro"
 							bind:value={resumeMacro}
-							disabled={!owner || pending}
+							disabled={!hydrated || !owner || pending}
 						>
 							<option value="RESUME">RESUME</option>
 							{#each (setup.capability?.macros ?? []).filter((name) => name !== 'RESUME') as name}<option
@@ -131,14 +137,16 @@
 								onchange={(event) => {
 									reviewedTuple = event.currentTarget.checked ? reviewTuple : '';
 								}}
-								disabled={!owner || pending}
+								disabled={!hydrated || !owner || pending}
 							/>I reviewed these macros’ parking, unloading and resume behavior. I will attend the
 							first test.</label
 						>
 					{/if}
 					{#if owner}<button
 							class="button primary"
-							disabled={pending || (mode !== 'disabled' && (!reviewed || !setup.ready))}
+							disabled={!hydrated ||
+								pending ||
+								(mode !== 'disabled' && (!reviewed || !setup.ready))}
 							>{pending ? 'Saving…' : 'Save plan'}</button
 						>{:else}<p>An owner can change this setup.</p>{/if}
 				</form>

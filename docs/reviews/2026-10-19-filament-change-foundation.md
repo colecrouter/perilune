@@ -34,3 +34,10 @@ The first run's live-mesh enrollment failure came from a local preview port
 collision, resolved by shutting down/moving the preview fixture. Final action
 smokes passed the added setup regressions. Formatting, Svelte/TypeScript checks,
 unit tests and production build passed; CI separately verifies the Docker image.
+
+A later CI action run exposed selection before hydration on the new setup form.
+All setup controls now remain disabled until event handlers are ready. The smoke
+holds the entry script, checks disabled SSR controls, then releases hydration and
+exercises the normal flow. Service workers are blocked in this interception test
+so they cannot bypass the held request. Configuration still loads through the
+SSR remote query; mounting only enables interaction and performs no data fetch.

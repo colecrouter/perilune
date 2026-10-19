@@ -82,7 +82,11 @@ async function start(port, live = false) {
 		if (i > 100 || child.exitCode !== null) throw new Error(logs);
 		await new Promise((resolve) => setTimeout(resolve, 100));
 	}
-	const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+	// Interception-based assertions need requests to reach Playwright rather than a service worker.
+	const context = await browser.newContext({
+		serviceWorkers: 'block',
+		viewport: { width: 1440, height: 1000 }
+	});
 	await authenticate(context, base, filename);
 	return { base, context };
 }
@@ -232,7 +236,33 @@ try {
 	await publicPage.goto(live.base + '/');
 	assert.ok(!(await publicPage.content()).includes(privateText));
 	// Setup is an SSR-awaited read and an explicit owner mutation, never a printer write.
-	await livePage.goto(live.base + '/filament');
+	// Hold hydration deliberately: SSR controls must not accept changes that
+	// initialization would replace. This also makes the CI race reproducible.
+	let releaseHydration;
+	const hydration = new Promise((resolve) => {
+		releaseHydration = resolve;
+	});
+	const entryScript = '**/_app/immutable/entry/start.*.js';
+	await livePage.route(entryScript, async (route) => {
+		await hydration;
+		await route.continue();
+	});
+	await livePage.goto(live.base + '/filament', { waitUntil: 'commit' });
+	await livePage.getByLabel('Method', { exact: true }).waitFor();
+	assert.equal(
+		await livePage.getByLabel('Method', { exact: true }).isDisabled(),
+		true,
+		'Method stays disabled before hydration'
+	);
+	assert.equal(
+		await livePage.getByRole('button', { name: 'Save plan', exact: true }).isDisabled(),
+		true
+	);
+	releaseHydration();
+	await livePage.waitForFunction(
+		() => document.querySelector('#filament-method')?.disabled === false
+	);
+	await livePage.unroute(entryScript);
 	await livePage.getByRole('heading', { name: 'Filament changes', exact: true }).waitFor();
 	await livePage.getByLabel('Method', { exact: true }).selectOption('printer');
 	const review = livePage.getByRole('checkbox', { name: /I reviewed these macros/ });
