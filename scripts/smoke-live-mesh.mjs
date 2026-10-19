@@ -195,10 +195,15 @@ try {
 	observer.on('pageerror', (e) => errors.push(e.message));
 	await page.goto(base + '/calibration/mesh');
 	await observer.goto(base);
+	await observer.locator('form[data-enhanced="true"]:has(#bed-target)').waitFor();
 	await observer.getByRole('spinbutton', { name: 'Bed target' }).fill('85');
 	const consoleObserver = await context.newPage();
 	consoleObserver.on('pageerror', (e) => errors.push(e.message));
+	const consoleReady = consoleObserver.waitForResponse((response) =>
+		response.url().includes('/getConsole')
+	);
 	await consoleObserver.goto(base + '/console');
+	await consoleReady;
 	await consoleObserver.getByRole('textbox', { name: 'Command', exact: true }).fill('M105');
 	const prepare = async () => {
 		await page.getByRole('button', { name: 'Probe bed…', exact: true }).click();
