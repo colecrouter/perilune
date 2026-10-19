@@ -14,6 +14,10 @@ export interface CameraSource {
 	rotation?: 0 | 90 | 180 | 270;
 	flipHorizontal?: boolean;
 	flipVertical?: boolean;
+	qualities?: Record<string, string>;
+	baseUrl?: string;
+	snapshotUrl?: string;
+	snapshotOnly?: boolean;
 }
 export class CameraConfig extends Context.Service<CameraConfig, CameraSettings>()(
 	'perilune/CameraConfig'
@@ -30,7 +34,9 @@ export class CameraService extends Context.Service<
 	{
 		state: SubscriptionRef.SubscriptionRef<CameraDescriptor>;
 		getDescriptor: Effect.Effect<CameraDescriptor>;
+		setManagedSource: (source: CameraSource | null) => Effect.Effect<void>;
 		updateSource: (source: CameraSource | null) => Effect.Effect<void>;
+		proxyPreview: (source: CameraSource, request: Request) => Effect.Effect<Response>;
 		proxy: (resource: CameraResource, request: Request) => Effect.Effect<Response>;
 	}
 >()('perilune/CameraService') {}
@@ -71,6 +77,8 @@ export const CameraServiceLive = Layer.effect(
 		let source: CameraSource | null = config.source
 			? { source: config.source, name: 'Printer camera' }
 			: null;
+		let managed = false;
+		let discovered: CameraSource | null = source;
 		let generation = 0;
 		const active = new Set<AbortController>();
 		const sessions = new Map<string, { upstream: string; touched: number }>();
@@ -87,12 +95,28 @@ export const CameraServiceLive = Layer.effect(
 			})
 		);
 		const descriptor = (): CameraDescriptor => ({
-			configured: Boolean(base && source),
+			...(source?.snapshotOnly ? { snapshotOnly: true } : {}),
+			...(source?.qualities
+				? {
+						qualities: [
+							{ id: 'original' as const, label: 'Original' },
+							{ id: 'balanced' as const, label: 'Balanced · 640 px' },
+							{ id: 'data-saver' as const, label: 'Data saver · 320 px' }
+						].filter((item) => Boolean(source?.qualities?.[item.id]))
+					}
+				: {}),
+			configured: Boolean((base || source?.baseUrl) && source),
 			generation,
 			name: source?.name ?? 'Printer camera',
-			streamUrl: base && source ? '/api/camera/stream.m3u8' : null,
-			mseUrl: base && source ? '/api/camera/stream.mp4' : null,
-			snapshotUrl: base && source ? '/api/camera/snapshot' : null,
+			streamUrl:
+				!source?.snapshotOnly && (base || source?.baseUrl) && source
+					? '/api/camera/stream.m3u8'
+					: null,
+			mseUrl:
+				!source?.snapshotOnly && (base || source?.baseUrl) && source
+					? '/api/camera/stream.mp4'
+					: null,
+			snapshotUrl: (base || source?.baseUrl) && source ? '/api/camera/snapshot' : null,
 			rotation: source?.rotation ?? 0,
 			flipHorizontal: source?.flipHorizontal ?? false,
 			flipVertical: source?.flipVertical ?? false
@@ -101,31 +125,44 @@ export const CameraServiceLive = Layer.effect(
 		const proxy = async (
 			resource: CameraResource,
 			request: Request,
-			effectSignal: AbortSignal
+			effectSignal: AbortSignal,
+			previewSource?: CameraSource
 		): Promise<Response> => {
-			if (disposed || !base || !source || active.size >= 16) return failure(503);
+			const selected = previewSource ?? source;
+			const targetBase = selected?.baseUrl ? new URL(selected.baseUrl) : base;
+			if (disposed || !targetBase || !selected || active.size >= 16) return failure(503);
+			if (selected.snapshotOnly && resource !== 'snapshot') return failure(404);
 			if (request.headers.get('Sec-Fetch-Site') === 'cross-site') return failure(403);
 			const query = new URL(request.url).searchParams;
-			const allowed = sessionTypes.has(resource)
-				? resource === 'segment.m4s'
-					? ['session', 'n']
-					: ['session']
-				: [];
+			const allowed =
+				resource === 'snapshot'
+					? ['refresh']
+					: sessionTypes.has(resource)
+						? resource === 'segment.m4s'
+							? ['session', 'n']
+							: ['session']
+						: selected.qualities
+							? ['quality']
+							: [];
 			if (
 				[...query.keys()].some((key) => !allowed.includes(key)) ||
 				allowed.some((key) => query.getAll(key).length > 1)
 			)
 				return failure(400);
+			if (query.has('refresh') && !/^\d{1,16}$/.test(query.get('refresh')!)) return failure(400);
+			const quality = query.get('quality') ?? 'original';
+			if (selected.qualities && !sessionTypes.has(resource) && !selected.qualities[quality])
+				return failure(400);
 			const now = Date.now();
 			for (const [key, session] of sessions)
 				if (now - session.touched > 30_000) sessions.delete(key);
-			const upstream = new URL(
+			let upstream = new URL(
 				resource === 'snapshot'
 					? 'api/frame.jpeg'
 					: resource === 'stream.m3u8' || resource === 'stream.mp4'
 						? `api/${resource}`
 						: `api/hls/${resource}`,
-				base
+				targetBase
 			);
 			if (sessionTypes.has(resource)) {
 				const session = sessions.get(query.get('session') ?? '');
@@ -138,10 +175,11 @@ export const CameraServiceLive = Layer.effect(
 					upstream.searchParams.set('n', n);
 				}
 			} else {
-				upstream.searchParams.set('src', source.source);
+				upstream.searchParams.set('src', selected.qualities?.[quality] ?? selected.source);
 				if (resource === 'stream.m3u8' || resource === 'stream.mp4')
 					upstream.searchParams.set('video', 'h264');
 			}
+			if (resource === 'snapshot' && selected.snapshotUrl) upstream = new URL(selected.snapshotUrl);
 			const controller = new AbortController();
 			active.add(controller);
 			const abort = () => controller.abort();
@@ -152,10 +190,19 @@ export const CameraServiceLive = Layer.effect(
 			let transferred = false;
 			let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
 			try {
+				let authorization: string | undefined;
+				if (upstream.username || upstream.password) {
+					authorization = `Basic ${Buffer.from(`${decodeURIComponent(upstream.username)}:${decodeURIComponent(upstream.password)}`).toString('base64')}`;
+					upstream.username = '';
+					upstream.password = '';
+				}
 				const response = await fetch(upstream, {
 					signal: controller.signal,
 					redirect: 'manual',
-					headers: { Accept: resource === 'snapshot' ? 'image/jpeg' : '*/*' }
+					headers: {
+						Accept: resource === 'snapshot' ? 'image/jpeg' : '*/*',
+						...(authorization ? { Authorization: authorization } : {})
+					}
 				});
 				if (!response.ok || !response.body) return failure(response.status === 404 ? 404 : 502);
 				const type = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
@@ -258,7 +305,7 @@ export const CameraServiceLive = Layer.effect(
 				if (!text.startsWith('#EXTM3U')) return failure(502);
 				const rewrite = (uri: string) => {
 					const resolved = new URL(uri, upstream);
-					const expected = new URL('api/hls/', base!);
+					const expected = new URL('api/hls/', targetBase);
 					const filename = resolved.pathname.slice(expected.pathname.length);
 					if (
 						resolved.origin !== expected.origin ||
@@ -316,11 +363,23 @@ export const CameraServiceLive = Layer.effect(
 		};
 		return {
 			state,
+			setManagedSource: (next) =>
+				Effect.gen(function* () {
+					managed = Boolean(next);
+					source =
+						next ??
+						(config.source ? { source: config.source, name: 'Printer camera' } : discovered);
+					generation++;
+					abortAll();
+					yield* SubscriptionRef.set(state, descriptor());
+				}),
 			getDescriptor: SubscriptionRef.get(state),
 			updateSource: (next) =>
 				Effect.gen(function* () {
 					if (next && !validSource(next.source))
 						throw new Error('Camera source must be a registered go2rtc stream name.');
+					discovered = next;
+					if (managed) return;
 					const selected = config.source
 						? { ...next, source: config.source, name: next?.name ?? 'Printer camera' }
 						: next;
@@ -331,6 +390,8 @@ export const CameraServiceLive = Layer.effect(
 						yield* SubscriptionRef.set(state, descriptor());
 					}
 				}),
+			proxyPreview: (source, request) =>
+				Effect.promise((signal) => proxy('snapshot', request, signal, source)),
 			proxy: (resource, request) => Effect.promise((signal) => proxy(resource, request, signal))
 		};
 	})

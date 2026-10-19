@@ -150,37 +150,30 @@ Access protection does not authenticate this connection. Perilune authenticates 
 
 ## Camera gateway
 
-Perilune can use an existing go2rtc instance without exposing camera addresses to
-browsers. Set its backend-reachable HTTP API base:
+For new installations, the packaged media companion needs no NVR:
 
 ```sh
-PERILUNE_MOONRAKER_URL=ws://printer.local:7125/websocket \
-PERILUNE_CAMERA_BASE_URL=http://go2rtc.local:1984/ pnpm dev
+docker compose -f compose.yaml -f compose.camera.yaml up -d
 ```
 
-The backend discovers the first enabled Moonraker webcam with a registered go2rtc
-`src` name. It refreshes camera settings on change notifications and periodic
-checks. Alternatively set `PERILUNE_CAMERA_SOURCE=printer_camera` to select a
-registered stream explicitly. Dynamic RTSP URLs and FFmpeg directives are rejected;
-configure those sources in go2rtc. Remove the base URL to disable media.
+Owners can open **Camera settings** from the overview, select an imported Moonraker
+camera or enter an endpoint, test, then save. Tests leave the active camera intact.
+See [camera setup](docs/camera-setup.md) for installation, USB/CSI capture, relative
+URLs, quality choices and limits.
 
-Use a browser-compatible H.264 stream. Perilune selects video only and proxies
-fragmented MP4 and JPEG snapshots under fixed same-origin URLs. MediaSource-capable
-browsers receive a continuous MP4 stream with a small live buffer; browsers without
-MediaSource use native HLS when supported.
-No transcoding is added by Perilune. go2rtc handles the existing camera connection,
-remuxing, and snapshot generation. Unsupported snapshots fail independently of video.
+Existing external go2rtc installations remain supported through
+`PERILUNE_CAMERA_BASE_URL` and optional `PERILUNE_CAMERA_SOURCE`. The managed
+companion uses `PERILUNE_CAMERA_COMPANION_URL`; saving a tested camera takes
+precedence, and disconnecting restores the existing source. Its private control API
+must remain inaccessible to browsers and the internet.
 
-Playback pauses when the tab is hidden or when you choose **Pause view**. Connection
-failures retry with backoff. **Capture image** downloads a fresh source JPEG; it is
-not saved on the server or transformed by display rotation/flips. Camera settings
-changes invalidate old media sessions and refresh the player. Media responses use
-`no-store`, and clients receive no upstream addresses or stream names.
-
-Pass these variables to the Node process or through Compose's `.env`/shell settings.
-The go2rtc address must be reachable from inside the container; container localhost
-refers to the container itself. Use Perilune’s built-in login with an HTTPS origin. Native HLS fallback has more buffering latency; WebRTC and
-additional codecs are future work.
+Authenticated same-origin MP4/native HLS delivery keeps endpoints and credentials
+server-side. The companion remuxes encoded H.264 and converts MJPEG/H.265 when
+needed. Useful lower resolutions are remembered per device. JPEG-only sources show
+still images with manual refresh. Video pauses when hidden and reconnects with
+backoff. Capture downloads a fresh JPEG without server retention or display
+rotation/flips. Media uses `no-store`. Native HLS adds buffering latency; actual
+Safari device acceptance remains pending.
 
 ## Verify
 
@@ -205,7 +198,7 @@ See [architecture](docs/architecture.md), [visual direction](docs/design/README.
 - Live remote queries backed by process-owned services.
 - Mobile-friendly controls, guided calibration, and explained printer configuration.
 - Per-device push notifications and installation are available in Account.
-- Broader camera protocols and layout preferences remain future milestones.
+- Representative camera hardware acceptance and layout preferences remain future work.
 
 Licensed under GPL-3.0-only. See [LICENSE](LICENSE).
 

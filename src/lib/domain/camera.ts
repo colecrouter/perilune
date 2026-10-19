@@ -1,5 +1,7 @@
 /** Browser-visible camera state contains app URLs only, never upstream addresses. */
 export interface CameraDescriptor {
+	qualities?: Array<{ id: 'original' | 'balanced' | 'data-saver'; label: string }>;
+	snapshotOnly?: boolean;
 	configured: boolean;
 	generation: number;
 	name: string;

@@ -4,6 +4,10 @@ import * as Migrator from 'effect/sql/Migrator';
 
 export const migrate = Migrator.make({})({
 	loader: Migrator.fromRecord({
+		'022_camera_settings': Effect.gen(function* () {
+			const sql = yield* SqlClient;
+			yield* sql`CREATE TABLE camera_settings (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, value TEXT)`;
+		}),
 		'021_job_attribution': Effect.gen(function* () {
 			const sql = yield* SqlClient;
 			yield* sql`CREATE TABLE job_attribution(run_id TEXT PRIMARY KEY,action_id TEXT NOT NULL UNIQUE,owner TEXT NOT NULL,history_key TEXT UNIQUE,created INTEGER NOT NULL)`;

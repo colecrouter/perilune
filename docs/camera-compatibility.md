@@ -7,17 +7,17 @@ Perilune owns authenticated browser delivery and configuration; a packaged media
 companion handles ingestion, remuxing and bounded on-demand conversion. Existing
 external go2rtc installations remain supported.
 
-| Source                         | Intended setup                                                               | Verification status                                            |
-| ------------------------------ | ---------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Moonraker webcam configuration | Import settings; resolve relative paths using an explicit printer web origin | Integration pending                                            |
-| ustreamer / mjpg-streamer      | HTTP MJPEG and JPEG snapshots                                                | Synthetic HTTP MJPEG conversion verified                       |
-| camera-streamer                | Prefer available encoded HTTP or optional RTSP output                        | Adapter pending                                                |
-| IP camera H.264                | RTSP ingestion and remux                                                     | Synthetic encoded stream verified; direct RTSP fixture pending |
-| IP camera H.265                | Convert to browser-compatible H.264                                          | Synthetic RTSP HEVC conversion verified                        |
-| USB on Perilune host           | Optional Linux V4L2 device access and format selection                       | Device acceptance pending                                      |
-| USB/CSI on remote printer      | Reuse capture daemon on that host                                            | Setup documentation and device acceptance pending              |
-| JPEG-only endpoint             | Clearly identified still-image fallback                                      | Integration pending                                            |
-| External go2rtc / Frigate      | Existing authenticated proxy integration                                     | Previously shipped H.264 path                                  |
+| Source                         | Intended setup                                                               | Verification status                         |
+| ------------------------------ | ---------------------------------------------------------------------------- | ------------------------------------------- |
+| Moonraker webcam configuration | Import settings; resolve relative paths using an explicit printer web origin | Implemented; synthetic tests                |
+| ustreamer / mjpg-streamer      | HTTP MJPEG and JPEG snapshots                                                | Synthetic HTTP MJPEG conversion verified    |
+| camera-streamer                | Prefer available encoded HTTP or optional RTSP output                        | Encoded HTTP remux probe verified           |
+| IP camera H.264                | RTSP ingestion and remux                                                     | Synthetic RTSP H.264 verified               |
+| IP camera H.265                | Convert to browser-compatible H.264                                          | Synthetic RTSP HEVC conversion verified     |
+| USB on Perilune host           | Host capture daemon to HTTP/RTSP; no app device mapping                      | Device acceptance pending                   |
+| USB/CSI on remote printer      | Reuse capture daemon on that host                                            | Setup documented; device acceptance pending |
+| JPEG-only endpoint             | Clearly identified still-image fallback                                      | Implemented; synthetic tests                |
+| External go2rtc / Frigate      | Existing authenticated proxy integration                                     | Previously shipped H.264 path               |
 
 This is a source/protocol matrix, not a numeric camera-market coverage claim.
 Proprietary cloud-only cameras and vendor-specific integrations are outside the
@@ -67,6 +67,7 @@ Verified locally on Linux ARM64:
 - HTTP MJPEG ingestion and H.264 output.
 - RTSP MJPEG ingestion and resized H.264 output.
 - Native H.264 output without an additional conversion process.
+- Encoded HTTP H.264 ingestion through a copy/remux adapter.
 - RTSP H.265 ingestion and H.264 output.
 - Two viewers share one output producer and conversion process.
 - Closing one viewer retains processing for the remaining viewer.
@@ -77,18 +78,24 @@ media-engine behavior, not finished application integration or low-power-device
 performance. Startup/idle bounds in the probe are test deadlines, not product
 service guarantees.
 
-## Remaining implementation and acceptance
+## Application integration and remaining acceptance
 
-1. Managed companion packaging and restart reconciliation; private persisted
-   camera settings and validated source adapters.
-2. Owner setup/test/preview/save flow and discovered-source selection.
-3. Quality selection, remembered per device, actual output details, compatible
-   fallback and errors; independent snapshots and current orientation controls.
-4. HTTP snapshot, malformed source, timeout, source change, restart, simultaneous
-   quality, session revocation and resource-exhaustion tests.
-5. Browser and physical acceptance: desktop decode, actual Safari/native HLS,
-   phone behavior, x86/ARM deployment, and representative USB/CSI devices.
-6. Independent review before merging lifecycle/configuration implementation.
+The optional Compose companion, private persisted settings, restart reconciliation,
+owner test/preview/save, discovered-source adapters, device-local quality choice,
+compatible fallback and JPEG-only manual refresh are implemented. See
+[camera setup](camera-setup.md) for installation and capture-host arrangements.
+
+The real-media production smoke verifies HTTP MJPEG conversion without an NVR,
+preview/save, edits during a pending save, decoded H.264, useful resolutions,
+quality persistence, app and companion restart, idle shutdown, JPEG refresh,
+mobile overflow and owner/CSRF guards. Unit/browser suites cover malformed inputs,
+bounded tests/probes, stale revisions, preview ownership, session cancellation,
+legacy source restoration and native-HLS selection behavior.
+
+Actual Safari/native HLS, phones, low-power performance and representative USB/CSI
+hardware require coordinated device acceptance. Synthetic fixtures establish
+protocol behavior, not a universal camera compatibility or performance guarantee.
+Direct USB driver provisioning and vendor cloud integrations are not implemented.
 
 ## Primary references
 

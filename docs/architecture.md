@@ -103,9 +103,9 @@ display, with swapped portrait dimensions for quarter turns and untransformed UI
 controls. Source JPEG downloads use a separate bounded endpoint and can fail without
 interrupting video. No captures are persisted.
 
-Native HLS buffering latency remains a tradeoff. Direct camera protocols, WebRTC, automatic
-codec fallback/transcoding, multiple cameras, and notification capture retention
-are future work. The synthetic production fixture verifies H.264 decode, two
+Native HLS buffering latency remains a tradeoff. WebRTC, multiple cameras and notification capture retention remain future work.
+The optional managed companion described below adds direct protocol ingestion
+and compatible H.264 conversion. The synthetic production fixture verifies H.264 decode, two
 viewers, source changes, old-session invalidation, snapshots, orientation, narrow
 mobile layouts, clean EOF/reconnect, and preserved drafts. Real-camera validation does not commit private
 footage. Safari 16.4 device verification remains outstanding.
@@ -137,13 +137,14 @@ sections and contextual entry/notification guidance. See
 [beta-ux-readiness.md](beta-ux-readiness.md) for the accepted scope and verification
 criteria. The backend command and authentication contracts remain unchanged.
 
-Camera compatibility and quality is the next implementation milestone. The
-accepted source matrix, managed companion direction, isolated lifecycle probe,
-and remaining acceptance are recorded in [camera-compatibility.md](camera-compatibility.md).
-The probe does not change the deployed camera gateway.
+Camera compatibility and quality now includes an optional packaged companion,
+owner test/preview/save, private persisted settings, restart reconciliation,
+HTTP/RTSP adapters, JPEG-only images and device-local quality selection. See
+[camera setup](camera-setup.md) and the evidence/acceptance matrix in
+[camera-compatibility.md](camera-compatibility.md).
 
-Outstanding work includes coordinated hardware/platform acceptance, camera
-quality/codec processing, configurable overview layouts, race-safe rolling
+Outstanding work includes coordinated camera hardware/platform acceptance,
+configurable overview layouts, race-safe rolling
 sessions, and optional email recovery. These are tracked separately from the beta
 UX milestone; current issue status is authoritative for individual follow-ups.
 

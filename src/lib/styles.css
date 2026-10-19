@@ -885,11 +885,13 @@ progress::-moz-progress-bar {
 .camera-video.portrait {
 	aspect-ratio: 9 / 16;
 }
-.camera-video.portrait video {
+.camera-video.portrait video,
+.camera-video.portrait img {
 	width: 177.7778%;
 	height: 56.25%;
 }
-.camera-video video {
+.camera-video video,
+.camera-video img {
 	position: absolute;
 	left: 50%;
 	top: 50%;

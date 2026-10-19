@@ -7,9 +7,13 @@ export async function playCamera(
 ): Promise<void> {
 	const response = await fetch(url, { signal, cache: 'no-store' });
 	const type = response.headers.get('content-type') ?? '';
-	if (!response.ok || !response.body || !MediaSource.isTypeSupported(type)) {
+	if (!response.ok || !response.body) {
 		await response.body?.cancel().catch(() => {});
-		throw new Error('Camera video unavailable or unsupported');
+		throw new Error('Camera video unavailable');
+	}
+	if (!MediaSource.isTypeSupported(type)) {
+		await response.body.cancel().catch(() => {});
+		throw new Error('Camera format unsupported');
 	}
 	const media = new MediaSource();
 	const objectUrl = URL.createObjectURL(media);
