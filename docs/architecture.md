@@ -77,11 +77,12 @@ cooldown choices. Bits UI supplies the dialog and typography toggle primitives.
 ## Camera gateway
 
 A process-scoped CameraService maintains the public descriptor, generation,
-allowlisted media sessions, and in-flight request controllers. Configure a trusted
-HTTP(S) go2rtc base server-side. Select a registered source explicitly, or discover
-it from the first enabled Moonraker webcam's `src` query. Dynamic source URLs and
-FFmpeg directives are rejected. Discovery runs on backend heartbeat/change
-notifications and never exposes raw webcam URLs to the browser.
+allowlisted media sessions, and in-flight request controllers. CameraSetupService
+owns the single persisted source through owner test/preview/save. Moonraker webcam
+entries are explicit import candidates; discovery changes never replace a saved
+selection. Disconnect clears the selection and invalidates media sessions. The
+private companion base is configured with `PERILUNE_CAMERA_COMPANION_URL`; the old
+environment-selected relay path and automatic fallback have been removed.
 
 The gateway proxies continuous H.264-only fMP4 to MediaSource browsers, and requests
 go2rtc HLS/fMP4 for native-HLS fallback. It rewrites playlist and init/segment references
@@ -91,8 +92,8 @@ resources and parameter shapes. Requests are bounded by deadlines, response size
 session count, and concurrency; caller abort, Effect interruption, source changes,
 and runtime disposal cancel upstream work. All media responses are `no-store`.
 
-H.264 passes through go2rtc's remuxer; audio is excluded and Perilune starts no
-transcoder. Continuous HTTP response bodies retain upstream controllers until
+Compatible H.264 passes through the companion's remuxer; audio is excluded.
+The companion starts bounded on-demand conversion when required by the saved profile. Continuous HTTP response bodies retain upstream controllers until
 cancelled or ended, respect backpressure, cap individual chunks, and use startup
 and renewable read-inactivity deadlines. MediaSource playback appends bytes
 sequentially and prunes old buffers, keeping playback near the live edge. Native

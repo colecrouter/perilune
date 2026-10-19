@@ -5,7 +5,7 @@
 Users can connect camera sources without Frigate or a pre-existing go2rtc server.
 Perilune owns authenticated browser delivery and configuration; a packaged media
 companion handles ingestion, remuxing and bounded on-demand conversion. Existing
-external go2rtc installations remain supported.
+NVR/go2rtc streams can be entered through the same network-source setup.
 
 | Source                         | Intended setup                                                               | Verification status                         |
 | ------------------------------ | ---------------------------------------------------------------------------- | ------------------------------------------- |
@@ -17,7 +17,7 @@ external go2rtc installations remain supported.
 | USB on Perilune host           | Optional single-device mapping and detected V4L2 profiles                    | Device acceptance pending                   |
 | USB/CSI on remote printer      | Reuse capture daemon on that host                                            | Setup documented; device acceptance pending |
 | JPEG-only endpoint             | Clearly identified still-image fallback                                      | Implemented; synthetic tests                |
-| External go2rtc / Frigate      | Existing authenticated proxy integration                                     | Previously shipped H.264 path               |
+| External go2rtc / Frigate      | Network source through the same managed setup                                | Previously shipped H.264 path               |
 
 This is a source/protocol matrix, not a numeric camera-market coverage claim.
 Proprietary cloud-only cameras and vendor-specific integrations are outside the
@@ -90,7 +90,7 @@ preview/save, edits during a pending save, decoded H.264, useful resolutions,
 quality persistence, app and companion restart, idle shutdown, JPEG refresh,
 mobile overflow and owner/CSRF guards. Unit/browser suites cover malformed inputs,
 bounded tests/probes, stale revisions, preview ownership, session cancellation,
-legacy source restoration and native-HLS selection behavior.
+disconnect without source restoration and native-HLS selection behavior.
 
 Actual Safari/native HLS, phones, low-power performance and representative USB/CSI
 hardware require coordinated device acceptance. Synthetic fixtures establish

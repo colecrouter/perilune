@@ -214,8 +214,7 @@ const app = spawn(process.execPath, ['scripts/server.mjs'], {
 		PERILUNE_LIVE_MESH: 'false',
 		PERILUNE_LIVE_CONFIGURATION: 'false',
 		PERILUNE_MOONRAKER_API_KEY: '',
-		PERILUNE_CAMERA_BASE_URL: '',
-		PERILUNE_CAMERA_SOURCE: ''
+		PERILUNE_CAMERA_COMPANION_URL: ''
 	},
 	stdio: ['ignore', 'pipe', 'pipe']
 });

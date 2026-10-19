@@ -123,7 +123,7 @@
 				}
 				message =
 					operation === 'reset'
-						? 'Managed camera disconnected. The previous connection is restored, if configured.'
+						? 'Camera disconnected.'
 						: 'Camera saved. It is ready on the overview.';
 				try {
 					await settings.refresh();
@@ -168,16 +168,14 @@
 				<h2>Current camera</h2>
 				<p>{setup.current.configured ? setup.current.name : 'No camera connected'}</p>
 				<p class="muted">
-					{status.name
+					{setup.current.configured
 						? 'Connected through Perilune’s camera service.'
-						: setup.current.configured
-							? 'Connected through an external camera service. Adding a camera below replaces this selection after you test and save.'
-							: 'Choose a source below to connect your first camera.'}
+						: 'Choose a source below to connect your first camera.'}
 				</p>
 				{#if status.message}<p role="status">{status.message}</p>{/if}<a href="/">Open overview</a
 				>{#if status.name}<details class="disconnect">
 						<summary>Disconnect this camera</summary>
-						<p>This restores the previous external camera connection, if configured.</p>
+						<p>This stops camera playback. You can connect a camera again below.</p>
 						<button
 							class="button secondary"
 							disabled={Boolean(pending)}
@@ -193,7 +191,7 @@
 					</p>
 					<p>
 						For Docker installations, start with both <code>compose.yaml</code> and
-						<code>compose.camera.yaml</code>. Existing external camera connections continue to work.
+						<code>compose.camera.yaml</code>. Camera sources are tested and saved here.
 					</p>
 					<a
 						href="https://github.com/colecrouter/perilune/blob/main/docs/camera-compatibility.md"

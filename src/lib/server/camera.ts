@@ -4,7 +4,6 @@ import type { CameraDescriptor } from '#lib/domain/camera.js';
 
 export interface CameraSettings {
 	baseUrl: string;
-	source?: string;
 	requestTimeoutMs?: number;
 	maxBytes?: number;
 }
@@ -34,8 +33,7 @@ export class CameraService extends Context.Service<
 	{
 		state: SubscriptionRef.SubscriptionRef<CameraDescriptor>;
 		getDescriptor: Effect.Effect<CameraDescriptor>;
-		setManagedSource: (source: CameraSource | null) => Effect.Effect<void>;
-		updateSource: (source: CameraSource | null) => Effect.Effect<void>;
+		setSource: (source: CameraSource | null) => Effect.Effect<void>;
 		proxyPreview: (source: CameraSource, request: Request) => Effect.Effect<Response>;
 		proxy: (resource: CameraResource, request: Request) => Effect.Effect<Response>;
 	}
@@ -72,13 +70,7 @@ export const CameraServiceLive = Layer.effect(
 				);
 		}
 		const validSource = (value: string) => /^[a-zA-Z0-9_.-]{1,128}$/.test(value);
-		if (config.source && !validSource(config.source))
-			throw new Error('Camera source must be a registered go2rtc stream name.');
-		let source: CameraSource | null = config.source
-			? { source: config.source, name: 'Printer camera' }
-			: null;
-		let managed = false;
-		let discovered: CameraSource | null = source;
+		let source: CameraSource | null = null;
 		let generation = 0;
 		const active = new Set<AbortController>();
 		const sessions = new Map<string, { upstream: string; touched: number }>();
@@ -363,33 +355,16 @@ export const CameraServiceLive = Layer.effect(
 		};
 		return {
 			state,
-			setManagedSource: (next) =>
+			setSource: (next) =>
 				Effect.gen(function* () {
-					managed = Boolean(next);
-					source =
-						next ??
-						(config.source ? { source: config.source, name: 'Printer camera' } : discovered);
+					if (next && !validSource(next.source))
+						throw new Error('Camera source must be a registered go2rtc stream name.');
+					source = next;
 					generation++;
 					abortAll();
 					yield* SubscriptionRef.set(state, descriptor());
 				}),
 			getDescriptor: SubscriptionRef.get(state),
-			updateSource: (next) =>
-				Effect.gen(function* () {
-					if (next && !validSource(next.source))
-						throw new Error('Camera source must be a registered go2rtc stream name.');
-					discovered = next;
-					if (managed) return;
-					const selected = config.source
-						? { ...next, source: config.source, name: next?.name ?? 'Printer camera' }
-						: next;
-					if (JSON.stringify(source) !== JSON.stringify(selected)) {
-						source = selected;
-						generation++;
-						abortAll();
-						yield* SubscriptionRef.set(state, descriptor());
-					}
-				}),
 			proxyPreview: (source, request) =>
 				Effect.promise((signal) => proxy('snapshot', request, signal, source)),
 			proxy: (resource, request) => Effect.promise((signal) => proxy(resource, request, signal))

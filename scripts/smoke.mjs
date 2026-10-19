@@ -20,8 +20,7 @@ const server = process.env.PERILUNE_SMOKE_URL
 				PERILUNE_DATABASE: join(directory, 'state.sqlite'),
 				PERILUNE_MOONRAKER_URL: '',
 				PERILUNE_MOONRAKER_API_KEY: '',
-				PERILUNE_CAMERA_BASE_URL: '',
-				PERILUNE_CAMERA_SOURCE: ''
+				PERILUNE_CAMERA_COMPANION_URL: ''
 			},
 			stdio: ['ignore', 'pipe', 'pipe']
 		});

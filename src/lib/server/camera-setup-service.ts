@@ -111,7 +111,7 @@ export const CameraSetupServiceLive = Layer.effect(
 			const current = saved;
 			if (current.input.kind === 'snapshot') {
 				connected = true;
-				yield* camera.setManagedSource(source(current));
+				yield* camera.setSource(source(current));
 				return;
 			}
 			const result = yield* attempt(async () => {
@@ -122,10 +122,10 @@ export const CameraSetupServiceLive = Layer.effect(
 				return;
 			}
 			connected = true;
-			yield* camera.setManagedSource(source(current));
+			yield* camera.setSource(source(current));
 		});
 		// Re-register after startup; retries remain process-scoped and never own a browser lifetime.
-		if (saved && client) yield* camera.setManagedSource(source(saved));
+		if (saved && client) yield* camera.setSource(source(saved));
 		const recover = Effect.gen(function* () {
 			if (client && saved && connected && saved.input.kind !== 'snapshot') {
 				const alive = yield* attempt(() => client.has(saved!.original)).pipe(
@@ -176,7 +176,7 @@ export const CameraSetupServiceLive = Layer.effect(
 					saved = null;
 					revision++;
 					connected = false;
-					yield* camera.setManagedSource(null);
+					yield* camera.setSource(null);
 					if (client && previous)
 						yield* attempt(() => client.remove(previous.profiles)).pipe(Effect.ignore);
 					return status();
@@ -326,7 +326,7 @@ export const CameraSetupServiceLive = Layer.effect(
 					revision++;
 					connected = true;
 					tested.delete(token);
-					yield* camera.setManagedSource(source(next));
+					yield* camera.setSource(source(next));
 					if (client && previous)
 						yield* attempt(() => client.remove(previous.profiles)).pipe(Effect.ignore);
 					return status();

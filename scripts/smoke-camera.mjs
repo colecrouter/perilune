@@ -14,6 +14,7 @@ const files = new Map();
 for (const name of ['init.mp4', 'segment0.m4s', 'segment1.m4s', 'segment2.m4s', 'snapshot.jpg'])
 	files.set(name, await readFile(new URL(`fixtures/camera/${name}`, import.meta.url)));
 let source = 'fixture_camera';
+const definitions = new Map();
 let rotation = 0;
 let sequence = 0;
 let requests = 0;
@@ -21,6 +22,15 @@ const activeStreams = new Set();
 const requestedSources = [];
 const media = createServer((request, response) => {
 	const url = new URL(request.url, 'http://fixture.invalid');
+	if (url.pathname === '/api/streams') {
+		if (request.method === 'PATCH')
+			definitions.set(url.searchParams.get('name'), url.searchParams.get('src'));
+		if (request.method === 'DELETE') definitions.delete(url.searchParams.get('src'));
+		response.statusCode =
+			request.method === 'GET' && !definitions.has(url.searchParams.get('src')) ? 404 : 200;
+		response.end('{}');
+		return;
+	}
 	requests++;
 	response.setHeader('X-Private-Upstream', 'fixture-secret-header');
 	const send = (type, body) => {
@@ -107,8 +117,7 @@ const app = spawn(process.execPath, ['scripts/server.mjs'], {
 		PERILUNE_ORIGIN: base,
 		PERILUNE_DATABASE: join(directory, 'state.sqlite'),
 		PERILUNE_MOONRAKER_URL: `ws://127.0.0.1:${protocol.address().port}/websocket`,
-		PERILUNE_CAMERA_BASE_URL: `http://127.0.0.1:${media.address().port}/`,
-		PERILUNE_CAMERA_SOURCE: '',
+		PERILUNE_CAMERA_COMPANION_URL: `http://127.0.0.1:${media.address().port}/`,
 		PERILUNE_MOONRAKER_API_KEY: ''
 	},
 	stdio: ['ignore', 'pipe', 'pipe']
@@ -138,13 +147,38 @@ try {
 		colorScheme: 'light'
 	});
 	await authenticate(context, base, join(directory, 'state.sqlite'));
+	const selectCamera = async () => {
+		const streamUrl = `http://capture.example.invalid/${source}`;
+		const testResponse = await context.request.post(base + '/api/camera/setup', {
+			headers: { Origin: base },
+			data: {
+				operation: 'test',
+				input: { kind: 'network', name: 'Fixture camera', streamUrl, rotation }
+			}
+		});
+		assert.equal(testResponse.status(), 200);
+		const test = await testResponse.json();
+		const save = await context.request.post(base + '/api/camera/setup', {
+			headers: { Origin: base },
+			data: { operation: 'save', token: test.token }
+		});
+		assert.equal(save.status(), 200);
+		return [...definitions].find(([, value]) => value === streamUrl)[0];
+	};
+	assert.equal(
+		(await (await context.request.get(base + '/api/camera/setup')).json()).current.configured,
+		false,
+		'Moonraker discovery cannot select a camera automatically'
+	);
+	await selectCamera();
+
 	const page = await context.newPage();
 	page.setDefaultTimeout(15_000);
 	const errors = [];
 	const browserRequests = [];
 	page.on('pageerror', (error) => errors.push(error.message));
 	page.on('request', (request) => browserRequests.push(request.url()));
-	await page.route('**/api/camera/stream.mp4', async (route) => {
+	await page.route('**/api/camera/stream.mp4*', async (route) => {
 		await initialMediaGate.promise;
 		await route.continue();
 	});
@@ -198,6 +232,7 @@ try {
 	source = 'replacement_camera';
 	rotation = 90;
 	changeSource();
+	const replacementId = await selectCamera();
 	await page.waitForFunction(() =>
 		document.querySelector('.camera-video')?.classList.contains('portrait')
 	);
@@ -206,10 +241,7 @@ try {
 			document.querySelector('video')?.videoWidth === 320 &&
 			document.querySelector('video').currentTime > 0
 	);
-	assert.ok(
-		requestedSources.includes('replacement_camera'),
-		'Configuration change reaches gateway'
-	);
+	assert.ok(requestedSources.includes(replacementId), 'Configuration change reaches gateway');
 	assert.equal(
 		(await context.request.get(new URL(oldPlaylist, base).href)).status(),
 		404,
@@ -233,6 +265,7 @@ try {
 	);
 	rotation = 0;
 	changeSource();
+	await selectCamera();
 	await page.waitForFunction(
 		() => !document.querySelector('.camera-video')?.classList.contains('portrait')
 	);

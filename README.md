@@ -161,11 +161,10 @@ camera or enter an endpoint, test, then save. Tests leave the active camera inta
 See [camera setup](docs/camera-setup.md) for installation, USB/CSI capture, relative
 URLs, quality choices and limits.
 
-Existing external go2rtc installations remain supported through
-`PERILUNE_CAMERA_BASE_URL` and optional `PERILUNE_CAMERA_SOURCE`. The managed
-companion uses `PERILUNE_CAMERA_COMPANION_URL`; saving a tested camera takes
-precedence, and disconnecting restores the existing source. Its private control API
-must remain inaccessible to browsers and the internet.
+Camera selection uses one owner test/preview/save workflow. The private companion
+uses `PERILUNE_CAMERA_COMPANION_URL` and must remain inaccessible to browsers and
+the internet. Disconnecting clears the saved camera. An existing NVR/go2rtc can
+still supply a network stream, entered through the same setup flow.
 
 Authenticated same-origin MP4/native HLS delivery keeps endpoints and credentials
 server-side. The companion remuxes encoded H.264 and converts MJPEG/H.265 when

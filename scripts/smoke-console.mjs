@@ -53,8 +53,7 @@ async function start(port, live = false) {
 			PERILUNE_DATABASE: filename,
 			PERILUNE_MOONRAKER_URL: live ? `ws://127.0.0.1:${upstream.address().port}/websocket` : '',
 			PERILUNE_MOONRAKER_API_KEY: '',
-			PERILUNE_CAMERA_BASE_URL: '',
-			PERILUNE_CAMERA_SOURCE: '',
+			PERILUNE_CAMERA_COMPANION_URL: '',
 			PERILUNE_LIVE_MESH: 'false',
 			PERILUNE_LIVE_CONFIGURATION: 'false'
 		},
