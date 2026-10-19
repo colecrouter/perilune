@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import { defaultFilamentChangeSettings } from '#lib/domain/filament-change.js';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import { getPrinter } from '../printer.remote.js';
 	import { getFilamentSetup, saveFilamentSetup } from './filament.remote.js';
@@ -6,9 +8,18 @@
 	const printer = getPrinter();
 	const initialPrinter = await printer;
 	const snapshot = $derived(printer.current ?? initialPrinter);
-	const query = getFilamentSetup();
-	const initial = await query;
-	const setup = $derived(query.current ?? initial);
+	const allowed = $derived(data.user?.role === 'owner' || data.user?.role === 'operator');
+	const query = untrack(() => (allowed ? getFilamentSetup() : null));
+	const initial = query
+		? await query
+		: {
+				settings: defaultFilamentChangeSettings,
+				capability: null,
+				ready: false,
+				mode: initialPrinter.mode,
+				reason: null
+			};
+	const setup = $derived(query?.current ?? initial);
 	let mode = $state(initial.settings.mode);
 	let changeMacro = $state(initial.settings.changeMacro);
 	let resumeMacro = $state(initial.settings.resumeMacro);
@@ -22,6 +33,7 @@
 	let message = $state('');
 	const owner = $derived(data.user?.role === 'owner');
 	async function save() {
+		if (!query) return;
 		pending = true;
 		message = '';
 		try {
@@ -51,98 +63,103 @@
 			<h1>Filament changes</h1>
 			<p>Use your printer’s existing change workflow without adding duplicate movements.</p>
 		</header>
-		<section class="panel">
-			<h2>Printer compatibility</h2>
-			{#if setup.capability}
-				{#each setup.capability.findings as finding}<p>{finding}</p>{/each}
-			{:else}<p>
-					{setup.mode === 'simulator'
-						? 'The simulator has no physical macro configuration. Connect a printer to review compatibility.'
-						: 'Waiting for fresh capability discovery. Your saved setup is retained.'}
-				</p>{/if}
-			<p>
-				Detection does not certify parking clearance, unload distance, heater behavior or safe
-				resumption.
-			</p>
-			<button class="button secondary" disabled={pending} onclick={() => query.refresh()}
-				>Refresh discovery</button
-			>
-		</section>
-		<section class="panel">
-			<h2>Change method</h2>
-			<p>This saves a setup plan. It does not enable printer commands yet.</p>
-			<form
-				onsubmit={(event) => {
-					event.preventDefault();
-					void save();
-				}}
-			>
-				<label for="filament-method">Method</label><select
-					id="filament-method"
-					bind:value={mode}
-					disabled={!owner || pending}
+		{#if !allowed}<section class="panel">
+				<h2>Operator access required</h2>
+				<p>An operator or owner can review private printer macros and filament-change setup.</p>
+			</section>{:else}
+			<section class="panel">
+				<h2>Printer compatibility</h2>
+				{#if setup.capability}
+					{#each setup.capability.findings as finding}<p>{finding}</p>{/each}
+				{:else}<p>
+						{setup.mode === 'simulator'
+							? 'The simulator has no physical macro configuration. Connect a printer to review compatibility.'
+							: 'Waiting for fresh capability discovery. Your saved setup is retained.'}
+					</p>{/if}
+				<p>
+					Detection does not certify parking clearance, unload distance, heater behavior or safe
+					resumption.
+				</p>
+				<button class="button secondary" disabled={pending} onclick={() => query?.refresh()}
+					>Refresh discovery</button
 				>
-					<option value="disabled">Not enabled</option><option value="printer"
-						>Use my printer’s macros</option
-					>
-				</select>
-				{#if mode === 'printer'}
-					<label for="change-macro">Change macro</label><select
-						id="change-macro"
-						bind:value={changeMacro}
+			</section>
+			<section class="panel">
+				<h2>Change method</h2>
+				<p>This saves a setup plan. It does not enable printer commands yet.</p>
+				<form
+					onsubmit={(event) => {
+						event.preventDefault();
+						void save();
+					}}
+				>
+					<label for="filament-method">Method</label><select
+						id="filament-method"
+						bind:value={mode}
 						disabled={!owner || pending}
 					>
-						{#if !setup.capability?.macros.includes(changeMacro)}<option value={changeMacro}
-								>{changeMacro} · unavailable</option
-							>{/if}
-						{#each setup.capability?.macros ?? [] as name}<option value={name}>{name}</option
-							>{/each}
+						<option value="disabled">Not enabled</option><option value="printer"
+							>Use my printer’s macros</option
+						>
 					</select>
-					<label for="resume-macro">Resume command</label><select
-						id="resume-macro"
-						bind:value={resumeMacro}
-						disabled={!owner || pending}
-					>
-						<option value="RESUME">RESUME</option>
-						{#each (setup.capability?.macros ?? []).filter((name) => name !== 'RESUME') as name}<option
-								value={name}>{name}</option
-							>{/each}
-					</select>
-					<label class="check"
-						><input
-							type="checkbox"
-							checked={reviewed}
-							onchange={(event) => {
-								reviewedTuple = event.currentTarget.checked ? reviewTuple : '';
-							}}
+					{#if mode === 'printer'}
+						<label for="change-macro">Change macro</label><select
+							id="change-macro"
+							bind:value={changeMacro}
 							disabled={!owner || pending}
-						/>I reviewed these macros’ parking, unloading and resume behavior. I will attend the
-						first test.</label
-					>
-				{/if}
-				{#if owner}<button
-						class="button primary"
-						disabled={pending || (mode !== 'disabled' && (!reviewed || !setup.ready))}
-						>{pending ? 'Saving…' : 'Save plan'}</button
-					>{:else}<p>An owner can change this setup.</p>{/if}
-			</form>
-			{#if message}<p role="status">{message}</p>{/if}
-			{#if setup.reason}<p>{setup.reason}</p>{/if}
-		</section>
-		<section class="panel">
-			<h2>No suitable macro?</h2>
-			<p>
-				Perilune-assisted changes need explicit parking and extrusion settings. That workflow is
-				being built; this setup does not install or replace M600.
-			</p>
-			<p>
-				Review Klipper’s <a
-					href="https://github.com/Klipper3d/klipper/blob/master/config/sample-macros.cfg"
-					target="_blank"
-					rel="noreferrer">example macros</a
-				> for context. Examples require adaptation to your printer.
-			</p>
-		</section>
+						>
+							{#if !setup.capability?.macros.includes(changeMacro)}<option value={changeMacro}
+									>{changeMacro} · unavailable</option
+								>{/if}
+							{#each setup.capability?.macros ?? [] as name}<option value={name}>{name}</option
+								>{/each}
+						</select>
+						<label for="resume-macro">Resume command</label><select
+							id="resume-macro"
+							bind:value={resumeMacro}
+							disabled={!owner || pending}
+						>
+							<option value="RESUME">RESUME</option>
+							{#each (setup.capability?.macros ?? []).filter((name) => name !== 'RESUME') as name}<option
+									value={name}>{name}</option
+								>{/each}
+						</select>
+						<label class="check"
+							><input
+								type="checkbox"
+								checked={reviewed}
+								onchange={(event) => {
+									reviewedTuple = event.currentTarget.checked ? reviewTuple : '';
+								}}
+								disabled={!owner || pending}
+							/>I reviewed these macros’ parking, unloading and resume behavior. I will attend the
+							first test.</label
+						>
+					{/if}
+					{#if owner}<button
+							class="button primary"
+							disabled={pending || (mode !== 'disabled' && (!reviewed || !setup.ready))}
+							>{pending ? 'Saving…' : 'Save plan'}</button
+						>{:else}<p>An owner can change this setup.</p>{/if}
+				</form>
+				{#if message}<p role="status">{message}</p>{/if}
+				{#if setup.reason}<p>{setup.reason}</p>{/if}
+			</section>
+			<section class="panel">
+				<h2>No suitable macro?</h2>
+				<p>
+					Perilune-assisted changes need explicit parking and extrusion settings. That workflow is
+					being built; this setup does not install or replace M600.
+				</p>
+				<p>
+					Review Klipper’s <a
+						href="https://github.com/Klipper3d/klipper/blob/master/config/sample-macros.cfg"
+						target="_blank"
+						rel="noreferrer">example macros</a
+					> for context. Examples require adaptation to your printer.
+				</p>
+			</section>
+		{/if}
 	</div></AppShell
 >
 

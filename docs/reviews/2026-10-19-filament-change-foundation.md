@@ -25,3 +25,12 @@ headless console smoke includes saved setup, approval invalidation on selection
 and discovery changes, mobile overflow, viewer denial and no physical RPCs.
 Native collaborative preview also checked the synthetic route at desktop and
 390px, with no relevant console errors. No real printer was used.
+
+A final viewer regression exposed a generic query error instead of the intended
+friendly access panel. The page now skips private discovery for viewers; the
+reviewer confirmed the guard and unchanged authoritative endpoint checks. All
+13 smoke suites passed across the initial validation and affected-suite reruns.
+The first run's live-mesh enrollment failure came from a local preview port
+collision, resolved by shutting down/moving the preview fixture. Final action
+smokes passed the added setup regressions. Formatting, Svelte/TypeScript checks,
+unit tests and production build passed; CI separately verifies the Docker image.
