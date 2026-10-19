@@ -72,7 +72,8 @@
 
 <section class="panel pending-settings">
 	<p class="eyebrow">Calibration → configuration</p>
-	<h2>Settings waiting to be saved</h2>
+	<h2>Staged settings</h2>
+	{#if message && !submitted}<p role="alert">{message}</p>{/if}
 	<p>
 		These changes are staged in Klipper and are not saved yet. Review <strong
 			>every pending setting</strong
@@ -116,7 +117,7 @@
 			disabled={!saveEnabled || !confirmed || busy || submitted}>Save settings & restart</button
 		>
 	{/if}
-	{#if message}<p role={submitted ? 'status' : 'alert'}>{message}</p>{/if}
+	{#if message && submitted}<p role="status">{message}</p>{/if}
 </section>
 
 <style>
