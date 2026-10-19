@@ -23,10 +23,14 @@ const status = {
 	manual_probe: { is_active: false, z_position: 20 },
 	print_stats: { state: 'complete', filename: 'fixture.gcode', print_duration: 0 },
 	virtual_sdcard: { progress: 0 },
+	pause_resume: { is_paused: false },
+	'gcode_macro M600': {},
 	extruder: { temperature: 25, target: 0, can_extrude: true },
 	heater_bed: { temperature: 25, target: 0 },
 	configfile: {
 		config: {
+			'gcode_macro M600': { gcode: 'PAUSE' },
+			pause_resume: {},
 			bltouch: { x_offset: '-24', y_offset: '-13', z_offset: '1.2' },
 			extruder: { min_temp: '0', max_temp: '280' },
 			heater_bed: { min_temp: '0', max_temp: '130' }
@@ -61,6 +65,8 @@ const upstream = createServer((req, res) => {
 			status.extruder.target = 0;
 			status.heater_bed.target = 0;
 			status.print_stats.state = 'standby';
+			status.pause_resume.is_paused = false;
+			status.idle_timeout.state = 'Idle';
 			for (const socket of protocol.clients)
 				if (socket.readyState === 1)
 					socket.send(
@@ -75,7 +81,11 @@ const upstream = createServer((req, res) => {
 						);
 			}, 100);
 		}
-		if (req.url === '/printer/print/cancel') status.print_stats.state = 'cancelled';
+		if (req.url === '/printer/print/cancel') {
+			status.print_stats.state = 'cancelled';
+			status.pause_resume.is_paused = false;
+			status.idle_timeout.state = 'Idle';
+		}
 		if (req.url === '/printer/gcode/script') {
 			status.extruder.target = 0;
 			status.heater_bed.target = 0;
@@ -136,6 +146,12 @@ protocol.on('connection', (socket) => {
 					return;
 				}
 				const script = req.params.script;
+				if (script === 'M600\nM400' || script === 'RESUME\nM400') {
+					status.pause_resume.is_paused = script.startsWith('M600') || stagedResume;
+					status.print_stats.state = status.pause_resume.is_paused ? 'paused' : 'printing';
+					status.idle_timeout.state = status.pause_resume.is_paused ? 'Idle' : 'Printing';
+				}
+
 				if (script.startsWith('PROBE_CALIBRATE')) {
 					status.manual_probe.is_active = true;
 					status.manual_probe.z_position = 5;
@@ -184,6 +200,8 @@ protocol.on('connection', (socket) => {
 						: req.method.endsWith('cancel')
 							? 'cancelled'
 							: 'printing';
+				status.pause_resume.is_paused = status.print_stats.state === 'paused';
+				status.idle_timeout.state = status.print_stats.state === 'printing' ? 'Printing' : 'Idle';
 				if (req.method.endsWith('start')) status.print_stats.filename = req.params.filename;
 				if (req.method.endsWith('cancel')) {
 					status.extruder.target = 0;
@@ -340,6 +358,53 @@ try {
 		() => document.querySelector('[aria-label="Current job"]')?.dataset.jobState === 'printing'
 	);
 	assert.equal(status.print_stats.state, 'printing');
+	// Attended synthetic macro workflow: shared ownership survives navigation,
+	// staged Resume remains explicit, and no second park/unload is appended.
+	status.extruder.temperature = 200;
+	status.extruder.target = 200;
+	publish();
+	await page.goto(base + '/filament');
+	await page.getByLabel('Method', { exact: true }).selectOption('printer');
+	await page.getByRole('checkbox', { name: /I reviewed these macros/ }).check();
+	await page.getByRole('button', { name: 'Save plan', exact: true }).click();
+	await page.getByText(/Setup plan saved/).waitFor();
+	const attend = () =>
+		page.getByRole('checkbox', { name: /I am at the printer and have inspected/ }).check();
+	await attend();
+	await page.getByRole('button', { name: 'Run change macro', exact: true }).click();
+	await page.getByText('Print paused and stationary.', { exact: false }).waitFor();
+	assert.equal(operations.filter((op) => op.script === 'M600\nM400').length, 1);
+	await page.goto(base);
+	await page.getByRole('link', { name: 'Continue filament change', exact: true }).waitFor();
+	assert.equal(await page.getByRole('button', { name: 'Resume print', exact: true }).count(), 0);
+	await page.getByRole('link', { name: 'Continue filament change', exact: true }).click();
+	stagedResume = true;
+	await attend();
+	await page.getByRole('button', { name: 'Resume print', exact: true }).click();
+	await page
+		.getByText('Resume macro completed; this print remains paused.', { exact: false })
+		.waitFor();
+	assert.equal(operations.filter((op) => op.script === 'RESUME\nM400').length, 1);
+	await page.reload();
+	await page
+		.getByText('Resume macro completed; this print remains paused.', { exact: false })
+		.waitFor();
+	await page.setViewportSize({ width: 390, height: 844 });
+	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+	await page.screenshot({ path: 'test-results/filament-change-mobile.png', fullPage: true });
+	await page.setViewportSize({ width: 1280, height: 900 });
+	stagedResume = false;
+	await attend();
+	await page.getByRole('button', { name: 'Resume print', exact: true }).click();
+	await page
+		.getByText('The same print is running again. Filament guidance is complete.', { exact: true })
+		.waitFor();
+	assert.equal(operations.filter((op) => op.script === 'M600\nM400').length, 1);
+	assert.equal(operations.filter((op) => op.script === 'RESUME\nM400').length, 2);
+	// Restore the original fixture heater state for the following stop-dialog assertions.
+	status.extruder.target = 0;
+	status.extruder.temperature = 25;
+	publish();
 	await page.goto(base);
 	await page.getByRole('button', { name: 'Pause print', exact: true }).click();
 	await page.getByRole('button', { name: 'Resume print', exact: true }).waitFor();

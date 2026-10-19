@@ -144,8 +144,8 @@ it('publishes specific workflow guidance and removes it when the lock resolves',
 					stage: 'uncertain' as const,
 					completedSamples: 0,
 					result: null,
-					startedAt: 0,
-					expiresAt: 1,
+					startedAt: Date.now(),
+					expiresAt: Date.now() + 60_000,
 					message: 'Private diagnostic'
 				}
 			}
@@ -159,6 +159,38 @@ it('publishes specific workflow guidance and removes it when the lock resolves',
 			...s,
 			motion: { ...s.motion, calibration: false },
 			meshProbe: { ...s.meshProbe, session: null }
+		}))
+	);
+	await expect.poll(async () => (await f.read()).guidance).toBeUndefined();
+});
+
+it('links filament ownership guidance without publishing private session diagnostics', async () => {
+	const f = await fixture();
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.printer.state, (s) => ({
+			...s,
+			filamentChange: {
+				id: randomUUID(),
+				ownerId: 'operator',
+				filename: 'private.gcode',
+				runId: 'run',
+				generation: 1,
+				settingsRevision: 1,
+				fingerprint: 'a',
+				step: 1,
+				stage: 'review' as const,
+				startedAt: Date.now(),
+				expiresAt: Date.now() + 60_000,
+				message: 'Private diagnostic'
+			}
+		}))
+	);
+	await expect.poll(async () => (await f.read()).guidance?.href).toBe('/filament');
+	expect(JSON.stringify((await f.read()).guidance)).not.toContain('Private diagnostic');
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.printer.state, (s) => ({
+			...s,
+			filamentChange: { ...s.filamentChange!, stage: 'finished' as const }
 		}))
 	);
 	await expect.poll(async () => (await f.read()).guidance).toBeUndefined();

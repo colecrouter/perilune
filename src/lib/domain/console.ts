@@ -1,3 +1,4 @@
+import { filamentChangeActive, filamentChangeLockMessage } from './filament-change.js';
 import { printerLockNotices, type PrinterLockNotice } from './printer-locks.js';
 import type { PrinterSnapshot } from './printer.js';
 import { calibrationActive } from './calibration.js';
@@ -103,6 +104,7 @@ export function consoleScript(input: string): string {
 	return text;
 }
 export function consoleReason(state: PrinterSnapshot): string | null {
+	if (filamentChangeActive(state.filamentChange)) return filamentChangeLockMessage;
 	if (state.mode !== 'simulator' && !state.liveConsole)
 		return 'Live console execution is disabled on this server. Macro discovery and responses remain available.';
 	if (state.connection !== 'connected' || state.klippy !== 'ready' || !state.telemetryReady)

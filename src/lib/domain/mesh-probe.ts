@@ -1,3 +1,4 @@
+import { filamentChangeActive } from './filament-change.js';
 import { Schema } from 'effect';
 import { simulatedBedMesh, type BedMesh } from './bed-mesh.js';
 import { CommandRejected } from './errors.js';
@@ -67,6 +68,8 @@ export const restartMeshProbe = (state: MeshProbeState) =>
 		'Backend restarted. The unfinished run or temporary application was not resumed. Saved profiles are retained.'
 	);
 export function meshProbeReason(state: PrinterSnapshot, pending = true): string | null {
+	if (filamentChangeActive(state.filamentChange))
+		return 'Filament-change guidance owns this print. Continue or end it first.';
 	if (meshProbeActive(state.meshProbe))
 		return 'A bed mesh workflow already owns the printer. Finish or cancel it first.';
 	const reason = motionReason(state, ['x', 'y', 'z'], false, pending);

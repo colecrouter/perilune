@@ -1,3 +1,4 @@
+import { filamentChangeActive } from '#lib/domain/filament-change.js';
 import { printerAdmission, printerInterlock } from './printer-admission.js';
 import { Context, Effect, Layer, Schedule, SubscriptionRef } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
@@ -155,6 +156,8 @@ export const LiveMeshServiceLive = Layer.effect(
 							)
 						);
 					const snapshot = yield* SubscriptionRef.get(printer.state);
+					if (filamentChangeActive(snapshot.filamentChange))
+						return yield* fail('Finish filament-change guidance first.');
 					const checked = {
 						...snapshot,
 						connection: fresh.connection,
@@ -592,6 +595,8 @@ export const LiveMeshServiceLive = Layer.effect(
 						const snapshot = yield* SubscriptionRef.get(printer.state),
 							command = request.command;
 						const reject = (message: string) => Effect.fail(new ActionRejected({ message }));
+						if (filamentChangeActive(snapshot.filamentChange))
+							return yield* reject('Finish filament-change guidance first.');
 						if (!authorized(actor)) return yield* reject('An authorized operator is required.');
 						if (interlock.halted) return yield* reject('Emergency stop interlock is active.');
 						if (!command.type.startsWith('meshProbe'))

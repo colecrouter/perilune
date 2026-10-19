@@ -4,6 +4,10 @@ import * as Migrator from 'effect/sql/Migrator';
 
 export const migrate = Migrator.make({})({
 	loader: Migrator.fromRecord({
+		'024_filament_change_sessions': Effect.gen(function* () {
+			const sql = yield* SqlClient;
+			yield* sql`CREATE TABLE filament_change_sessions(target TEXT PRIMARY KEY, state TEXT NOT NULL)`;
+		}),
 		'023_filament_change_settings': Effect.gen(function* () {
 			const sql = yield* SqlClient;
 			yield* sql`CREATE TABLE filament_change_settings (target TEXT PRIMARY KEY, revision INTEGER NOT NULL, value TEXT NOT NULL)`;

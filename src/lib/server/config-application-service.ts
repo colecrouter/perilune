@@ -1,3 +1,4 @@
+import { filamentChangeActive } from '#lib/domain/filament-change.js';
 import {
 	pendingManifest,
 	pendingFingerprint,
@@ -605,6 +606,7 @@ export const ConfigurationApplicationServiceLive = Layer.effect(
 										liveZActive(state.liveZ) ||
 										(!failedStartup && state.motion.calibration) ||
 										extrusionActive(state.extrusion) ||
+										filamentChangeActive(state.filamentChange) ||
 										calibrationActive(state.calibration) ||
 										meshProbeActive(state.meshProbe) ||
 										(!failedStartup && state.motion.busy === true) ||

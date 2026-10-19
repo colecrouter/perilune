@@ -1348,28 +1348,54 @@ configuration fetch was added, and incoming notices preserve local drafts.
 Future controls should follow this convention (issue #117). A notice links to the
 existing recovery flow; it is never a dismiss button for an active interlock.
 
-## Guided filament changes: capability and setup foundation
+## Guided filament changes: printer-macro workflow
 
-Issue #84 is in progress. `/filament`, linked from printer controls, uses an
-SSR-awaited remote query for owner/operator discovery and an owner-only remote
-command to save a per-printer setup plan. A saved plan does not yet enable
-physical commands. Loaded `gcode_macro` objects establish macro presence without
-relying on the optional help listing; raw macro bodies remain backend-only.
-Detection explicitly does not certify compatibility. Configuration fingerprints
-invalidate reviewed plans when any configuration section or
-registered objects change. Revision compare-and-swap prevents simultaneous tabs
-from replacing one another's setup. SQLite retains the plan across restarts.
+Issue #84 remains in progress. `/filament`, linked from printer controls and the
+current job, uses an SSR-awaited operator/owner query for private capability
+discovery and an owner-only command to save per-printer setup. Loaded macro
+objects establish presence independently of optional G-code help. Detection does
+not certify compatibility, and raw macro bodies remain backend-only. Review is
+bound to exact selected commands and a canonical complete-configuration digest.
+SQLite revision comparison prevents stale edits; a live action reservation or
+active filament session prevents setup replacement.
 
-The process-scoped Moonraker connection now subscribes to `pause_resume.is_paused`
-separately from print status. Missing pause telemetry remains unknown. No printer
-movement, heating, configuration write or macro installation is introduced by
-this foundation.
+The macro path runs through the process-scoped LiveActionService worker and its
+existing bounded admission, durable UUID receipts/reservation, account checks,
+expiry, generation fencing, emergency interlock and unknown-outcome recovery.
+Begin sends only the selected macro plus M400. Adoption of an already paused
+print sends no macro and does not infer an M600 event from a pause. Verification
+requires consistent print status and `pause_resume.is_paused`, a matching filename
+and non-null run ID, and stationary motion for paused steps. Resume may verify
+active printing motion, or acknowledge a staged macro that intentionally remains
+paused; another Resume always requires a new attended confirmation.
 
-Remaining for #84: dedicated persisted swap ownership and command stages in the
-shared live-action worker; macro acknowledgement plus same-run/pause verification;
-explicit assisted parking/extrusion setup; manual intervention/load/purge/resume
-UI; pause notifications; stale/revoked-user, reconnect/restart and unknown-outcome
-validation; attended owner acceptance. Existing idle extrusion calibration must
-not be reused for paused print extrusion, and an arbitrary M600 must never receive
-a second implicit park/unload. Process-local run IDs change on reconnect, so
-recovery must explicitly adopt fresh identity rather than match by filename.
+Sessions persist owner, step, print identity, generation, reviewed setup and
+expiry. Incoming state does not replace browser drafts. Another account cannot
+resume a session; an owner can explicitly inspect and take over a stationary
+paused print. Heater targets remain explicit; cooled targets or lost homing
+prevent Resume. No automatic reheat, homing, parking, unloading or return move is
+added. The original idle extrusion calibration is not used for paused prints.
+
+Restart, reconnect, revoked authority or expired continuity retain reviewable
+state without replay. Failed interruption checkpoints retry storage only, while
+physical actions remain disabled. Settings, calibration, configuration, console,
+normal Resume and new-print admission honor filament ownership. Stop and the
+independent emergency path remain available. The shared safety region links to
+guidance and CurrentJob replaces ordinary Resume with Continue filament change.
+
+An owner may explicitly end ownership metadata even when the printer is offline.
+Under the admission gate this requires exact session/step, no pending worker or
+checkpoint, healthy storage and authorized confirmation; receipt and finished
+state commit atomically. It does not verify position or stop/resume the printer,
+and never clears independent safety, storage or unknown-action recovery locks.
+Operators can end their own guidance through fresh, stationary-state validation.
+
+Automated acceptance uses synthetic Moonraker services and a headless protocol
+fixture, including staged Resume, navigation/reload, unknown acknowledgements,
+revocation, checkpoint failures, restart, ownership, stale setup and mobile layout.
+No physical printer acceptance has been performed for this workflow.
+
+Remaining for #84: explicit assisted parking/bounded load-purge setup, intervention
+notifications and attended owner acceptance. Process-local run IDs change on
+reconnect; recovery explicitly adopts fresh identity rather than matching by
+filename. No managed M600 is silently installed or substituted.

@@ -1,3 +1,4 @@
+import { FilamentChangeCommand, type FilamentChangeSession } from './filament-change.js';
 import { PidCommand, pidReason, type PidState, type PidTelemetry } from './pid.js';
 import { LiveZCommand, type LiveZState, type ZProbeCapability } from './live-z.js';
 import { safetyReason, type SafetySnapshot } from './safety.js';
@@ -44,6 +45,7 @@ const expectedJob = Schema.optional(
 	Schema.Struct({ filename: Schema.String, runId: Schema.NullOr(Schema.String) })
 );
 export const PrinterCommand = Schema.Union([
+	FilamentChangeCommand,
 	PidCommand,
 	Schema.Struct({
 		type: Schema.Literal('console'),
@@ -106,6 +108,7 @@ export interface ActionRecord {
 	message: string | null;
 }
 export interface PrinterSnapshot {
+	filamentChange?: FilamentChangeSession | null;
 	pid?: PidState;
 	pidTelemetry?: PidTelemetry;
 	safety?: SafetySnapshot;
@@ -197,6 +200,14 @@ export function actionLabel(command: PrinterCommand): string {
 	if (command.type === 'pidCalibrate')
 		return `PID calibration · ${command.heater} at ${command.target}°C`;
 	switch (command.type) {
+		case 'filamentChangeBegin':
+			return 'Change filament';
+		case 'filamentChangeResume':
+			return 'Resume filament change';
+		case 'filamentChangeEnd':
+			return 'End filament guidance';
+		case 'filamentChangeRecover':
+			return 'Review filament recovery';
 		case 'zProbeBegin':
 			return 'Begin live Z calibration';
 		case 'zProbeAdjust':
@@ -265,6 +276,15 @@ export function applyCommand(
 	actor?: CalibrationActor,
 	actionId?: string
 ): PrinterSnapshot {
+	if (
+		command.type === 'filamentChangeBegin' ||
+		command.type === 'filamentChangeResume' ||
+		command.type === 'filamentChangeEnd' ||
+		command.type === 'filamentChangeRecover'
+	)
+		throw new CommandRejected({
+			message: 'Filament changes require a configured live printer and dedicated action worker.'
+		});
 	if (command.type === 'console')
 		throw new CommandRejected({
 			message: 'Console commands require their dedicated reviewed workflow.'

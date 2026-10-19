@@ -1,3 +1,4 @@
+import { filamentChangeActive } from './filament-change.js';
 import { safetyReason } from './safety.js';
 import { Schema } from 'effect';
 import type { CalibrationActor } from './calibration.js';
@@ -94,6 +95,8 @@ export function calculateExtrusion(
 	};
 }
 export function extrusionReason(state: PrinterSnapshot, pending = true): string | null {
+	if (filamentChangeActive(state.filamentChange))
+		return 'Filament-change guidance owns this print. Continue or end it first.';
 	const safety = safetyReason(state.safety);
 	if (safety) return safety;
 	if (state.liveRecovery) return state.liveRecovery.message;
