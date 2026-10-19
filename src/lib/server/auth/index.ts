@@ -1,3 +1,4 @@
+import { mailConfig } from './mail-config.js';
 import { claimProcess } from './process-lock.mjs';
 import { building } from '$app/env';
 import { error } from '@sveltejs/kit';
@@ -20,7 +21,9 @@ export const authService = building
 	: createAuthService(
 			process.env.PERILUNE_DATABASE ?? './data/perilune.sqlite',
 			origin,
-			process.env.PERILUNE_AUTH_SECRET
+			process.env.PERILUNE_AUTH_SECRET,
+			undefined,
+			Boolean(mailConfig())
 		);
 if (authService) claimProcess(authService.db, true);
 export function requireIdentity(event: RequestEvent, role: Role = 'viewer') {

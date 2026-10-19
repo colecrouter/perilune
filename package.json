@@ -36,7 +36,8 @@
 		"test:smoke:console": "node scripts/smoke-console.mjs",
 		"test:smoke:progressive": "node scripts/smoke-progressive.mjs",
 		"test:smoke:live-actions": "node scripts/smoke-live-actions.mjs",
-		"validate:checks": "vp run format:check && vp run lint && vp run check && vp run test && vp run test:backup && node scripts/smoke-suite.mjs --check"
+		"validate:checks": "vp run format:check && vp run lint && vp run check && vp run test && vp run test:backup && node scripts/smoke-suite.mjs --check",
+		"test:smoke:account-email": "node scripts/smoke-account-email.mjs"
 	},
 	"dependencies": {
 		"@better-auth/passkey": "1.7.7",
@@ -60,6 +61,7 @@
 		"d3-shape": "^3.2.0",
 		"effect": "4.0.4",
 		"layerchart": "^2.7.0",
+		"nodemailer": "^10.1.7",
 		"sveltekit-effect": "0.2.0",
 		"web-push": "^3.6.7"
 	},
@@ -71,6 +73,7 @@
 		"@types/d3-scale": "^4.0.9",
 		"@types/d3-shape": "^3.2.0",
 		"@types/node": "^24.19.2",
+		"@types/nodemailer": "^8.0.2",
 		"@types/web-push": "^3.6.4",
 		"@types/ws": "^8.18.2",
 		"@vitejs/plugin-legacy": "^8.2.3",

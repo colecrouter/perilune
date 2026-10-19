@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -7,6 +7,8 @@ import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { makeSignature } from 'better-auth/crypto';
 import { getCookies } from 'better-auth/cookies';
+import accountSchema from './005.sql?raw';
+import { hashPassword } from 'better-auth/crypto';
 import pairingSchema from './004.sql?raw';
 import { passkey } from '@better-auth/passkey';
 import schema from './001.sql?raw';
@@ -20,7 +22,8 @@ export function createAuthService(
 	filename: string,
 	origin: string,
 	suppliedSecret?: string,
-	passwordVerifier?: (data: { hash: string; password: string }) => Promise<boolean>
+	passwordVerifier?: (data: { hash: string; password: string }) => Promise<boolean>,
+	mailEnabled = false
 ) {
 	mkdirSync(dirname(filename), { recursive: true, mode: 0o700 });
 	const db = new DatabaseSync(filename);
@@ -45,7 +48,8 @@ export function createAuthService(
 	for (const [version, sql] of [
 		[2, recoverySchema],
 		[3, processSchema],
-		[4, pairingSchema]
+		[4, pairingSchema],
+		[5, accountSchema]
 	] as const) {
 		db.exec('BEGIN IMMEDIATE');
 		try {
@@ -77,7 +81,7 @@ export function createAuthService(
 	if (secret.length < 32)
 		throw new Error('Authentication secret must contain at least 32 characters.');
 	const enrollment = new AsyncLocalStorage<{ role: Role }>();
-	const pairing = new AsyncLocalStorage<{ owner: string; epoch: number }>();
+	const pairing = new AsyncLocalStorage<{ owner: string; epoch: number; loginVersion: number }>();
 	const auth = betterAuth({
 		appName: 'Perilune',
 		baseURL: origin,
@@ -99,13 +103,15 @@ export function createAuthService(
 			disableSessionRefresh: true,
 			cookieCache: { enabled: false },
 			additionalFields: {
-				authVersion: { type: 'number', required: true, defaultValue: 0, input: false }
+				authVersion: { type: 'number', required: true, defaultValue: 0, input: false },
+				loginVersion: { type: 'number', required: true, defaultValue: 0, input: false }
 			}
 		},
 		user: {
 			additionalFields: {
 				role: { type: 'string', required: true, defaultValue: 'viewer', input: false },
-				authVersion: { type: 'number', required: true, defaultValue: 0, input: false }
+				authVersion: { type: 'number', required: true, defaultValue: 0, input: false },
+				loginVersion: { type: 'number', required: true, defaultValue: 0, input: false }
 			}
 		},
 		rateLimit: { enabled: true, storage: 'memory', window: 60, max: 60 },
@@ -114,12 +120,15 @@ export function createAuthService(
 			before: createAuthMiddleware(async (ctx) => {
 				if (ctx.path === '/sign-in/email' || ctx.path === '/passkey/verify-authentication') {
 					(
-						ctx.context as typeof ctx.context & { periluneVersions: Map<string, number> }
+						ctx.context as typeof ctx.context & { periluneVersions: Map<string, string> }
 					).periluneVersions = new Map(
 						db
-							.prepare('SELECT id,authVersion FROM user')
+							.prepare('SELECT id,authVersion,loginVersion FROM user')
 							.all()
-							.map((user) => [String(user.id), Number(user.authVersion)])
+							.map((user) => [
+								String(user.id),
+								`${Number(user.authVersion)}:${Number(user.loginVersion)}`
+							])
 					);
 				}
 				if (ctx.path === '/sign-up/email' && !enrollment.getStore())
@@ -133,24 +142,32 @@ export function createAuthService(
 						const credential = db
 							.prepare("SELECT password FROM account WHERE userId=? AND providerId='credential'")
 							.get(session.userId);
-						const user = db.prepare('SELECT authVersion FROM user WHERE id=?').get(session.userId);
+						const user = db
+							.prepare('SELECT authVersion,loginVersion FROM user WHERE id=?')
+							.get(session.userId);
 						const versions = (
-							ctx?.context as { periluneVersions?: Map<string, number> } | undefined
+							ctx?.context as { periluneVersions?: Map<string, string> } | undefined
 						)?.periluneVersions;
 						const version =
 							versions?.get(session.userId) ??
 							(pairing.getStore()?.owner === session.userId
-								? pairing.getStore()!.epoch
+								? `${pairing.getStore()!.epoch}:${pairing.getStore()!.loginVersion}`
 								: enrollment.getStore()
-									? Number(user?.authVersion)
-									: -1);
-						if (!user || Number(user.authVersion) !== version)
+									? `${Number(user?.authVersion)}:${Number(user?.loginVersion)}`
+									: 'invalid');
+						if (!user || `${Number(user.authVersion)}:${Number(user.loginVersion)}` !== version)
 							throw new APIError('FORBIDDEN', { message: 'Please sign in again.' });
 						if (!credential?.password)
 							throw new APIError('FORBIDDEN', {
 								message: 'Complete account recovery before signing in.'
 							});
-						return { data: { ...session, authVersion: version } };
+						return {
+							data: {
+								...session,
+								authVersion: Number(user.authVersion),
+								loginVersion: Number(user.loginVersion)
+							}
+						};
 					}
 				}
 			},
@@ -171,7 +188,7 @@ export function createAuthService(
 	const valid = (identity: Identity) => {
 		const row = db
 			.prepare(
-				"SELECT s.expiresAt, u.role FROM session s JOIN user u ON u.id=s.userId JOIN account a ON a.userId=u.id AND a.providerId='credential' WHERE s.id=? AND a.password IS NOT NULL AND s.authVersion=u.authVersion"
+				"SELECT s.expiresAt, u.role FROM session s JOIN user u ON u.id=s.userId JOIN account a ON a.userId=u.id AND a.providerId='credential' WHERE s.id=? AND a.password IS NOT NULL AND s.authVersion=u.authVersion AND s.loginVersion=u.loginVersion"
 			)
 			.get(identity.session.id);
 		return (
@@ -189,26 +206,343 @@ export function createAuthService(
 		db
 			.prepare('INSERT INTO auth_audit(actor,event,subject,created) VALUES (?,?,?,?)')
 			.run(actor, event, subject, Date.now());
+
+	const mailKey = createHash('sha256')
+		.update(secret + ':account-mail')
+		.digest();
+	const seal = (value: unknown) => {
+		const iv = randomBytes(12),
+			cipher = createCipheriv('aes-256-gcm', mailKey, iv);
+		const ciphertext = Buffer.concat([
+			cipher.update(JSON.stringify(value), 'utf8'),
+			cipher.final()
+		]);
+		return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString('base64');
+	};
+	const unseal = (value: string) => {
+		const bytes = Buffer.from(value, 'base64'),
+			cipher = createDecipheriv('aes-256-gcm', mailKey, bytes.subarray(0, 12));
+		cipher.setAuthTag(bytes.subarray(12, 28));
+		return JSON.parse(
+			Buffer.concat([cipher.update(bytes.subarray(28)), cipher.final()]).toString('utf8')
+		) as { to: string; subject: string; text: string };
+	};
+	const throttle = (key: string, max = 3) => {
+		const now = Date.now();
+		db.prepare('DELETE FROM account_throttle WHERE expires<=?').run(now);
+		const row = db
+			.prepare(
+				'INSERT INTO account_throttle VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=count+1 RETURNING count'
+			)
+			.get(digest(key), now + 15 * 60000);
+		return Number(row?.count) <= max;
+	};
+	const enqueue = (
+		to: string,
+		kind: string,
+		text: string,
+		owner: string | null = null,
+		tokenHash: string | null = null,
+		invitationHash: string | null = null
+	) => {
+		if (!mailEnabled) throw Error('Email is not configured on this installation.');
+		if (
+			Number(
+				db
+					.prepare("SELECT count(*) AS n FROM account_mail WHERE status IN ('queued','sending')")
+					.get()?.n
+			) >= 100
+		)
+			throw Error('Email queue is full. Try again later.');
+		const id = randomBytes(16).toString('hex'),
+			user = owner
+				? db.prepare('SELECT authVersion,loginVersion FROM user WHERE id=?').get(owner)
+				: null;
+		db.prepare('INSERT INTO account_mail VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(
+			id,
+			owner,
+			kind,
+			seal({
+				to,
+				subject:
+					kind === 'reset'
+						? 'Reset your Perilune password'
+						: kind === 'verify'
+							? 'Verify your Perilune recovery address'
+							: kind === 'invite'
+								? 'Your Perilune invitation'
+								: kind === 'changed'
+									? 'Your Perilune password changed'
+									: 'Perilune email test',
+				text
+			}),
+			'queued',
+			Date.now(),
+			Date.now() + 5 * 60000,
+			tokenHash,
+			invitationHash,
+			user?.authVersion ?? null,
+			user?.loginVersion ?? null
+		);
+		return id;
+	};
+	const transaction = <T>(fn: () => T): T => {
+		db.exec('BEGIN IMMEDIATE');
+		try {
+			const result = fn();
+			db.exec('COMMIT');
+			return result;
+		} catch (e) {
+			db.exec('ROLLBACK');
+			throw e;
+		}
+	};
+	const tokenFor = (owner: string, purpose: 'verify' | 'reset') => {
+		const user = db
+			.prepare('SELECT email,authVersion,loginVersion FROM user WHERE id=?')
+			.get(owner);
+		if (!user) throw Error('Account unavailable.');
+		const token = randomBytes(32).toString('base64url'),
+			hash = digest(token);
+		db.prepare('DELETE FROM account_tokens WHERE owner=? AND purpose=?').run(owner, purpose);
+		db.prepare('INSERT INTO account_tokens VALUES(?,?,?,?,?,?,?)').run(
+			hash,
+			purpose,
+			owner,
+			String(user.email),
+			Number(user.authVersion),
+			Number(user.loginVersion),
+			Date.now() + 30 * 60000
+		);
+		return { token, hash, email: String(user.email) };
+	};
 	return {
+		mailEnabled,
+		recoverMail() {
+			db.prepare("UPDATE account_mail SET status='unknown',sealed='' WHERE status='sending'").run();
+			db.prepare('DELETE FROM account_mail WHERE created<?').run(Date.now() - 7 * 86400000);
+		},
+		publicLimit(ip: string) {
+			return throttle('public-global', 1000) && throttle('public-ip:' + ip, 50);
+		},
+		recoveryStatus(owner: string) {
+			const user = db.prepare('SELECT email,emailVerified FROM user WHERE id=?').get(owner);
+			if (!user) throw Error('Account unavailable.');
+			return {
+				enabled: mailEnabled,
+				email: String(user.email),
+				verified: !!user.emailVerified,
+				deliveries: db
+					.prepare(
+						'SELECT id,kind,status,created FROM account_mail WHERE owner=? ORDER BY created DESC LIMIT 5'
+					)
+					.all(owner)
+			};
+		},
+		requestVerification(owner: string) {
+			if (!mailEnabled) throw Error('Email is not configured on this installation.');
+			if (!throttle('verify:' + owner))
+				throw Error('Wait before requesting another verification email.');
+			return transaction(() => {
+				const t = tokenFor(owner, 'verify');
+				enqueue(
+					t.email,
+					'verify',
+					`Verify this recovery address within 30 minutes:\n${origin}/verify-email#${t.token}\nIgnore this message if you did not request it.`,
+					owner,
+					t.hash
+				);
+			});
+		},
+		verifyEmail(token: string) {
+			if (!/^[A-Za-z0-9_-]{43}$/.test(token))
+				throw Error('This verification link is invalid or expired.');
+			db.exec('BEGIN IMMEDIATE');
+			try {
+				const row = db
+					.prepare(
+						"DELETE FROM account_tokens WHERE hash=? AND purpose='verify' AND expires>? RETURNING *"
+					)
+					.get(digest(token), Date.now());
+				if (
+					!row ||
+					!db
+						.prepare(
+							'UPDATE user SET emailVerified=1 WHERE id=? AND email=? AND authVersion=? AND loginVersion=?'
+						)
+						.run(row.owner, row.email, row.epoch, row.login_version).changes
+				)
+					throw Error('This verification link is invalid or expired.');
+				audit(String(row.owner), 'email.verified', null);
+				db.exec('COMMIT');
+			} catch (e) {
+				db.exec('ROLLBACK');
+				throw e;
+			}
+		},
+		requestReset(email: string, ip: string) {
+			// Same response and synchronous work class for missing/unverified accounts. SMTP runs separately.
+			if (!mailEnabled) return;
+			const allowed = throttle('reset-global', 300) && throttle('reset-ip:' + ip, 10),
+				addressAllowed = throttle('reset-address:' + email.trim().toLowerCase());
+			if (!allowed || !addressAllowed) return;
+			const user = db
+				.prepare(
+					"SELECT u.id FROM user u JOIN account a ON a.userId=u.id AND a.providerId='credential' WHERE u.email=? COLLATE NOCASE AND u.emailVerified=1 AND a.password IS NOT NULL"
+				)
+				.get(email.trim());
+			if (!user) return;
+			try {
+				transaction(() => {
+					const t = tokenFor(String(user.id), 'reset');
+					enqueue(
+						t.email,
+						'reset',
+						`Choose a new password within 30 minutes:\n${origin}/forgot-password#${t.token}\nRequesting this link does not change your account.`,
+						String(user.id),
+						t.hash
+					);
+				});
+			} catch {
+				/* Public requests never expose queue/account state. */
+			}
+		},
+		async resetPassword(token: string, password: string) {
+			if (!/^[A-Za-z0-9_-]{43}$/.test(token) || password.length < 12 || password.length > 128)
+				throw Error('Use a valid reset link and a password of 12–128 characters.');
+			const hashed = await hashPassword(password);
+			db.exec('BEGIN IMMEDIATE');
+			try {
+				const row = db
+					.prepare(
+						"DELETE FROM account_tokens WHERE hash=? AND purpose='reset' AND expires>? RETURNING *"
+					)
+					.get(digest(token), Date.now());
+				if (
+					!row ||
+					!db
+						.prepare(
+							"UPDATE user SET loginVersion=loginVersion+1 WHERE id=? AND email=? AND emailVerified=1 AND authVersion=? AND loginVersion=? AND EXISTS(SELECT 1 FROM account WHERE userId=user.id AND providerId='credential' AND password IS NOT NULL)"
+						)
+						.run(row.owner, row.email, row.epoch, row.login_version).changes
+				)
+					throw Error('This reset link is invalid, expired or already used.');
+				if (
+					!db
+						.prepare("UPDATE account SET password=? WHERE userId=? AND providerId='credential'")
+						.run(hashed, row.owner).changes
+				)
+					throw Error('Account unavailable.');
+				db.prepare('DELETE FROM session WHERE userId=?').run(row.owner);
+				db.prepare('DELETE FROM browser_pairing WHERE owner=?').run(row.owner);
+				db.prepare('DELETE FROM account_tokens WHERE owner=?').run(row.owner);
+				db.prepare(
+					"DELETE FROM verification WHERE value=? AND identifier LIKE 'reset-password:%'"
+				).run(row.owner);
+				audit(String(row.owner), 'password.reset', null);
+				if (
+					mailEnabled &&
+					Number(
+						db
+							.prepare(
+								"SELECT count(*) AS n FROM account_mail WHERE status IN ('queued','sending')"
+							)
+							.get()?.n
+					) < 100
+				)
+					enqueue(
+						String(row.email),
+						'changed',
+						`Your Perilune password was changed. Browser sessions were signed out. Passkeys and slicer integrations were preserved. Contact the host if this was unexpected.\n${origin}`,
+						String(row.owner)
+					);
+				db.exec('COMMIT');
+			} catch (e) {
+				db.exec('ROLLBACK');
+				throw e;
+			}
+			sweep();
+		},
+		testMail(owner: string) {
+			if (!throttle('test:' + owner)) throw Error('Wait before sending another test.');
+			const user = db.prepare('SELECT email FROM user WHERE id=?').get(owner);
+			if (!user) throw Error('Account unavailable.');
+			return enqueue(
+				String(user.email),
+				'test',
+				`This installation can send account email.\n${origin}`,
+				owner
+			);
+		},
+		claimMail() {
+			db.prepare('DELETE FROM account_mail WHERE created<?').run(Date.now() - 7 * 86400000);
+			db.prepare('DELETE FROM account_tokens WHERE expires<=?').run(Date.now());
+			db.prepare(
+				"UPDATE account_mail SET status='expired',sealed='' WHERE status='queued' AND expires<=?"
+			).run(Date.now());
+			const row = db
+				.prepare(
+					"UPDATE account_mail SET status='sending' WHERE id=(SELECT id FROM account_mail WHERE status='queued' ORDER BY created LIMIT 1) RETURNING *"
+				)
+				.get();
+			if (!row) return null;
+			const user = row.owner
+				? db.prepare('SELECT authVersion,loginVersion FROM user WHERE id=?').get(row.owner)
+				: null;
+			const validToken =
+				!row.token_hash ||
+				db
+					.prepare(
+						`SELECT 1 FROM account_tokens t JOIN user u ON u.id=t.owner WHERE t.hash=? AND t.expires>? AND t.email=u.email AND t.epoch=u.authVersion AND t.login_version=u.loginVersion AND (t.purpose!='reset' OR EXISTS(SELECT 1 FROM account a WHERE a.userId=u.id AND a.providerId='credential' AND a.password IS NOT NULL))`
+					)
+					.get(row.token_hash, Date.now());
+			const validInvite =
+				!row.invitation_hash ||
+				db
+					.prepare(
+						'SELECT 1 FROM enrollment e LEFT JOIN invitation_details d ON d.hash=e.hash WHERE e.hash=? AND e.claimed IS NULL AND e.expires>? AND COALESCE(d.revoked,0)=0'
+					)
+					.get(row.invitation_hash, Date.now());
+			if (
+				(row.owner &&
+					(!user || user.authVersion !== row.epoch || user.loginVersion !== row.login_version)) ||
+				!validToken ||
+				!validInvite
+			) {
+				db.prepare("UPDATE account_mail SET status='cancelled',sealed='' WHERE id=?").run(row.id);
+				return null;
+			}
+			try {
+				return { id: String(row.id), ...unseal(String(row.sealed)) };
+			} catch {
+				db.prepare("UPDATE account_mail SET status='failed',sealed='' WHERE id=?").run(row.id);
+				return null;
+			}
+		},
+		finishMail(id: string, status: 'sent' | 'failed' | 'unknown') {
+			db.prepare("UPDATE account_mail SET status=?,sealed='' WHERE id=? AND status='sending'").run(
+				status,
+				id
+			);
+		},
 		auth,
 		db,
 		origin,
 		async identity(headers: Headers) {
-			return auth.api.getSession({
+			const identity = await auth.api.getSession({
 				headers,
 				query: { disableCookieCache: true, disableRefresh: true }
 			});
+			return identity && valid(identity) ? identity : null;
 		},
 		async resolveIdentity(headers: Headers) {
 			// Reads never write or clear browser authentication cookies: a late
 			// response must not restore an older identity or erase a newer one.
-			return {
-				response: await auth.api.getSession({
-					headers,
-					query: { disableCookieCache: true, disableRefresh: true }
-				}),
-				headers: new Headers()
-			};
+			const identity = await auth.api.getSession({
+				headers,
+				query: { disableCookieCache: true, disableRefresh: true }
+			});
+			return { response: identity && valid(identity) ? identity : null, headers: new Headers() };
 		},
 		async handle(request: Request) {
 			const response = await auth.handler(request);
@@ -263,7 +597,9 @@ export function createAuthService(
 		},
 		approvePairing(identity: Identity, code: string, approve: boolean, integrationId?: string) {
 			if (!valid(identity)) throw new Error('Please sign in again.');
-			const row = db.prepare('SELECT authVersion FROM user WHERE id=?').get(identity.user.id)!;
+			const row = db
+				.prepare('SELECT authVersion,loginVersion FROM user WHERE id=?')
+				.get(identity.user.id)!;
 			if (
 				integrationId &&
 				!db
@@ -276,11 +612,12 @@ export function createAuthService(
 			const result = approve
 				? db
 						.prepare(
-							'UPDATE browser_pairing SET owner=?,epoch=?,integration_id=?,approved=1 WHERE code=? AND expires>? AND approved=0'
+							'UPDATE browser_pairing SET owner=?,epoch=?,login_version=?,integration_id=?,approved=1 WHERE code=? AND expires>? AND approved=0'
 						)
 						.run(
 							identity.user.id,
 							Number(row.authVersion),
+							Number(row.loginVersion),
 							integrationId ?? null,
 							code.toUpperCase(),
 							Date.now()
@@ -307,8 +644,9 @@ export function createAuthService(
 				throw new Error('Pairing request already used.');
 			const owner = String(request.owner);
 			const context = await auth.$context;
-			const session = await pairing.run({ owner, epoch: Number(request.epoch) }, () =>
-				context.internalAdapter.createSession(owner)
+			const session = await pairing.run(
+				{ owner, epoch: Number(request.epoch), loginVersion: Number(request.login_version) },
+				() => context.internalAdapter.createSession(owner)
 			);
 			if (!session) throw new Error('Could not create browser session.');
 			db.prepare(
@@ -397,14 +735,15 @@ export function createAuthService(
 				body.password.length > 128
 			)
 				throw new Error('Enter a name, email, and password of at least 12 characters.');
+			body.email = body.email.trim().toLowerCase();
 			if (!body.token || body.token.length > 256)
 				throw new Error('This enrollment link is invalid or expired.');
 			// Reserve durably before asynchronous signup. A crashed reservation is deliberately fail-closed.
 			const claim = db
 				.prepare(
-					`UPDATE enrollment SET claimed=? WHERE hash=? AND claimed IS NULL AND expires>? AND (kind!='setup' OR (NOT EXISTS(SELECT 1 FROM user) AND NOT EXISTS(SELECT 1 FROM enrollment WHERE kind='setup' AND claimed IS NOT NULL))) RETURNING role`
+					`UPDATE enrollment SET claimed=? WHERE hash=? AND claimed IS NULL AND expires>? AND NOT EXISTS(SELECT 1 FROM invitation_details d WHERE d.hash=enrollment.hash AND (d.revoked=1 OR (d.email IS NOT NULL AND d.email!=? COLLATE NOCASE))) AND (kind!='setup' OR (NOT EXISTS(SELECT 1 FROM user) AND NOT EXISTS(SELECT 1 FROM enrollment WHERE kind='setup' AND claimed IS NOT NULL))) RETURNING role`
 				)
-				.get(Date.now(), digest(body.token), Date.now());
+				.get(Date.now(), digest(body.token), Date.now(), body.email);
 			if (!claim) throw new Error('This enrollment link is invalid, expired, or already used.');
 			try {
 				await enrollment.run({ role: claim.role as Role }, () =>
@@ -419,28 +758,74 @@ export function createAuthService(
 				throw cause;
 			}
 		},
-		invite(actor: string, role: Role) {
-			const token = randomBytes(32).toString('base64url');
-			const now = Date.now();
-			db.prepare('INSERT INTO enrollment VALUES (?,?,?,?,NULL,?)').run(
-				digest(token),
-				role,
-				'invite',
-				now + 86400000,
-				now
-			);
-			audit(actor, 'invite.created', role);
-			return `${origin}/register#${token}`;
+		invitationInfo(token: string) {
+			if (!/^[A-Za-z0-9_-]{43}$/.test(token))
+				return { state: 'invalid', role: null, expires: null, emailRequired: false };
+			const row = db
+				.prepare(
+					"SELECT e.role,e.expires,e.claimed,d.email,d.revoked FROM enrollment e LEFT JOIN invitation_details d ON d.hash=e.hash WHERE e.hash=? AND e.kind='invite'"
+				)
+				.get(digest(token));
+			return row
+				? {
+						state: row.revoked
+							? 'revoked'
+							: row.claimed
+								? 'used'
+								: Number(row.expires) <= Date.now()
+									? 'expired'
+									: 'ready',
+						role: String(row.role),
+						expires: Number(row.expires),
+						emailRequired: !!row.email
+					}
+				: { state: 'invalid', role: null, expires: null, emailRequired: false };
+		},
+		invite(actor: string, role: Role, email?: string) {
+			const recipient = email?.trim().toLowerCase();
+			if (
+				email !== undefined &&
+				(!recipient || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient) || recipient.length > 254)
+			)
+				throw Error('Enter a valid invitation email.');
+			if (!throttle('invite:' + actor, 10)) throw Error('Wait before creating more invitations.');
+			return transaction(() => {
+				const token = randomBytes(32).toString('base64url'),
+					hash = digest(token),
+					now = Date.now(),
+					url = `${origin}/register#${token}`;
+				db.prepare('INSERT INTO enrollment VALUES(?,?,?,?,NULL,?)').run(
+					hash,
+					role,
+					'invite',
+					now + 86400000,
+					now
+				);
+				db.prepare('INSERT INTO invitation_details VALUES(?,?,0)').run(hash, recipient ?? null);
+				if (recipient)
+					enqueue(
+						recipient,
+						'invite',
+						`You were invited to Perilune as ${role}. This invitation expires in 24 hours.\n${url}`,
+						actor,
+						null,
+						hash
+					);
+				audit(actor, 'invite.created', role);
+				return url;
+			});
 		},
 		accounts: () => db.prepare('SELECT id,name,email,role FROM user ORDER BY createdAt').all(),
 		invitations: () =>
 			db
 				.prepare(
-					"SELECT hash,role,expires,claimed FROM enrollment WHERE kind='invite' ORDER BY created DESC"
+					"SELECT e.hash,e.role,e.expires,e.claimed,d.email,COALESCE(d.revoked,0) AS revoked FROM enrollment e LEFT JOIN invitation_details d ON d.hash=e.hash WHERE e.kind='invite' ORDER BY e.created DESC LIMIT 100"
 				)
 				.all(),
 		revokeInvite(actor: string, hash: string) {
-			db.prepare('DELETE FROM enrollment WHERE hash=? AND kind=?').run(hash, 'invite');
+			db.prepare(
+				"INSERT INTO invitation_details(hash,email,revoked) SELECT hash,NULL,1 FROM enrollment WHERE hash=? AND kind='invite' ON CONFLICT(hash) DO UPDATE SET revoked=1"
+			).run(hash);
 			audit(actor, 'invite.revoked', null);
 		},
 		revokeAccount(actor: string, id: string) {

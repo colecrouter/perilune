@@ -1449,3 +1449,54 @@ These establish native modal/scale semantics; custom macro behavior is not infer
 Remaining for #84: attended physical owner acceptance of the configured printer
 macro or assisted plan and pause notifications. All automated movement acceptance
 uses isolated synthetic printers.
+
+## Account entry, optional email and verified recovery
+
+Issue #87 adds a shared entry frame for login, setup, invitation, address
+verification and forgotten-password flows. Password/passkey entry and browser
+pairing remain available without SMTP. Entry forms remain disabled before
+hydration; token fragments are removed from the address bar and entry responses
+use no-referrer. Opening a link does not consume it; verification and reset require
+explicit submission. New fragment navigation and late responses cannot replace a
+newer recovery token. Used, expired, revoked and recipient-bound invitations have
+specific guidance. Private Account access/settings are SSR-awaited remote queries;
+refreshes preserve input drafts and no longer begin with a mount-time fetch.
+
+SMTP is optional server configuration with owner test-mail controls and redacted
+status. Existing email addresses remain unverified until the signed-in user
+requests an address-bound, expiring verification link and confirms it. Enrollment
+and possession of an arbitrary copyable invitation do not verify the typed email.
+Email invitations bind enrollment to a chosen recipient; copyable bearer invitations
+remain supported. Revocation state persists for review.
+
+Ordinary email reset uses a hashed single-use token bound to the current email,
+security epoch and browser login version. Password hashing precedes a synchronous
+transaction that consumes the token, checks eligibility, writes the new hash,
+increments loginVersion and invalidates browser sessions, pairing grants and other
+recovery links. An active non-null password is required, so this cannot bypass
+emergency owner recovery. Both epochs fence delayed password/passkey sign-in and
+pairing creation, and are checked again on every session use. Ordinary reset
+preserves passkeys, slicer keys and push registration epochs. Existing offline
+emergency recovery retains its stronger credential revocation policy.
+
+Recovery requests give generic responses, apply persistent global/IP/address
+bounds, and leave account credentials unchanged until a valid token is submitted.
+Only verified accounts are eligible; SMTP and missing-account response paths do
+not expose availability. Requests and reset endpoints are same-origin and bounded.
+The existing fixed 90-day browser-session policy remains unchanged.
+
+Email issuance and outbox insertion commit atomically. Payloads are AES-GCM sealed
+using an installation-secret-derived key; raw recovery tokens are not persisted.
+The process-scoped Effect mail worker owns one send at a time. It revalidates
+account/token/invitation state before claiming SMTP dispatch, uses owned net/TLS
+sockets with a 20-second absolute deadline and closes them on scoped shutdown.
+An interrupted/ambiguous send becomes unknown and is never automatically retried;
+only a failed status checkpoint retries storage. Terminal ciphertext is erased,
+queued messages expire after five minutes and history is pruned after seven days.
+SMTP acceptance is explicitly distinguished from inbox delivery.
+
+See [account email setup](account-email.md). Synthetic tests exercise concurrent
+reset redemption, delayed login/pairing, emergency recovery interactions, stale
+addresses/tokens, outbox capacity/restart, SMTP trickle/deadline/shutdown and full
+headless email verification/reset/invitation flows. Live SMTP delivery remains a
+host configuration and acceptance step; no real email provider is enabled by default.

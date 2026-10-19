@@ -138,6 +138,27 @@
 				rel="noreferrer">Backups and recovery ↗</a
 			>
 		</section>
+		<section id="account-email">
+			<h2>Email & account recovery</h2>
+			<p>
+				Email is optional. If the host configured it, verify your recovery address in Account before
+				using Forgot password. Resetting your password signs out browsers while preserving passkeys
+				and slicer integrations.
+			</p>
+			<p>Without email, use a passkey or another signed-in browser, or ask the host for help.</p>
+			<details>
+				<summary>Hosting this installation?</summary>
+				<p>
+					Configure SMTP on the server, then send a test email from Account → Access &amp; people.
+					An accepted message can still be filtered by the recipient’s mail service.
+				</p>
+				<a
+					href="https://github.com/colecrouter/perilune/blob/main/docs/account-email.md"
+					target="_blank"
+					rel="noreferrer">SMTP setup and recovery instructions ↗</a
+				>
+			</details>
+		</section>
 		<section id="access">
 			<h2>Need help signing in?</h2>
 			<p>
