@@ -3,23 +3,25 @@ import { Layer, ManagedRuntime } from 'effect';
 import { CameraConfig, CameraService, CameraServiceLive, type CameraSettings } from './camera.js';
 
 const runtimes: Array<ReturnType<typeof makeRuntime>> = [];
-function makeRuntime(settings: Partial<CameraSettings> = {}) {
+function makeRuntime(settings: Partial<CameraSettings> & { source?: string } = {}) {
 	return ManagedRuntime.make(
 		CameraServiceLive.pipe(
 			Layer.provide(
 				Layer.succeed(CameraConfig, {
 					baseUrl: 'http://camera.invalid/',
-					source: 'printer',
 					...settings
 				})
 			)
 		)
 	);
 }
-async function service(settings: Partial<CameraSettings> = {}) {
+async function service(settings: Partial<CameraSettings> & { source?: string } = {}) {
 	const runtime = makeRuntime(settings);
 	runtimes.push(runtime);
-	return { runtime, camera: await runtime.runPromise(CameraService) };
+	const camera = await runtime.runPromise(CameraService);
+	const source = { source: 'printer', ...settings }.source;
+	if (source) await runtime.runPromise(camera.setSource({ source, name: 'Printer camera' }));
+	return { runtime, camera };
 }
 const request = (query = '', signal?: AbortSignal) =>
 	new Request(`http://perilune.invalid/api/camera/stream.m3u8${query}`, { signal });
@@ -120,7 +122,7 @@ describe('same-origin camera gateway', () => {
 	it('rejects dynamic upstream inputs as registered sources', async () => {
 		const { runtime, camera } = await service({ source: undefined });
 		await expect(
-			runtime.runPromise(camera.updateSource({ source: 'rtsp://private.invalid', name: 'Invalid' }))
+			runtime.runPromise(camera.setSource({ source: 'rtsp://private.invalid', name: 'Invalid' }))
 		).rejects.toThrow('registered go2rtc stream name');
 	});
 	it('caps buffered media and rejects incorrect content types', async () => {
@@ -140,10 +142,10 @@ describe('same-origin camera gateway', () => {
 	it('refreshes source generation and invalidates old media sessions', async () => {
 		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(playlist(master)));
 		const { runtime, camera } = await service({ source: undefined });
-		await runtime.runPromise(camera.updateSource({ source: 'first', name: 'First' }));
+		await runtime.runPromise(camera.setSource({ source: 'first', name: 'First' }));
 		const masterResponse = await runtime.runPromise(camera.proxy('stream.m3u8', request()));
 		const local = (await masterResponse.text()).split('\n').at(-1)!;
-		await runtime.runPromise(camera.updateSource({ source: 'second', name: 'Second' }));
+		await runtime.runPromise(camera.setSource({ source: 'second', name: 'Second' }));
 		expect((await runtime.runPromise(camera.getDescriptor)).generation).toBe(2);
 		expect(
 			(
@@ -178,7 +180,7 @@ describe('same-origin camera gateway', () => {
 				source: undefined,
 				requestTimeoutMs: reason === 'timeout' ? 20 : 1000
 			});
-			await runtime.runPromise(camera.updateSource({ source: 'first', name: 'First' }));
+			await runtime.runPromise(camera.setSource({ source: 'first', name: 'First' }));
 			const controller = new AbortController();
 			const invocation = new AbortController();
 			const response = runtime.runPromise(
@@ -202,7 +204,7 @@ describe('same-origin camera gateway', () => {
 				expect(upstreamSignal?.aborted).toBe(true);
 				return;
 			}
-			if (reason === 'source') await runtime.runPromise(camera.updateSource(null));
+			if (reason === 'source') await runtime.runPromise(camera.setSource(null));
 			expect((await response).status).toBe(504);
 			expect(upstreamSignal?.aborted).toBe(true);
 		}
@@ -319,7 +321,7 @@ describe('continuous MSE camera output', () => {
 				source: undefined,
 				requestTimeoutMs: reason === 'inactivity' ? 20 : 1000
 			});
-			await runtime.runPromise(camera.updateSource({ source: 'printer', name: 'Camera' }));
+			await runtime.runPromise(camera.setSource({ source: 'printer', name: 'Camera' }));
 			const client = new AbortController();
 			const response = await runtime.runPromise(
 				camera.proxy('stream.mp4', request('', client.signal))
@@ -332,7 +334,7 @@ describe('continuous MSE camera output', () => {
 					: expect(pending).rejects.toThrow('interrupted');
 			if (reason === 'body') await reader.cancel();
 			if (reason === 'request') client.abort();
-			if (reason === 'source') await runtime.runPromise(camera.updateSource(null));
+			if (reason === 'source') await runtime.runPromise(camera.setSource(null));
 			if (reason === 'shutdown') await runtime.dispose();
 			await settled;
 			expect(signal?.aborted).toBe(true);
@@ -387,7 +389,7 @@ describe('managed camera sources', () => {
 			vi.stubGlobal('fetch', fetcher);
 			const { runtime, camera } = await service({ baseUrl, source: undefined });
 			await runtime.runPromise(
-				camera.setManagedSource({
+				camera.setSource({
 					source: 'managed',
 					name: 'Managed',
 					baseUrl: 'http://companion.invalid/',
@@ -413,7 +415,7 @@ describe('managed camera sources', () => {
 		vi.stubGlobal('fetch', fetcher);
 		const { runtime, camera } = await service();
 		await runtime.runPromise(
-			camera.setManagedSource({
+			camera.setSource({
 				source: 'managed',
 				name: 'Managed',
 				baseUrl: 'http://companion.invalid/',
@@ -428,18 +430,12 @@ describe('managed camera sources', () => {
 		);
 		expect(response.headers.get('Authorization')).toBeNull();
 	});
-	it('keeps managed selection through discovery updates and restores discovery after clearing', async () => {
-		const { runtime, camera } = await service({ source: undefined });
+	it('disconnects without restoring a hidden camera selection', async () => {
+		const { runtime, camera } = await service();
 		await runtime.runPromise(
-			camera.setManagedSource({
-				source: 'managed',
-				name: 'Managed',
-				baseUrl: 'http://companion.invalid/'
-			})
+			camera.setSource({ source: 'managed', name: 'Managed', baseUrl: 'http://companion.invalid/' })
 		);
-		await runtime.runPromise(camera.updateSource({ source: 'discovered', name: 'Discovered' }));
-		expect((await runtime.runPromise(camera.getDescriptor)).name).toBe('Managed');
-		await runtime.runPromise(camera.setManagedSource(null));
-		expect((await runtime.runPromise(camera.getDescriptor)).name).toBe('Discovered');
+		await runtime.runPromise(camera.setSource(null));
+		expect((await runtime.runPromise(camera.getDescriptor)).configured).toBe(false);
 	});
 });

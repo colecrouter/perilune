@@ -17,8 +17,7 @@ const env = {
 	PERILUNE_ORIGIN: base,
 	PERILUNE_DATABASE: filename,
 	PERILUNE_MOONRAKER_URL: '',
-	PERILUNE_CAMERA_BASE_URL: '',
-	PERILUNE_CAMERA_SOURCE: ''
+	PERILUNE_CAMERA_COMPANION_URL: ''
 };
 let server = spawn(process.execPath, ['scripts/server.mjs'], {
 	env,

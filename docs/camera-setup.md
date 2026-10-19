@@ -22,7 +22,7 @@ For a standalone Node deployment, run the same pinned companion privately and se
 `PERILUNE_CAMERA_COMPANION_URL` to its server-reachable HTTP API base. A host-network
 app needs a loopback-bound companion port rather than Compose service DNS. Ensure
 both containers can reach the source; `localhost` in a container means that
-container. The original external relay variables remain supported independently.
+container. Camera sources are selected only through the owner test/preview/save workflow.
 
 If Moonraker webcam entries use relative URLs, set `PERILUNE_PRINTER_WEB_ORIGIN`
 to the printer's web origin, including its web port if needed. This may differ
@@ -41,7 +41,7 @@ files and backups as credentials. Saved endpoints are never returned to the form
 Test the connection, inspect the preview if available, then save. A failed test
 leaves the current camera in place. Tests expire after five minutes; concurrent
 settings changes require a fresh test. A missing snapshot does not invalidate
-working video. Disconnect restores any legacy configured/discovered relay source.
+working video. Disconnect clears the saved source and stops playback.
 Rotation and flips affect display, while downloaded captures retain source pixels.
 
 The companion prefers H.264 without re-encoding. MJPEG and H.265 can be converted
@@ -71,8 +71,9 @@ media; settings changes invalidate prior media sessions.
 - **IP camera:** use the vendor's RTSP H.264 endpoint where available. H.265 can be
   converted, with additional CPU cost. Proprietary cloud-only protocols are outside
   this release's target.
-- **Existing go2rtc/Frigate:** continue using the existing external relay variables;
-  Perilune does not mutate that relay's configuration as its managed companion.
+- **Existing go2rtc/Frigate:** add its RTSP or encoded HTTP stream through Camera
+  settings, or connect directly to the original camera endpoint. Use a dedicated
+  Perilune companion; the NVR remains an upstream source, not a configuration backend.
 
 Capture daemons, USB permissions and CSI drivers remain host-specific. See the
 primary references in [the compatibility matrix](camera-compatibility.md).
@@ -127,3 +128,15 @@ acceptance; the adapter and profile lifecycle are covered by synthetic tests.
 
 A CSI camera requiring libcamera/rpicam should continue through an appropriate
 capture service on its Pi. Mapping a USB node is not a universal CSI setup method.
+
+## Migrating an earlier relay selection
+
+The environment-selected relay path has been removed. Before updating an older
+installation, enable the managed companion and test/save the current camera in
+Camera settings. Prefer the original camera RTSP endpoint when available; an
+existing relay's network output can also be used. Verify video and snapshots,
+then remove `PERILUNE_CAMERA_BASE_URL` and `PERILUNE_CAMERA_SOURCE` from the private
+deployment environment. These variables no longer select a camera.
+
+Saved managed camera settings survive the update. Moonraker entries are import
+candidates and cannot silently replace the saved camera when they change.

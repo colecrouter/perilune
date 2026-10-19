@@ -144,8 +144,7 @@ async function start(port, live, configuration = false) {
 			PERILUNE_MOONRAKER_API_KEY: live ? 'fixture-private-key' : '',
 			PERILUNE_LIVE_MESH: 'false',
 			PERILUNE_LIVE_CONFIGURATION: String(configuration),
-			PERILUNE_CAMERA_BASE_URL: '',
-			PERILUNE_CAMERA_SOURCE: ''
+			PERILUNE_CAMERA_COMPANION_URL: ''
 		},
 		stdio: ['ignore', 'pipe', 'pipe']
 	});

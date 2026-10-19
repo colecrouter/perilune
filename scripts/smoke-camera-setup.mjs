@@ -80,8 +80,6 @@ try {
 				PERILUNE_ORIGIN: base,
 				PERILUNE_MOONRAKER_URL: '',
 				PERILUNE_MOONRAKER_API_KEY: '',
-				PERILUNE_CAMERA_BASE_URL: '',
-				PERILUNE_CAMERA_SOURCE: '',
 				PERILUNE_CAMERA_COMPANION_URL: mediaBase,
 				PERILUNE_PRINTER_WEB_ORIGIN: ''
 			},
@@ -255,6 +253,8 @@ try {
 	});
 	assert.equal(reset.status(), 200);
 	assert.equal((await reset.json()).name, null);
+	const disconnected = await context.request.get(base + '/api/camera/setup');
+	assert.equal((await disconnected.json()).current.configured, false);
 	await page.goto(base + '/camera');
 	await page
 		.getByRole('combobox', { name: 'Connection type', exact: true })

@@ -29,17 +29,14 @@ import { CameraConfig, CameraServiceLive } from './camera.js';
 import { CameraSetupServiceLive, CameraSetupSettings } from './camera-setup-service.js';
 import { JobServiceLive, JobsConfig } from './job-service.js';
 import { LiveMeshServiceLive, LiveMeshDisabled } from './live-mesh-service.js';
-import { WebcamBridgeLive } from './webcam-discovery.js';
 
 const filename = process.env.PERILUNE_DATABASE ?? './data/perilune.sqlite';
 mkdirSync(dirname(filename), { recursive: true });
-const cameraBaseUrl = process.env.PERILUNE_CAMERA_BASE_URL?.trim() ?? '';
-const cameraSource = process.env.PERILUNE_CAMERA_SOURCE?.trim();
+const cameraBaseUrl = process.env.PERILUNE_CAMERA_COMPANION_URL?.trim() ?? '';
 const cameraLayer = CameraServiceLive.pipe(
 	Layer.provide(
 		Layer.succeed(CameraConfig, {
-			baseUrl: cameraBaseUrl,
-			...(cameraSource ? { source: cameraSource } : {})
+			baseUrl: cameraBaseUrl
 		})
 	)
 );
@@ -69,9 +66,7 @@ const printerLayer = (moonrakerUrl ? makePrinterService('moonraker') : PrinterSe
 );
 const moonrakerConfigLayer = Layer.succeed(MoonrakerConfig, {
 	url: moonrakerUrl ?? '',
-	discoverWebcams: Boolean(
-		process.env.PERILUNE_CAMERA_COMPANION_URL || (cameraBaseUrl && !cameraSource)
-	),
+	discoverWebcams: Boolean(cameraBaseUrl),
 	liveMeshEnabled: process.env.PERILUNE_LIVE_MESH === 'true',
 	liveControlsEnabled: process.env.PERILUNE_LIVE_CONTROLS === 'true',
 	pidCalibrationEnabled:
@@ -86,7 +81,7 @@ const liveServices = Layer.mergeAll(
 	MoonrakerServiceLive.pipe(Layer.provide(moonrakerConfigLayer))
 );
 const coreLayer = moonrakerUrl
-	? Layer.merge(MoonrakerBridgeLive, WebcamBridgeLive).pipe(Layer.provideMerge(liveServices))
+	? MoonrakerBridgeLive.pipe(Layer.provideMerge(liveServices))
 	: Layer.merge(printerLayer, cameraLayer);
 const safetyLayer = moonrakerUrl
 	? SafetyServiceLive.pipe(

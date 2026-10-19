@@ -12,8 +12,7 @@ const output = execFileSync('docker', ['compose', 'config', '--format', 'json'],
 		PERILUNE_LIVE_Z_CALIBRATION: 'true',
 		PERILUNE_MOONRAKER_URL: 'ws://printer.example.invalid:7125/websocket',
 		PERILUNE_MOONRAKER_API_KEY: 'example-test-key',
-		PERILUNE_CAMERA_BASE_URL: 'http://go2rtc.example.invalid:1984/',
-		PERILUNE_CAMERA_SOURCE: 'printer_camera'
+		PERILUNE_CAMERA_COMPANION_URL: 'http://camera.example.invalid:1984/'
 	},
 	encoding: 'utf8'
 });
@@ -31,10 +30,11 @@ assert.equal(config.services.perilune.environment.PERILUNE_MOONRAKER_API_KEY, 'e
 console.log('Compose preserves origin and private Moonraker settings.');
 
 assert.equal(
-	config.services.perilune.environment.PERILUNE_CAMERA_BASE_URL,
-	'http://go2rtc.example.invalid:1984/'
+	config.services.perilune.environment.PERILUNE_CAMERA_COMPANION_URL,
+	'http://camera.example.invalid:1984/'
 );
-assert.equal(config.services.perilune.environment.PERILUNE_CAMERA_SOURCE, 'printer_camera');
+assert.equal(config.services.perilune.environment.PERILUNE_CAMERA_SOURCE, undefined);
+assert.equal(config.services.perilune.environment.PERILUNE_CAMERA_BASE_URL, undefined);
 
 assert.equal(
 	config.services.perilune.environment.PERILUNE_KLIPPER_WORKING_DIRECTORY,

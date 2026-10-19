@@ -96,8 +96,7 @@ const app = spawn(process.execPath, ['scripts/server.mjs'], {
 		PERILUNE_DATABASE: join(directory, 'state.sqlite'),
 		PERILUNE_MOONRAKER_URL: `ws://127.0.0.1:${address.port}/websocket`,
 		PERILUNE_MOONRAKER_API_KEY: 'fixture-private-key',
-		PERILUNE_CAMERA_BASE_URL: '',
-		PERILUNE_CAMERA_SOURCE: ''
+		PERILUNE_CAMERA_COMPANION_URL: ''
 	},
 	stdio: ['ignore', 'pipe', 'pipe']
 });
