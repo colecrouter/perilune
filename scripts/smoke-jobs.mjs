@@ -364,19 +364,20 @@ try {
 		'unfinished search'
 	);
 	await page.getByRole('searchbox', { name: 'Find a file' }).fill('catalog-');
-	// Query changes preserve the table's scroll position and the surviving control focus.
+	// Sort links load a new document with the requested server-rendered order.
 	const sortLink = page.getByRole('columnheader', { name: 'File', exact: false }).getByRole('link');
 	await sortLink.scrollIntoViewIfNeeded();
 	await sortLink.focus();
 	const detailHref = await page
 		.getByRole('link', { name: 'catalog-00.gcode', exact: true })
 		.getAttribute('href');
-	const scrollBefore = await page.evaluate(() => window.scrollY);
+	await page.evaluate(() => {
+		window.jobsNavigationMarker = true;
+	});
 	await sortLink.click();
 	await page.waitForURL(/direction=desc/);
 	await page.waitForFunction(() => document.querySelector('th[aria-sort="descending"]'));
-	assert.ok(Math.abs((await page.evaluate(() => window.scrollY)) - scrollBefore) < 2);
-	assert.equal(await sortLink.evaluate((link) => document.activeElement === link), true);
+	assert.equal(await page.evaluate(() => window.jobsNavigationMarker), undefined);
 	await page.locator('.columns summary').click();
 	await page.getByRole('checkbox', { name: 'Size', exact: true }).uncheck();
 	assert.equal(await page.getByRole('columnheader', { name: 'Size', exact: true }).count(), 0);

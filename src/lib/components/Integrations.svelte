@@ -25,6 +25,7 @@
 	let copyMessage = $state('');
 	let rowMessages = $state<Record<string, string>>({});
 	let loaded = $state(false);
+	let hydrated = $state(false);
 	let host = $state('');
 	async function api(path: string, body?: unknown) {
 		const response = await fetch(path, {
@@ -43,6 +44,7 @@
 		loaded = true;
 	}
 	onMount(() => {
+		hydrated = true;
 		host = location.origin;
 		void refresh().catch(() => {
 			message = 'Could not load integrations. Reload to try again.';
@@ -134,21 +136,28 @@
 				void action('create');
 			}}
 		>
-			<label>Integration name<input bind:value={name} maxlength="80" required /></label>
 			<label
-				>Access<select aria-label="Access" bind:value={permission}
+				>Integration name<input
+					disabled={!hydrated}
+					bind:value={name}
+					maxlength="80"
+					required
+				/></label
+			>
+			<label
+				>Access<select disabled={!hydrated} aria-label="Access" bind:value={permission}
 					><option value="upload">Upload files</option><option value="print"
 						>Upload and start prints</option
 					></select
 				></label
 			>
 			<label
-				>Key expiration<select aria-label="Key expiration" bind:value={expiry}
+				>Key expiration<select disabled={!hydrated} aria-label="Key expiration" bind:value={expiry}
 					><option value="never">No expiration</option><option value="90">After 90 days</option
 					><option value="365">After one year</option></select
 				></label
 			>
-			<button class="button primary" disabled={pending.create}
+			<button class="button primary" disabled={!hydrated || pending.create}
 				>{pending.create ? 'Creating…' : 'Create key'}</button
 			>
 		</form>

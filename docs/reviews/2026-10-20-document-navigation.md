@@ -13,3 +13,9 @@ keeping hidden panels mounted. A future unsaved-notification warning is optional
 Display preference PATCH requests use keepalive to allow a pending small save to
 finish when following an ordinary link. Imperative upload/calibration handoff
 navigation remains explicit.
+
+Follow-up review approved the Jobs smoke's document-navigation assertion and the
+integration form hydration guard. An SSR-visible permission selector could be
+changed before handlers attached, then reset during hydration. Name, permission,
+expiry and creation controls now stay disabled until hydration completes; pending
+creation remains disabled as before. No additional blocking findings.
