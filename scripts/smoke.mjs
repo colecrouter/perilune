@@ -145,7 +145,7 @@ try {
 		.waitFor({ timeout: 10000 });
 	await mkdir('test-results', { recursive: true });
 	await first.screenshot({ path: 'test-results/overview-serif.png', fullPage: true });
-	await first.goto(base + '/account#preferences');
+	await first.goto(base + '/account?section=preferences');
 	const sansSaved = first.waitForResponse(
 		(r) => r.url().endsWith('/api/preferences') && r.request().method() === 'PATCH' && r.ok()
 	);
@@ -178,7 +178,7 @@ try {
 		).status(),
 		403
 	);
-	await first.goto(base + '/account#preferences');
+	await first.goto(base + '/account?section=preferences');
 	const saved = first.waitForResponse(
 		(r) => r.url().endsWith('/api/preferences') && r.request().method() === 'PATCH' && r.ok()
 	);
@@ -425,7 +425,7 @@ try {
 	await first.getByRole('menuitem', { name: 'Z-offset', exact: true }).click();
 	await first.getByRole('heading', { name: 'Z-offset workshop', exact: true }).waitFor();
 
-	await first.goto(`${base}/account#notifications`);
+	await first.goto(`${base}/account?section=notifications`);
 	await first.getByRole('heading', { name: 'Perilune on this device', exact: true }).waitFor();
 	await first.locator('details.notification-options summary').click();
 	assert.equal(
@@ -444,30 +444,43 @@ try {
 		.check();
 	await first.getByLabel('Quiet hours', { exact: true }).check();
 	await first.getByLabel('From', { exact: true }).fill('21:30');
-	// Account section changes preserve unsaved device drafts and remain directly addressable.
-	await first.evaluate(() => window.scrollTo(0, 0));
-	await first.getByRole('tab', { name: 'Display', exact: true }).click();
-	assert.equal(
-		await first.evaluate(() => scrollY),
-		0,
-		'Selecting an account tab must not jump to a fragment target'
-	);
-	assert.equal(
-		await first.getByRole('tab', { name: 'Display', exact: true }).getAttribute('aria-selected'),
-		'true'
-	);
+	// Section links load documents, and the server selects the correct content without JavaScript.
+	await first.evaluate(() => {
+		window.accountNavigationMarker = true;
+	});
+	await first.getByRole('link', { name: 'Display', exact: true }).click();
 	await first.getByRole('checkbox', { name: 'Serif headings', exact: true }).waitFor();
-	// Keyboard activation follows the tabs pattern while all device drafts stay mounted.
-	await first.getByRole('tab', { name: 'Display', exact: true }).press('Home');
-	await first.getByRole('tab', { name: 'Access & people', exact: true }).press('ArrowRight');
+	assert.equal(await first.evaluate(() => window.accountNavigationMarker), undefined);
+	assert.equal(new URL(first.url()).searchParams.get('section'), 'preferences');
+	await first.reload();
+	await first.getByRole('checkbox', { name: 'Serif headings', exact: true }).waitFor();
 	assert.equal(
-		await first
-			.getByRole('tab', { name: 'This device', exact: true })
-			.getAttribute('aria-selected'),
-		'true'
+		await first.getByRole('link', { name: 'Display', exact: true }).getAttribute('aria-current'),
+		'page'
 	);
-	assert.equal(await first.getByLabel('From', { exact: true }).inputValue(), '21:30');
-	assert.equal(new URL(first.url()).hash, '#notifications');
+	const noJs = await browser.newContext({
+		javaScriptEnabled: false,
+		storageState: await context.storageState()
+	});
+	const noJsPage = await noJs.newPage();
+	for (const [section, title] of [
+		['preferences', 'Make yourself at home'],
+		['notifications', 'Perilune on this device'],
+		['integrations', 'Slicers & browsers']
+	]) {
+		await noJsPage.goto(base + '/account?section=' + section);
+		await noJsPage.getByRole('heading', { name: title, exact: true }).waitFor();
+		assert.equal(
+			await noJsPage.getByRole('heading', { name: 'Secure access', exact: true }).count(),
+			0
+		);
+	}
+	await noJsPage.goto(base + '/account?section=unknown');
+	await noJsPage.getByRole('heading', { name: 'Secure access', exact: true }).waitFor();
+	await noJs.close();
+	await first.getByRole('link', { name: 'This device', exact: true }).click();
+	await first.getByRole('heading', { name: 'Perilune on this device', exact: true }).waitFor();
+	assert.equal(new URL(first.url()).searchParams.get('section'), 'notifications');
 	await first.screenshot({ path: 'test-results/device-settings-mobile.png', fullPage: true });
 	assert.equal(
 		await first.evaluate(() => document.documentElement.scrollWidth <= innerWidth),

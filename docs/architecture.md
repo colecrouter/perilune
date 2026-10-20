@@ -1500,3 +1500,16 @@ reset redemption, delayed login/pairing, emergency recovery interactions, stale
 addresses/tokens, outbox capacity/restart, SMTP trickle/deadline/shutdown and full
 headless email verification/reset/invitation flows. Live SMTP delivery remains a
 host configuration and acceptance step; no real email provider is enabled by default.
+
+### Document navigation
+
+Ordinary application links inherit `data-sveltekit-reload` from the root layout
+and use browser document navigation. Account sections are normal links to
+`/account?section=notifications`, `integrations`, or `preferences`; `/account`
+selects Access & people. The server selects the section before rendering, including
+when JavaScript is disabled. Unknown section values fall back to Access & people.
+Previous fragment-based internal links have been updated; fragments cannot select
+server-rendered sections because browsers do not send them to the server.
+Configuration file links explicitly retain client navigation so switching files
+preserves unsaved multi-file drafts. Imperative navigation after uploads and the in-memory calibration proposal handoff
+remains explicit, as do fragment-token handling and interactive menus/actions.

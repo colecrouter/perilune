@@ -40,7 +40,7 @@
 {#if data.user}{#key page.url.pathname === '/'}<PrintFavicon
 			overview={page.url.pathname === '/'}
 		/>{/key}{/if}
-<div class="app-preferences" data-serif={preferences.values.serif}>
+<div data-sveltekit-reload class="app-preferences" data-serif={preferences.values.serif}>
 	{@render children()}
 	{#if data.preferencesUnavailable}<p class="preference-error" role="status">
 			Saved display preferences are unavailable. Showing defaults until they can be loaded again.

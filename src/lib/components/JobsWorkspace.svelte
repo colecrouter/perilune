@@ -371,7 +371,8 @@
 						{catalog}
 						selectedId={selected?.id}
 					/>{:else}<p class="muted">
-						Upload your first sliced file, or <a href="/account#integrations">connect your slicer</a
+						Upload your first sliced file, or <a href="/account?section=integrations"
+							>connect your slicer</a
 						>.
 					</p>{/if}
 			</section>
@@ -527,7 +528,7 @@
 				>{/if}
 		</section>
 		{#if canOperate}<p class="panel">
-				<a href="/account#integrations">Connect your slicer in Account → Integrations</a>
+				<a href="/account?section=integrations">Connect your slicer in Account → Integrations</a>
 			</p>{/if}
 		<section class="panel action-history">
 			<h2>Actions</h2>
