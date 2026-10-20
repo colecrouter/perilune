@@ -86,7 +86,12 @@ export const handle: typeof integration.handle = async ({ event, resolve }) => {
 	}
 	const response = await integration.handle({ event, resolve });
 	// Preserve the DOM that Svelte will hydrate (including visible email addresses).
-	response.headers.set('Cache-Control', 'no-store, no-transform');
+	response.headers.set(
+		'Cache-Control',
+		response.headers.get('Content-Type')?.includes('text/html')
+			? 'no-store, no-transform'
+			: 'no-store'
+	);
 	response.headers.set(
 		'Referrer-Policy',
 		['/login', '/register', '/forgot-password', '/verify-email', '/setup'].includes(

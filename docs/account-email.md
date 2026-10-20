@@ -110,7 +110,7 @@ records intact and add only the records required for your selected sending domai
 
 ## Reverse proxies and hydration
 
-Perilune sends `Cache-Control: no-store, no-transform` on application responses.
+Perilune sends `Cache-Control: no-store, no-transform` on application HTML responses.
 Keep `no-transform` intact through your reverse proxy: rewriting server-rendered
 HTML can break Svelte hydration and leave visible controls unresponsive.
 In particular, [Cloudflare Email Address Obfuscation](https://developers.cloudflare.com/waf/tools/scrape-shield/email-address-obfuscation/)
