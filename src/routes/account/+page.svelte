@@ -219,17 +219,19 @@
 				{#if data.user?.role === 'owner'}
 					<section class="account-card" aria-labelledby="invite-heading">
 						<h2 id="invite-heading">Invite someone</h2>
+						{#if recovery.enabled}
+							<label class="email-option">
+								<input type="checkbox" bind:checked={sendEmail} />
+								Send by email
+							</label>
+						{/if}
 						<div class="invite-form">
-							{#if recovery.enabled}<label
-									><input type="checkbox" bind:checked={sendEmail} />Send by email</label
-								>{#if sendEmail}<label
-										>Recipient email<input
-											type="email"
-											bind:value={inviteEmail}
-											maxlength="254"
-											required
-										/></label
-									>{/if}{/if}
+							{#if recovery.enabled && sendEmail}
+								<label class="recipient-field">
+									Recipient email
+									<input type="email" bind:value={inviteEmail} maxlength="254" required />
+								</label>
+							{/if}
 							<label
 								>Access<select bind:value={role}
 									><option value="viewer">Viewer</option><option value="operator">Operator</option
@@ -399,7 +401,7 @@
 		font-weight: 500;
 	}
 	select,
-	input {
+	input:not([type='checkbox']) {
 		min-height: 44px;
 		border-radius: 7px;
 		border: 1px solid var(--border-strong);
@@ -408,6 +410,32 @@
 		color: var(--text);
 		background: var(--surface);
 		max-width: 100%;
+	}
+	.email-option {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		min-height: 44px;
+		width: fit-content;
+		margin-top: 0.5rem;
+		cursor: pointer;
+	}
+	.email-option input {
+		width: 1.125rem;
+		height: 1.125rem;
+		margin: 0;
+		flex: none;
+		accent-color: var(--accent);
+	}
+	.recipient-field {
+		flex: 0 1 22rem;
+		min-width: 0;
+	}
+	@media (max-width: 640px) {
+		.invite-form > label,
+		.invite-form > button {
+			width: 100%;
+		}
 	}
 	.help {
 		color: var(--muted);
