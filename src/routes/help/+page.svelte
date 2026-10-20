@@ -76,9 +76,9 @@
 		<section id="slicers">
 			<h2>Connect your slicer or another browser</h2>
 			<p>
-				In <a href="/account#integrations">Account → Integrations</a>, create a named key with
-				Upload files or Upload and start prints access. In your slicer, choose Klipper / Moonraker
-				and enter this panel’s address and the key. Keep API keys private.
+				In <a href="/account?section=integrations">Account → Integrations</a>, create a named key
+				with Upload files or Upload and start prints access. In your slicer, choose Klipper /
+				Moonraker and enter this panel’s address and the key. Keep API keys private.
 			</p>
 			<p>
 				An embedded Device tab signs in separately: choose <a href="/pair/start"
@@ -98,8 +98,8 @@
 					use the browser’s Install or Add to Home Screen option.
 				</li>
 				<li>
-					Open <a href="/account#notifications">Account → This device</a>, enable notifications, and
-					send a test.
+					Open <a href="/account?section=notifications">Account → This device</a>, enable
+					notifications, and send a test.
 				</li>
 				<li>
 					Close the app and verify delivery. Choose the event types and quiet hours you want. By

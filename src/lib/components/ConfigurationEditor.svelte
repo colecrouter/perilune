@@ -386,6 +386,7 @@
 			<nav aria-label="Configuration files">
 				{#snippet fileLink(file: ConfigFile)}<a
 						href={`?file=${encodeURIComponent(file.path)}`}
+						data-sveltekit-reload="false"
 						data-sveltekit-reset="false"
 						aria-current={file.path === source.path ? 'page' : undefined}
 					>
@@ -448,6 +449,7 @@
 				{#if revisionOf}<p class="notice">
 						Read-only saved revision of <a
 							href={`?file=${encodeURIComponent(revisionOf)}`}
+							data-sveltekit-reload="false"
 							data-sveltekit-reset="false">{revisionOf}</a
 						>. Opening it does not restore or activate it. Export or copy the changes you need into
 						the current file for review.
@@ -524,6 +526,7 @@
 						<strong>Includes</strong
 						>{#each includes as include}{#if files.some((file) => file.path === include)}<a
 									href={`?file=${encodeURIComponent(include)}`}
+									data-sveltekit-reload="false"
 									data-sveltekit-reset="false">{include} →</a
 								>{:else}<code>{include}</code>{/if}{/each}<span class="muted small"
 							>Resolved by Klipper in source order; wildcard matches and overrides are not expanded

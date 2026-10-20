@@ -27,6 +27,7 @@ export function createPreferences(owner: string | null, initial: Preferences = d
 		try {
 			const response = await fetch('/api/preferences', {
 				method: 'PATCH',
+				keepalive: true,
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(patch),
 				signal: request.signal
