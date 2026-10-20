@@ -56,3 +56,54 @@ sending records an unknown outcome. Only storage checkpoints are retried. Termin
 payloads are erased and history is retained for at most seven days. Include the
 existing auth secret and private SMTP environment in your private disaster-recovery
 plan; do not publish queue/database dumps.
+
+## Local capture inbox experiment
+
+[Mailpit](https://mailpit.axllent.org/) captures SMTP messages in a web inbox
+without delivering them externally. Follow its [Docker installation guide](https://mailpit.axllent.org/docs/install/docker/)
+and [runtime configuration reference](https://mailpit.axllent.org/docs/configuration/runtime-options/).
+For a temporary host-network Perilune installation:
+
+```sh
+docker run -d --name perilune-mailpit \
+  -p 127.0.0.1:4325:8025 -p 127.0.0.1:4326:1025 \
+  -e MP_MAX_MESSAGES=100 -e MP_MAX_AGE=1d axllent/mailpit
+```
+
+Set the following private server environment, forward it into the Perilune
+container, and recreate the service:
+
+```dotenv
+PERILUNE_SMTP_HOST=127.0.0.1
+PERILUNE_SMTP_PORT=4326
+PERILUNE_SMTP_FROM=Perilune <accounts@example.test>
+PERILUNE_SMTP_ALLOW_INSECURE=true
+```
+
+Leave SMTP username/password unset. This plaintext exception is only for the
+loopback capture inbox. For bridge-network Compose installations, use the Mailpit
+service name and container port 1025 instead; localhost inside Perilune refers to
+its own container. Do not expose either Mailpit port publicly or configure a relay.
+
+Forward the inbox to your workstation:
+
+```sh
+ssh -N -L 8025:127.0.0.1:4325 your-server
+```
+
+Open `http://localhost:8025`, then send a test from Account. Request email
+verification and explicitly confirm the link in the captured message. Use a
+disposable invited account to test password reset, session revocation and normal
+sign-in, rather than resetting an active owner's password. Capture mode accepts
+any recipient; verification here demonstrates the application flow, not ownership
+of a real inbox. It does not validate public DNS authentication or inbox delivery.
+
+Before returning to normal operation, disable SMTP or replace these settings with
+a real provider, remove the plaintext exception, and recreate Perilune. Stop and
+remove the capture container (`docker rm -f perilune-mailpit`) to discard its
+inbox. Treat captured recovery links as credentials. Do not publish its messages.
+
+For actual delivery, consult your provider's guides, for example
+[Resend domain verification](https://resend.com/docs/dashboard/domains/introduction)
+and [SMTP setup](https://resend.com/docs/send-with-smtp). Keep existing DNS mail
+records intact and add only the records required for your selected sending domain.
