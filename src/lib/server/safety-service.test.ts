@@ -151,7 +151,8 @@ async function fixture() {
 					pollMs: 2
 				})
 			),
-			Layer.provide(Layer.succeed(MoonrakerConfig, { url, requestTimeoutMs: 100 })),
+			// Allow local HTTP scheduling on loaded CI runners; observation deadlines stay short.
+			Layer.provide(Layer.succeed(MoonrakerConfig, { url, requestTimeoutMs: 1000 })),
 			Layer.provideMerge(transport),
 			Layer.provideMerge(printer),
 			Layer.provideMerge(db)
