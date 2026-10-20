@@ -85,7 +85,13 @@ export const handle: typeof integration.handle = async ({ event, resolve }) => {
 		redirect(303, authService.needsSetup() ? '/setup' : '/login');
 	}
 	const response = await integration.handle({ event, resolve });
-	response.headers.set('Cache-Control', 'no-store');
+	// Preserve the DOM that Svelte will hydrate (including visible email addresses).
+	response.headers.set(
+		'Cache-Control',
+		response.headers.get('Content-Type')?.includes('text/html')
+			? 'no-store, no-transform'
+			: 'no-store'
+	);
 	response.headers.set(
 		'Referrer-Policy',
 		['/login', '/register', '/forgot-password', '/verify-email', '/setup'].includes(
