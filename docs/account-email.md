@@ -107,3 +107,12 @@ For actual delivery, consult your provider's guides, for example
 [Resend domain verification](https://resend.com/docs/dashboard/domains/introduction)
 and [SMTP setup](https://resend.com/docs/send-with-smtp). Keep existing DNS mail
 records intact and add only the records required for your selected sending domain.
+
+## Reverse proxies and hydration
+
+Perilune sends `Cache-Control: no-store, no-transform` on application responses.
+Keep `no-transform` intact through your reverse proxy: rewriting server-rendered
+HTML can break Svelte hydration and leave visible controls unresponsive.
+In particular, [Cloudflare Email Address Obfuscation](https://developers.cloudflare.com/waf/tools/scrape-shield/email-address-obfuscation/)
+replaces email text with a link; Cloudflare documents `no-transform` as preventing
+that rewrite. Disable any other HTML-rewriting features that ignore this directive.

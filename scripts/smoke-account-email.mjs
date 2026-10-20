@@ -98,7 +98,8 @@ try {
 	const page = await owner.newPage(),
 		errors = [];
 	page.on('pageerror', (e) => errors.push(e.message));
-	await page.goto(base + '/account');
+	const accountDocument = await page.goto(base + '/account');
+	assert.match(accountDocument.headers()['cache-control'], /(?:^|,\s*)no-transform(?:,|$)/);
 	await page.getByRole('heading', { name: 'Account recovery', exact: true }).waitFor();
 	assert.match(await page.locator('body').innerText(), /Not verified for recovery/);
 	await page.getByRole('button', { name: 'Send test email', exact: true }).click();
