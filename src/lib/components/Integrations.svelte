@@ -1,54 +1,40 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import type { KeySummary } from '#lib/server/job-service.js';
+	import {
+		getIntegrations,
+		createSlicerKey,
+		revokeSlicerKey,
+		disconnectSlicer,
+		revokePairedBrowser
+	} from '../../routes/account/integrations.remote.js';
 	let { canOperate = false }: { canOperate?: boolean } = $props();
 	let name = $state('Desktop slicer');
 	let permission = $state('upload');
 	let expiry = $state('never');
 	let token = $state('');
 	let reveal = $state(false);
-	let keys = $state<KeySummary[]>([]);
-	let browsers = $state<
-		{
-			id: string;
-			name: string;
-			created: number;
-			integrationId: string | null;
-			lastUsed: number;
-			current: boolean;
-			expires: number;
-		}[]
-	>([]);
+	const integrations = getIntegrations();
+	const initial = await integrations;
+	let keys = $state(initial.keys);
+	let browsers = $state(initial.browsers);
 	let message = $state('');
 	let pending = $state<Record<string, boolean>>({});
 	let createMessage = $state('');
 	let copyMessage = $state('');
 	let rowMessages = $state<Record<string, string>>({});
-	let loaded = $state(false);
+	let loaded = $state(true);
 	let hydrated = $state(false);
-	let host = $state('');
-	async function api(path: string, body?: unknown) {
-		const response = await fetch(path, {
-			method: body ? 'POST' : 'GET',
-			...(body
-				? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-				: {})
-		});
-		const result = await response.json();
-		if (!response.ok) throw new Error(result.message ?? 'Could not update integrations.');
-		return result;
-	}
+	let host = $state(initial.host);
 	async function refresh() {
-		browsers = (await api('/api/account/browsers')).browsers;
-		if (canOperate) keys = (await api('/api/jobs/keys')).keys;
+		await integrations.refresh();
+		const result = await integrations;
+		keys = result.keys;
+		browsers = result.browsers;
+		host = result.host;
 		loaded = true;
 	}
 	onMount(() => {
 		hydrated = true;
-		host = location.origin;
-		void refresh().catch(() => {
-			message = 'Could not load integrations. Reload to try again.';
-		});
 	});
 	async function action(operation: string, id?: string) {
 		const scope = id ?? 'create';
@@ -59,21 +45,21 @@
 		message = '';
 		try {
 			if (operation === 'create') {
-				const result = await api('/api/jobs/key', {
+				const result = await createSlicerKey({
 					name,
 					canPrint: permission === 'print',
-					...(expiry === 'never' ? {} : { expiresDays: Number(expiry) })
+					...(expiry === 'never' ? {} : { expiresDays: Number(expiry) as 90 | 365 })
 				});
 				token = result.token;
 				reveal = false;
 				createMessage = 'Key created. Copy it before leaving this page.';
 			} else if (operation === 'key') {
-				await api('/api/jobs/revoke-key', { id });
+				await revokeSlicerKey(id!);
 				token = '';
 			} else if (operation === 'disconnect') {
-				await api('/api/account/disconnect-integration', { id });
+				await disconnectSlicer(id!);
 				token = '';
-			} else await api('/api/account/revoke-browser', { id });
+			} else await revokePairedBrowser(id!);
 			await refresh();
 			if (id)
 				message =

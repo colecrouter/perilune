@@ -8,7 +8,8 @@ import { createAuthService, type Role } from './service.js';
 const configured = process.env.PERILUNE_ORIGIN;
 if (!building && process.env.NODE_ENV === 'production' && !configured)
 	throw new Error('Set PERILUNE_ORIGIN before starting Perilune.');
-const origin = configured ?? 'http://localhost:4181';
+export const installationOrigin = configured ?? 'http://localhost:4181';
+const origin = installationOrigin;
 const url = new URL(origin);
 if (
 	url.origin !== origin ||

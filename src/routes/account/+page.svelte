@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { getAccess } from './account.remote.js';
+	import {
+		getAccess,
+		inviteAccount,
+		revokeAccount,
+		revokeInvitation,
+		requestRecoveryVerification,
+		sendTestEmail
+	} from './account.remote.js';
 	import DisplayPreferences from '#lib/components/DisplayPreferences.svelte';
 	import Integrations from '#lib/components/Integrations.svelte';
 	import DeviceSettings from '#lib/components/DeviceSettings.svelte';
@@ -19,7 +26,7 @@
 		sendEmail = $state(false);
 	let accounts = $state(initialAccess.accounts);
 	let invitations = $state(initialAccess.invitations);
-	let role = $state('operator');
+	let role = $state<'owner' | 'operator' | 'viewer'>('operator');
 	let link = $state('');
 	let messages = $state<Record<string, string>>({});
 	let pending = $state<Record<string, boolean>>({});
@@ -40,20 +47,20 @@
 			messages.people = cause instanceof Error ? cause.message : 'Could not load accounts.';
 		}
 	}
-	async function action(operation: string, body: unknown, scope: string) {
+	async function action(
+		operation: 'invite' | 'revoke-account' | 'revoke-invite',
+		body: { role?: 'owner' | 'operator' | 'viewer'; email?: string; id?: string; hash?: string },
+		scope: string
+	) {
 		if (pending[scope]) return;
 		pending[scope] = true;
 		messages[scope] = '';
 		if (operation === 'invite') link = '';
 		try {
-			const response = await fetch(`/api/account/${operation}`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(body)
-			});
-			const result = await response.json();
-			if (!response.ok) throw new Error(result.message ?? 'Action failed.');
-			if (result.url) link = result.url;
+			if (operation === 'invite')
+				link = (await inviteAccount({ role: body.role!, email: body.email })).url;
+			else if (operation === 'revoke-account') await revokeAccount(body.id!);
+			else await revokeInvitation(body.hash!);
 			messages[scope] =
 				operation === 'invite'
 					? sendEmail
@@ -98,13 +105,7 @@
 		pending.recovery = true;
 		messages.recovery = '';
 		try {
-			const response = await fetch('/api/access/' + operation, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: '{}'
-			});
-			const result = await response.json();
-			if (!response.ok) throw Error(result.message);
+			const result = await (operation === 'test' ? sendTestEmail() : requestRecoveryVerification());
 			messages.recovery = result.message;
 			await refresh();
 		} catch (cause) {

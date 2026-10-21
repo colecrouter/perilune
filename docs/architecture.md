@@ -1513,3 +1513,7 @@ server-rendered sections because browsers do not send them to the server.
 Configuration file links explicitly retain client navigation so switching files
 preserves unsaved multi-file drafts. Imperative navigation after uploads and the in-memory calibration proposal handoff
 remains explicit, as do fragment-token handling and interactive menus/actions.
+
+Account and integrations application calls are migrating to typed remote queries
+and commands under #128. See [the remote-function inventory](frontend-remote-functions.md)
+for implemented operations, compatibility boundaries and remaining slices.

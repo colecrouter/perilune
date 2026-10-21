@@ -136,6 +136,40 @@ try {
 		).status(),
 		403
 	);
+	// Account mutations use remote commands with the same authorization/CSRF boundary.
+	const accountPage = await owner.newPage();
+	const accountResponse = await accountPage.goto(base + '/account');
+	assert.equal(accountResponse.status(), 200, logs);
+	await accountPage.getByRole('combobox').selectOption('viewer');
+	const inviteCommandRequest = accountPage.waitForRequest(
+		(r) =>
+			r.method() === 'POST' &&
+			r.url().includes('/_app/remote/') &&
+			r.url().includes('inviteAccount')
+	);
+	await accountPage.getByRole('button', { name: 'Create invitation', exact: true }).click();
+	const inviteCommand = await inviteCommandRequest;
+	await accountPage.getByText('Invitation ready to share.', { exact: true }).waitFor();
+	const forbiddenInvite = await viewer.request.post(inviteCommand.url(), {
+		headers: { Origin: base, 'Content-Type': inviteCommand.headers()['content-type'] },
+		data: inviteCommand.postData()
+	});
+	const forbiddenResult = await forbiddenInvite.json();
+	assert.equal(forbiddenResult.type, 'error');
+	assert.equal(forbiddenResult.error.status, 403);
+	assert.equal(
+		(
+			await owner.request.post(inviteCommand.url(), {
+				headers: {
+					Origin: 'https://evil.example',
+					'Content-Type': inviteCommand.headers()['content-type']
+				},
+				data: inviteCommand.postData()
+			})
+		).status(),
+		403
+	);
+	await accountPage.close();
 	const accounts = await (await owner.request.get(`${base}/api/account/manage`)).json();
 	const target = accounts.accounts.find((account) => account.email === 'viewer@example.test');
 	await owner.request.post(`${base}/api/account/revoke-account`, {
