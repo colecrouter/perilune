@@ -1,3 +1,4 @@
+import { appRequest, remoteEndpoint, decodeRemote } from './smoke-remote-helper.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
@@ -173,14 +174,29 @@ try {
 	page.on('pageerror', (error) => errors.push(error.message));
 	const outsider = await browser.newContext();
 	assert.equal(
-		(await outsider.request.get(sim.base + '/api/configuration', { maxRedirects: 0 })).status(),
+		(
+			await appRequest(outsider.request, 'GET', sim.base + '/api/configuration', {
+				maxRedirects: 0
+			})
+		).status(),
 		401
 	);
-	const referenceResponse = await outsider.request.get(sim.base + '/reference/klipper.json');
+	const referenceResponse = await appRequest(
+		outsider.request,
+		'GET',
+		sim.base + '/reference/klipper.json'
+	);
 	assert.equal(referenceResponse.status(), 200);
 	assert.ok(!/immutable|max-age=[1-9]/.test(referenceResponse.headers()['cache-control'] ?? ''));
 	const reference = await referenceResponse.json();
-	const artifact = JSON.parse(await readFile('build/prerendered/reference/klipper.json', 'utf8'));
+	const artifact = decodeRemote(
+		JSON.parse(
+			await readFile(
+				'build/prerendered' + remoteEndpoint('reference', 'getKlipperReference'),
+				'utf8'
+			)
+		).data
+	);
 	assert.deepEqual(
 		reference,
 		artifact,
@@ -192,7 +208,7 @@ try {
 	assert.ok(!JSON.stringify(reference).includes('fixture-private-config'));
 	await outsider.close();
 	const enroll = async (role) => {
-		const invitation = await context.request.post(sim.base + '/api/account/invite', {
+		const invitation = await appRequest(context.request, 'POST', sim.base + '/api/account/invite', {
 			headers: { Origin: sim.base },
 			data: { role }
 		});
@@ -207,7 +223,7 @@ try {
 		};
 		assert.equal(
 			(
-				await account.request.post(sim.base + '/api/account/enroll', {
+				await appRequest(account.request, 'POST', sim.base + '/api/account/enroll', {
 					headers: { Origin: sim.base },
 					data
 				})
@@ -216,7 +232,7 @@ try {
 		);
 		assert.equal(
 			(
-				await account.request.post(sim.base + '/api/auth/sign-in/email', {
+				await appRequest(account.request, 'POST', sim.base + '/api/auth/sign-in/email', {
 					headers: { Origin: sim.base },
 					data: { email: data.email, password: data.password }
 				})
@@ -226,7 +242,10 @@ try {
 		return account;
 	};
 	const operator = await enroll('operator');
-	assert.equal((await operator.request.get(sim.base + '/api/configuration')).status(), 403);
+	assert.equal(
+		(await appRequest(operator.request, 'GET', sim.base + '/api/configuration')).status(),
+		403
+	);
 	const denied = await operator.newPage();
 	await denied.goto(sim.base + '/configuration');
 	await denied.getByRole('heading', { name: 'Owner access required' }).waitFor();
@@ -250,7 +269,9 @@ try {
 	assert.match(await readSource(page), /max_z_velocity: 12/);
 	assert.ok(
 		!(
-			await (await context.request.get(sim.base + '/api/configuration?file=printer.cfg')).json()
+			await (
+				await appRequest(context.request, 'GET', sim.base + '/api/configuration?file=printer.cfg')
+			).json()
 		).text.includes('max_z_velocity: 12'),
 		'Addition stays a draft'
 	);
@@ -278,7 +299,7 @@ try {
 	assert.equal(await readSource(page), draft);
 	// A file disappearing between listing and selection must not destroy another file's draft.
 	const macros = await (
-		await context.request.get(sim.base + '/api/configuration?file=macros.cfg')
+		await appRequest(context.request, 'GET', sim.base + '/api/configuration?file=macros.cfg')
 	).json();
 	const database = new DatabaseSync(sim.filename);
 	database.prepare('DELETE FROM config_files WHERE path=?').run('macros.cfg');
@@ -309,7 +330,7 @@ try {
 		.getByText('Simulator file saved. Running printer settings were not changed.', { exact: true })
 		.waitFor();
 	const saved = await (
-		await context.request.get(sim.base + '/api/configuration?file=printer.cfg')
+		await appRequest(context.request, 'GET', sim.base + '/api/configuration?file=printer.cfg')
 	).json();
 	assert.match(saved.text, /max_velocity: 180/);
 	assert.match(saved.text, /#\*# z_offset = 1.200/);
@@ -334,8 +355,11 @@ try {
 		.getByText('Simulator file saved. Running printer settings were not changed.', { exact: true })
 		.waitFor();
 	assert.match(
-		(await (await context.request.get(sim.base + '/api/configuration?file=printer.cfg')).json())
-			.text,
+		(
+			await (
+				await appRequest(context.request, 'GET', sim.base + '/api/configuration?file=printer.cfg')
+			).json()
+		).text,
 		/max_velocity: 200/
 	);
 	const before = await readSource(page);
@@ -352,7 +376,7 @@ try {
 	await page.getByRole('alert').waitFor({ state: 'hidden' });
 	assert.equal(
 		(
-			await context.request.post(sim.base + '/api/configuration', {
+			await appRequest(context.request, 'POST', sim.base + '/api/configuration', {
 				headers: { Origin: 'https://example.invalid' },
 				data: {
 					id: crypto.randomUUID(),
@@ -392,12 +416,12 @@ try {
 	const download = await downloadPromise;
 	assert.equal(download.suggestedFilename(), 'printer.cfg');
 	const read = await (
-		await liveContext.request.get(live.base + '/api/configuration?file=printer.cfg')
+		await appRequest(liveContext.request, 'GET', live.base + '/api/configuration?file=printer.cfg')
 	).json();
 	assert.equal(read.text, liveText);
 	assert.equal(
 		(
-			await liveContext.request.post(live.base + '/api/configuration', {
+			await appRequest(liveContext.request, 'POST', live.base + '/api/configuration', {
 				headers: { Origin: live.base },
 				data: {
 					id: crypto.randomUUID(),
@@ -465,7 +489,11 @@ try {
 	});
 	assert.equal(
 		await (
-			await liveContext.request.get(live.base + '/api/configuration?file=printer.cfg')
+			await appRequest(
+				liveContext.request,
+				'GET',
+				live.base + '/api/configuration?file=printer.cfg'
+			)
 		)
 			.json()
 			.then((result) => result.text),
@@ -510,16 +538,28 @@ try {
 	await recoveryPage.reload();
 	await recoveryPage.getByLabel('Klipper startup diagnostic').waitFor();
 	const latest = await (
-		await recoveryContext.request.get(recoveryApp.base + '/api/configuration/application')
+		await appRequest(
+			recoveryContext.request,
+			'GET',
+			recoveryApp.base + '/api/configuration/application'
+		)
 	).json();
 	assert.equal(latest.application.phase, 'error');
 	const anonymous = await browser.newContext();
 	assert.equal(
-		(await anonymous.request.get(recoveryApp.base + '/api/configuration/application')).status(),
+		(
+			await appRequest(
+				anonymous.request,
+				'GET',
+				recoveryApp.base + '/api/configuration/application'
+			)
+		).status(),
 		401
 	);
 	await anonymous.close();
-	const snapshot = await recoveryContext.request.get(
+	const snapshot = await appRequest(
+		recoveryContext.request,
+		'GET',
 		recoveryApp.base +
 			'/api/configuration/application?snapshot=' +
 			latest.application.id +

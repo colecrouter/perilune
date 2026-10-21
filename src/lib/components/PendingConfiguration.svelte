@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import {
+		reviewPendingConfiguration,
+		applyConfiguration
+	} from '../../routes/configuration/configuration.remote.js';
+	import { untrack, onDestroy } from 'svelte';
 	let {
 		autoInspect = false,
 		saveEnabled = true,
@@ -12,9 +16,7 @@
 		compact?: boolean;
 	} = $props();
 	let controller: AbortController | undefined;
-	onMount(() => {
-		if (autoInspect) void inspect();
-	});
+
 	onDestroy(() => controller?.abort());
 	import type { PendingConfigurationReview } from '#lib/domain/config-application.js';
 	let review = $state<PendingConfigurationReview | null>(null);
@@ -23,22 +25,26 @@
 		submitted = $state(false),
 		empty = $state(false),
 		message = $state('');
-	async function request(body?: unknown) {
-		const response = await fetch('/api/configuration/application' + (body ? '' : '?pending'), {
-			cache: 'no-store',
-			...(!body ? { signal: controller?.signal } : {}),
-			...(body
-				? {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify(body)
-					}
-				: {})
-		});
-		const value = await response.json();
-		if (!response.ok) throw Error(value.message ?? 'Configuration request failed.');
-		return value;
+	await (async () => {
+		if (untrack(() => autoInspect)) {
+			try {
+				review = await reviewPendingConfiguration();
+			} catch (cause) {
+				if (cause instanceof Error && cause.message === 'There are no pending calibration changes.')
+					empty = true;
+				else
+					message = cause instanceof Error ? cause.message : 'Could not review pending settings.';
+			}
+		}
+	})();
+
+	async function request(body?: Record<string, unknown>) {
+		if (body) return applyConfiguration(body);
+		const query = reviewPendingConfiguration();
+		await query.refresh();
+		return query;
 	}
+
 	async function inspect() {
 		controller?.abort();
 		controller = new AbortController();
@@ -48,7 +54,7 @@
 		confirmed = false;
 		review = null;
 		try {
-			review = await request();
+			review = (await request()) as PendingConfigurationReview;
 		} catch (cause) {
 			if (cause instanceof Error && cause.message === 'There are no pending calibration changes.')
 				empty = true;

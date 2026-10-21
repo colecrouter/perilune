@@ -1,3 +1,13 @@
+vi.mock('../../routes/configuration/configuration.remote.js', () => ({
+	getConfigurationRecovery: () =>
+		Object.assign(Promise.resolve({ enabled: false, application: null }), {
+			refresh: async () => {}
+		}),
+	reviewPendingConfiguration: () =>
+		Object.assign(Promise.resolve(null), { refresh: async () => {} }),
+	applyConfiguration: vi.fn(),
+	getConfigurationSnapshot: vi.fn()
+}));
 import { expect, test, vi } from 'vite-plus/test';
 import { render } from 'vitest-browser-svelte';
 import LiveZCalibration from './LiveZCalibration.svelte';

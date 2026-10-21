@@ -1,3 +1,4 @@
+import { appRequest } from './smoke-remote-helper.mjs';
 import { execFileSync } from 'node:child_process';
 // Tests use the same setup CLI and enrollment/login endpoints as an installation.
 export async function authenticate(context, base, filename) {
@@ -17,12 +18,12 @@ export async function authenticate(context, base, filename) {
 		email: 'owner@example.test',
 		password: 'fixture-owner-password'
 	};
-	const enrollment = await context.request.post(`${base}/api/account/enroll`, {
+	const enrollment = await appRequest(context.request, 'POST', `${base}/api/account/enroll`, {
 		headers,
 		data: body
 	});
 	if (!enrollment.ok()) throw new Error(`Fixture enrollment failed: ${await enrollment.text()}`);
-	const login = await context.request.post(`${base}/api/auth/sign-in/email`, {
+	const login = await appRequest(context.request, 'POST', `${base}/api/auth/sign-in/email`, {
 		headers,
 		data: { email: body.email, password: body.password }
 	});

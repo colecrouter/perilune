@@ -1,4 +1,10 @@
 <script lang="ts">
+	import {
+		getConfigurationDocument,
+		saveConfiguration,
+		applyConfiguration,
+		readConfiguration
+	} from './configuration.remote.js';
 	import { calibrationHandoff } from '#lib/client/calibration-draft.svelte.js';
 	import { untrack } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
@@ -6,6 +12,7 @@
 	import PendingConfiguration from '#lib/components/PendingConfiguration.svelte';
 	import ConfigurationRecovery from '#lib/components/ConfigurationRecovery.svelte';
 	import ConfigurationEditor from '#lib/components/ConfigurationEditor.svelte';
+	import type { ConfigSources } from '#lib/domain/config-sources.js';
 	import type { ConfigDocument, ConfigSave, ConfigSaved } from '#lib/domain/configuration.js';
 	let { data } = $props();
 	let dirty = $state(false);
@@ -32,43 +39,24 @@
 		)
 			navigation.cancel();
 	});
-	async function api<T>(url: string, init?: RequestInit): Promise<T> {
-		const response = await fetch(url, { ...init, cache: 'no-store' });
-		if (!response.ok) {
-			let message = 'Configuration request failed. Your draft is unchanged.';
-			try {
-				const body = await response.json();
-				message = body.message ?? message;
-			} catch {
-				/* Leave the draft available on unexpected responses. */
-			}
-			throw new Error(message);
-		}
-		return response.json();
-	}
-	const read = (path: string) =>
-		api<ConfigDocument>(`/api/configuration?file=${encodeURIComponent(path)}`);
-	const save = (request: ConfigSave) =>
-		api<ConfigSaved>('/api/configuration', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(request)
-		});
+	const read = async (path: string) => {
+		const document = getConfigurationDocument(path);
+		await document.refresh();
+		return document;
+	};
+	const resolveSources = async () => {
+		const sources = readConfiguration({ sources: '@main' });
+		await sources.refresh();
+		return (await sources) as ConfigSources;
+	};
+	const save = (request: ConfigSave) => saveConfiguration({ ...request });
 	const apply = async (
 		request: ConfigSave & { sources?: { root: string; fingerprint: string } }
 	) => {
-		await api('/api/configuration/application', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ ...request, action: 'apply', confirmedRestart: true })
-		});
+		await applyConfiguration({ ...request, action: 'apply', confirmedRestart: true });
 	};
 	const backup = async (path: string, id: string) =>
-		(
-			await api<{ text: string }>(
-				`/api/configuration?file=${encodeURIComponent(path)}&backup=${encodeURIComponent(id)}`
-			)
-		).text;
+		((await readConfiguration({ file: path, backup: id })) as { text: string }).text;
 </script>
 
 <svelte:head><title>Configuration · Perilune</title></svelte:head>
@@ -101,7 +89,7 @@
 					onSave={save}
 					{applicationEnabled}
 					onApply={apply}
-					onResolveSources={() => api('/api/configuration?sources=@main')}
+					onResolveSources={resolveSources}
 					onBackup={backup}
 					calibrationProposal={calibrationHandoff.proposal?.ownerId === data.user?.id
 						? calibrationHandoff.proposal

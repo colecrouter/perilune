@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { getIntegrations } from '../../routes/account/integrations.remote.js';
+	import { pairBrowser } from '../../routes/pairing.remote.js';
 	import MoonMark from './MoonMark.svelte';
 	let { approve = false, signedIn = false }: { approve?: boolean; signedIn?: boolean } = $props();
 	let name = $state('My browser');
@@ -13,17 +14,20 @@
 	let integrationId = $state('');
 	const integrations = untrack(() => approve && signedIn) ? (await getIntegrations()).keys : [];
 	const controller = new AbortController();
-	async function api(operation: string, body: unknown) {
-		const response = await fetch(`/api/pairing/${operation}`, {
-			method: 'POST',
-			signal: controller.signal,
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(body)
-		});
-		const result = await response.json();
-		if (!response.ok) throw new Error(result.message ?? 'Pairing failed.');
-		return result;
+	async function api(
+		operation: 'start' | 'cancel' | 'poll' | 'inspect' | 'approve',
+		body: Record<string, unknown>
+	) {
+		return (await pairBrowser({ operation, ...body })) as {
+			code: string;
+			token: string;
+			expires: number;
+			url: string;
+			request: { name: string; expires: number } | null;
+			approved: boolean;
+		};
 	}
+
 	async function action(operation: string) {
 		pending = true;
 		message = '';
@@ -66,7 +70,8 @@
 			const current = grant;
 			try {
 				const result = await api('poll', { token: current.token });
-				if (result.approved && grant === current) location.assign('/');
+				if (!controller.signal.aborted && result.approved && grant === current)
+					location.assign('/');
 			} catch (cause) {
 				if (!controller.signal.aborted && grant === current) {
 					message = cause instanceof Error ? cause.message : 'Could not check pairing.';

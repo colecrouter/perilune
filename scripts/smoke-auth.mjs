@@ -1,3 +1,4 @@
+import { appRequest, remoteEndpoint } from './smoke-remote-helper.mjs';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -41,6 +42,58 @@ try {
 	browser = await chromium.launch({ headless: true });
 	const owner = await browser.newContext();
 	await authenticate(owner, base, filename);
+	for (const endpoint of [
+		'/api/account/manage',
+		'/api/account/browsers',
+		'/api/preferences',
+		'/api/configuration',
+		'/api/configuration/application',
+		'/api/camera/setup',
+		'/api/jobs/keys',
+		'/api/jobs/library',
+		'/reference/klipper.json'
+	]) {
+		assert.equal(
+			(await owner.request.get(base + endpoint, { maxRedirects: 0 })).status(),
+			404,
+			`Removed internal endpoint: ${endpoint}`
+		);
+	}
+	assert.equal(
+		(
+			await owner.request.post(base + remoteEndpoint('access', 'accountEntry'), {
+				headers: { Origin: base },
+				data: { payload: 'x'.repeat(40_000) }
+			})
+		).status(),
+		413,
+		'Public remote bodies are bounded before parsing'
+	);
+
+	for (const pathname of ['/manifest.webmanifest', '/icons/app-192.png', '/api/auth/get-session']) {
+		assert.equal(
+			(
+				await owner.request.post(base + remoteEndpoint('access', 'accountEntry'), {
+					headers: { Origin: base, 'x-sveltekit-pathname': pathname },
+					data: { payload: 'x'.repeat(40_000) }
+				})
+			).status(),
+			413,
+			'Calling-page headers cannot bypass public remote body bounds'
+		);
+	}
+	const signedOut = await browser.newContext();
+	assert.equal(
+		(
+			await signedOut.request.post(base + remoteEndpoint('device', 'savePreferences'), {
+				headers: { Origin: base, 'x-sveltekit-pathname': '/login' },
+				data: { payload: 'x'.repeat(40_000) }
+			})
+		).status(),
+		401,
+		'Private remote calls authenticate before parsing even with a public calling-page header'
+	);
+	await signedOut.close();
 	const page = await owner.newPage();
 	const errors = [];
 	page.on('pageerror', (error) => errors.push(error.message));
@@ -82,7 +135,7 @@ try {
 	);
 	await page.getByRole('button', { name: 'Reset demo', exact: true }).click();
 	const command = await commandRequest;
-	const invite = await owner.request.post(`${base}/api/account/invite`, {
+	const invite = await appRequest(owner.request, 'POST', `${base}/api/account/invite`, {
 		headers: { Origin: base },
 		data: { role: 'viewer' }
 	});
@@ -107,7 +160,7 @@ try {
 		await viewerPage.getByRole('button', { name: 'Pause print', exact: true }).isDisabled(),
 		true
 	);
-	const replay = await viewer.request.post(command.url(), {
+	const replay = await appRequest(viewer.request, 'POST', command.url(), {
 		headers: { Origin: base, 'Content-Type': command.headers()['content-type'] },
 		data: command.postData()
 	});
@@ -120,7 +173,7 @@ try {
 	);
 	assert.equal(
 		(
-			await viewer.request.post(`${base}/api/account/invite`, {
+			await appRequest(viewer.request, 'POST', `${base}/api/account/invite`, {
 				headers: { Origin: base },
 				data: { role: 'owner' }
 			})
@@ -129,7 +182,7 @@ try {
 	);
 	assert.equal(
 		(
-			await owner.request.post(`${base}/api/account/invite`, {
+			await appRequest(owner.request, 'POST', `${base}/api/account/invite`, {
 				headers: { Origin: 'https://evil.example' },
 				data: { role: 'owner' }
 			})
@@ -150,7 +203,7 @@ try {
 	await accountPage.getByRole('button', { name: 'Create invitation', exact: true }).click();
 	const inviteCommand = await inviteCommandRequest;
 	await accountPage.getByText('Invitation ready to share.', { exact: true }).waitFor();
-	const forbiddenInvite = await viewer.request.post(inviteCommand.url(), {
+	const forbiddenInvite = await appRequest(viewer.request, 'POST', inviteCommand.url(), {
 		headers: { Origin: base, 'Content-Type': inviteCommand.headers()['content-type'] },
 		data: inviteCommand.postData()
 	});
@@ -159,7 +212,7 @@ try {
 	assert.equal(forbiddenResult.error.status, 403);
 	assert.equal(
 		(
-			await owner.request.post(inviteCommand.url(), {
+			await appRequest(owner.request, 'POST', inviteCommand.url(), {
 				headers: {
 					Origin: 'https://evil.example',
 					'Content-Type': inviteCommand.headers()['content-type']
@@ -170,13 +223,18 @@ try {
 		403
 	);
 	await accountPage.close();
-	const accounts = await (await owner.request.get(`${base}/api/account/manage`)).json();
+	const accounts = await (
+		await appRequest(owner.request, 'GET', `${base}/api/account/manage`)
+	).json();
 	const target = accounts.accounts.find((account) => account.email === 'viewer@example.test');
-	await owner.request.post(`${base}/api/account/revoke-account`, {
+	await appRequest(owner.request, 'POST', `${base}/api/account/revoke-account`, {
 		headers: { Origin: base },
 		data: { id: target.id }
 	});
-	assert.equal((await viewer.request.get(`${base}/api/account/manage`)).status(), 401);
+	assert.equal(
+		(await appRequest(viewer.request, 'GET', `${base}/api/account/manage`)).status(),
+		401
+	);
 	await page.goto(`${base}/account`);
 	await mkdir('test-results', { recursive: true });
 	await page.screenshot({ path: 'test-results/auth-account.png', fullPage: true });
@@ -212,8 +270,11 @@ try {
 		if (i > 100 || server.exitCode !== null) throw new Error('Recovered server failed to start.');
 		await new Promise((resolve) => setTimeout(resolve, 100));
 	}
-	assert.equal((await owner.request.get(`${base}/api/account/manage`)).status(), 401);
-	const bad = await owner.request.post(`${base}/api/auth/sign-in/email`, {
+	assert.equal(
+		(await appRequest(owner.request, 'GET', `${base}/api/account/manage`)).status(),
+		401
+	);
+	const bad = await appRequest(owner.request, 'POST', `${base}/api/auth/sign-in/email`, {
 		headers: { Origin: base },
 		data: { email: 'owner@example.test', password: 'fixture-owner-password' }
 	});
@@ -246,7 +307,7 @@ try {
 	await page.screenshot({ path: 'test-results/auth-login-mobile-dark.png', fullPage: true });
 	let throttled;
 	for (let i = 0; i < 4; i++)
-		throttled = await owner.request.post(`${base}/api/auth/sign-in/email`, {
+		throttled = await appRequest(owner.request, 'POST', `${base}/api/auth/sign-in/email`, {
 			headers: {
 				Origin: base,
 				'X-Forwarded-For': `192.0.2.${i + 1}`,

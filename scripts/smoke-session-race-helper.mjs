@@ -1,3 +1,4 @@
+import { appRequest, remoteEndpoint } from './smoke-remote-helper.mjs';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 const sessionCookie = async (context) =>
@@ -19,38 +20,39 @@ export async function testSessionCookieOrdering(owner, base, filename) {
 			const captured = new Promise((r) => (ready = r)),
 				held = new Promise((r) => (release = r));
 			let renewalCookie = false;
-			await page.route('**/api/account/browsers?held=1', async (route) => {
+			const heldEndpoint = remoteEndpoint('integrations', 'getIntegrations') + '?held=1';
+			await page.route('**' + heldEndpoint, async (route) => {
 				const response = await route.fetch();
 				renewalCookie = !!response.headers()['set-cookie'];
 				ready();
 				await held;
 				await route.fulfill({ response });
 			});
-			const delayed = page.evaluate(async () => {
-				const r = await fetch('/api/account/browsers?held=1');
+			const delayed = page.evaluate(async (path) => {
+				const r = await fetch(path);
 				return r.status;
-			});
+			}, heldEndpoint);
 			await captured;
 			const prior = await sessionCookie(device);
 			if (replacement === 'login') {
-				const r = await device.request.post(base + '/api/auth/sign-in/email', {
+				const r = await appRequest(device.request, 'POST', base + '/api/auth/sign-in/email', {
 					headers: { Origin: base },
 					data: { email: 'owner@example.test', password: 'fixture-owner-password' }
 				});
 				assert.equal(r.status(), 200);
 			} else {
 				const grant = await (
-					await device.request.post(base + '/api/pairing/start', {
+					await appRequest(device.request, 'POST', base + '/api/pairing/start', {
 						headers: { Origin: base },
 						data: { name: 'Race fixture' }
 					})
 				).json();
-				const approved = await owner.request.post(base + '/api/pairing/approve', {
+				const approved = await appRequest(owner.request, 'POST', base + '/api/pairing/approve', {
 					headers: { Origin: base },
 					data: { code: grant.code, approve: true }
 				});
 				assert.equal(approved.status(), 200);
-				const redeemed = await device.request.post(base + '/api/pairing/poll', {
+				const redeemed = await appRequest(device.request, 'POST', base + '/api/pairing/poll', {
 					headers: { Origin: base },
 					data: { token: grant.token }
 				});
@@ -70,16 +72,20 @@ export async function testSessionCookieOrdering(owner, base, filename) {
 					oldResponseRenewedCookie: renewalCookie,
 					newSessionOverwritten: overwritten,
 					independentOwnerSessionStillValid:
-						(await owner.request.get(base + '/api/account/browsers')).status() === 200
+						(await appRequest(owner.request, 'GET', base + '/api/account/browsers')).status() ===
+						200
 				})
 			);
 			assert.equal(overwritten, false, 'A delayed old response must not replace the new session');
 			assert.equal(renewalCookie, false);
-			assert.equal((await owner.request.get(base + '/api/account/browsers')).status(), 200);
+			assert.equal(
+				(await appRequest(owner.request, 'GET', base + '/api/account/browsers')).status(),
+				200
+			);
 		} finally {
 			release?.();
 			if (createdCookie) {
-				const signedOut = await device.request.post(base + '/api/auth/sign-out', {
+				const signedOut = await appRequest(device.request, 'POST', base + '/api/auth/sign-out', {
 					headers: { Origin: base, Cookie: createdCookie.name + '=' + createdCookie.value }
 				});
 				assert.equal(signedOut.status(), 200);

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onMount, untrack } from 'svelte';
+	import { getKlipperReference } from '../../routes/configuration/reference.remote.js';
+	import { untrack } from 'svelte';
 	import {
 		isReferenceCatalogue,
 		referenceMatches,
@@ -103,12 +104,7 @@
 		pending = true;
 		failure = '';
 		try {
-			const response = await fetch('/reference/klipper.json', {
-				signal: request.signal,
-				cache: 'no-cache'
-			});
-			if (!response.ok) throw new Error('Reference unavailable.');
-			const result: unknown = await response.json();
+			const result: unknown = await getKlipperReference();
 			if (!isReferenceCatalogue(result)) throw new Error('Unsupported reference.');
 			if (!request.signal.aborted) {
 				catalogue = result;
@@ -122,10 +118,8 @@
 			if (controller === request) pending = false;
 		}
 	}
-	onMount(() => {
-		void load();
-		return () => controller?.abort();
-	});
+	await load();
+
 	function add() {
 		if (!selected || !canAdd) return;
 		failure = '';

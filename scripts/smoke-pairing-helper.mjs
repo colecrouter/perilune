@@ -1,3 +1,4 @@
+import { appRequest } from './smoke-remote-helper.mjs';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -5,7 +6,7 @@ import { chromium } from 'playwright';
 
 export async function testPairing(owner, base, directory, filename) {
 	const approver = await owner.newPage();
-	const keyResponse = await owner.request.post(`${base}/api/jobs/key`, {
+	const keyResponse = await appRequest(owner.request, 'POST', `${base}/api/jobs/key`, {
 		headers: { Origin: base },
 		data: { name: 'Pairing integration' }
 	});
@@ -29,7 +30,7 @@ export async function testPairing(owner, base, directory, filename) {
 		await page.screenshot({ path: 'test-results/pairing-mobile.png', fullPage: true });
 		// Poll traffic and approval share an address. Waiting devices must not lock approval out.
 		for (let i = 0; i < 45; i++) {
-			const response = await device.request.post(`${base}/api/pairing/poll`, {
+			const response = await appRequest(device.request, 'POST', `${base}/api/pairing/poll`, {
 				headers: { Origin: base },
 				data: { token: 'A'.repeat(43) }
 			});
@@ -55,21 +56,28 @@ export async function testPairing(owner, base, directory, filename) {
 		page = await device.newPage();
 		await page.goto(base);
 		await page.getByRole('heading', { name: 'Overview', exact: true }).waitFor();
-		const browsers = (await (await owner.request.get(`${base}/api/account/browsers`)).json())
-			.browsers;
+		const browsers = (
+			await (await appRequest(owner.request, 'GET', `${base}/api/account/browsers`)).json()
+		).browsers;
 		assert.equal(browsers.length, 1);
 		assert.equal(browsers[0].integrationId, integration.key.id);
 		assert.equal(browsers[0].current, false);
-		const deviceBrowsers = await (await device.request.get(base + '/api/account/browsers')).json();
+		const deviceBrowsers = await (
+			await appRequest(device.request, 'GET', base + '/api/account/browsers')
+		).json();
 		assert.equal(deviceBrowsers.browsers[0].current, true);
 		// Direct documents include private summaries, never the one-time slicer credential.
-		const integrationDocument = await owner.request.get(base + '/account?section=integrations');
+		const integrationDocument = await appRequest(
+			owner.request,
+			'GET',
+			base + '/account?section=integrations'
+		);
 		const integrationHtml = await integrationDocument.text();
 		assert.equal(integrationDocument.status(), 200);
 		assert.ok(integrationHtml.includes('Pairing integration'));
 		assert.ok(integrationHtml.includes('My browser'));
 		assert.ok(!integrationHtml.includes(integration.token));
-		const approvalHtml = await (await owner.request.get(base + '/pair')).text();
+		const approvalHtml = await (await appRequest(owner.request, 'GET', base + '/pair')).text();
 		assert.ok(approvalHtml.includes('Pairing integration'));
 		assert.ok(!approvalHtml.includes(integration.token));
 
@@ -83,7 +91,7 @@ export async function testPairing(owner, base, directory, filename) {
 		} finally {
 			db.close();
 		}
-		const renewed = await device.request.get(`${base}/api/account/browsers`);
+		const renewed = await appRequest(device.request, 'GET', `${base}/api/account/browsers`);
 		assert.equal(renewed.status(), 200);
 		assert.equal(renewed.headers()['set-cookie'], undefined);
 		const expiryDb = new DatabaseSync(filename);
@@ -97,12 +105,15 @@ export async function testPairing(owner, base, directory, filename) {
 		} finally {
 			expiryDb.close();
 		}
-		const revoked = await owner.request.post(`${base}/api/account/revoke-browser`, {
+		const revoked = await appRequest(owner.request, 'POST', `${base}/api/account/revoke-browser`, {
 			headers: { Origin: base },
 			data: { id: browsers[0].id }
 		});
 		assert.equal(revoked.status(), 200);
-		assert.equal((await device.request.get(`${base}/api/account/browsers`)).status(), 401);
+		assert.equal(
+			(await appRequest(device.request, 'GET', `${base}/api/account/browsers`)).status(),
+			401
+		);
 		// Isolate cookie replacement from the Overview's background requests.
 		// This subcase deliberately injects/ages another login; delayed renewals from
 		// that page must not race the API-only redemption and revocation assertions.
@@ -111,12 +122,12 @@ export async function testPairing(owner, base, directory, filename) {
 			headless: true
 		});
 		const secondGrant = await (
-			await device.request.post(`${base}/api/pairing/start`, {
+			await appRequest(device.request, 'POST', `${base}/api/pairing/start`, {
 				headers: { Origin: base },
 				data: { name: 'Linked browser' }
 			})
 		).json();
-		await owner.request.post(`${base}/api/pairing/approve`, {
+		await appRequest(owner.request, 'POST', `${base}/api/pairing/approve`, {
 			headers: { Origin: base },
 			data: { code: secondGrant.code, approve: true, integrationId: integration.key.id }
 		});
@@ -134,7 +145,7 @@ export async function testPairing(owner, base, directory, filename) {
 		} finally {
 			ageDb.close();
 		}
-		const redeemed = await device.request.post(`${base}/api/pairing/poll`, {
+		const redeemed = await appRequest(device.request, 'POST', `${base}/api/pairing/poll`, {
 			headers: { Origin: base },
 			data: { token: secondGrant.token }
 		});
@@ -145,7 +156,7 @@ export async function testPairing(owner, base, directory, filename) {
 		assert.notEqual(redeemedCookie.value, oldCookie.value);
 		assert.equal(
 			(
-				await owner.request.post(`${base}/api/account/disconnect-integration`, {
+				await appRequest(owner.request, 'POST', `${base}/api/account/disconnect-integration`, {
 					headers: { Origin: base },
 					data: { id: integration.key.id }
 				})
@@ -156,20 +167,23 @@ export async function testPairing(owner, base, directory, filename) {
 			(await device.cookies()).find((cookie) => cookie.name.endsWith('.session_token')).value,
 			redeemedCookie.value
 		);
-		assert.equal((await device.request.get(`${base}/api/account/browsers`)).status(), 401);
+		assert.equal(
+			(await appRequest(device.request, 'GET', `${base}/api/account/browsers`)).status(),
+			401
+		);
 		assert.equal(
 			(await fetch(`${base}/server/info`, { headers: { 'X-Api-Key': integration.token } })).status,
 			401
 		);
 		// A pending code can be cancelled durably.
-		const start = await device.request.post(`${base}/api/pairing/start`, {
+		const start = await appRequest(device.request, 'POST', `${base}/api/pairing/start`, {
 			headers: { Origin: base },
 			data: { name: 'Cancelled browser' }
 		});
 		const grant = await start.json();
 		assert.equal(
 			(
-				await device.request.post(`${base}/api/pairing/cancel`, {
+				await appRequest(device.request, 'POST', `${base}/api/pairing/cancel`, {
 					headers: { Origin: base },
 					data: { token: grant.token }
 				})
@@ -178,7 +192,7 @@ export async function testPairing(owner, base, directory, filename) {
 		);
 		assert.equal(
 			(
-				await owner.request.post(`${base}/api/pairing/approve`, {
+				await appRequest(owner.request, 'POST', `${base}/api/pairing/approve`, {
 					headers: { Origin: base },
 					data: { code: grant.code, approve: true }
 				})
@@ -187,7 +201,7 @@ export async function testPairing(owner, base, directory, filename) {
 		);
 		assert.equal(
 			(
-				await device.request.post(`${base}/api/pairing/start`, {
+				await appRequest(device.request, 'POST', `${base}/api/pairing/start`, {
 					headers: { Origin: 'https://example.invalid' },
 					data: { name: 'Blocked' }
 				})

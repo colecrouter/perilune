@@ -1,3 +1,4 @@
+import { appRequest, remoteArgument } from './smoke-remote-helper.mjs';
 import { authenticate } from './smoke-auth-helper.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -59,12 +60,18 @@ try {
 		'/icons/maskable-512.png',
 		'/icons/monochrome.svg'
 	]) {
-		const response = await publicContext.request.get(`${base}${path}`);
+		const response = await appRequest(publicContext.request, 'GET', `${base}${path}`);
 		assert.equal(response.status(), 200, `${path} is public install metadata`);
 		assert.ok(!response.headers()['cache-control']?.includes('immutable'));
 	}
-	assert.equal((await publicContext.request.get(`${base}/api/notifications`)).status(), 401);
-	assert.equal((await publicContext.request.get(`${base}/api/preferences`)).status(), 401);
+	assert.equal(
+		(await appRequest(publicContext.request, 'GET', `${base}/api/notifications`)).status(),
+		401
+	);
+	assert.equal(
+		(await appRequest(publicContext.request, 'GET', `${base}/api/preferences`)).status(),
+		401
+	);
 	await publicContext.close();
 	await authenticate(context, base, join(directory, 'state.sqlite'));
 	const first = await context.newPage();
@@ -147,7 +154,7 @@ try {
 	await first.screenshot({ path: 'test-results/overview-serif.png', fullPage: true });
 	await first.goto(base + '/account?section=preferences');
 	const sansSaved = first.waitForResponse(
-		(r) => r.url().endsWith('/api/preferences') && r.request().method() === 'PATCH' && r.ok()
+		(r) => r.url().includes('/savePreferences') && r.request().method() === 'POST' && r.ok()
 	);
 	await first.getByRole('checkbox', { name: 'Serif headings', exact: true }).uncheck();
 	await sansSaved;
@@ -157,12 +164,13 @@ try {
 	);
 	await first.screenshot({ path: 'test-results/overview-sans.png', fullPage: true });
 	assert.equal(
-		(await (await context.request.get(base + '/api/preferences')).json()).preferences.serif,
+		(await (await appRequest(context.request, 'GET', base + '/api/preferences')).json()).preferences
+			.serif,
 		false
 	);
 	assert.equal(
 		(
-			await context.request.patch(base + '/api/preferences', {
+			await appRequest(context.request, 'PATCH', base + '/api/preferences', {
 				headers: { Origin: base },
 				data: { owner: 'another-account', serif: true }
 			})
@@ -171,7 +179,7 @@ try {
 	);
 	assert.equal(
 		(
-			await context.request.patch(base + '/api/preferences', {
+			await appRequest(context.request, 'PATCH', base + '/api/preferences', {
 				headers: { Origin: 'https://foreign.invalid' },
 				data: { serif: true }
 			})
@@ -180,7 +188,7 @@ try {
 	);
 	await first.goto(base + '/account?section=preferences');
 	const saved = first.waitForResponse(
-		(r) => r.url().endsWith('/api/preferences') && r.request().method() === 'PATCH' && r.ok()
+		(r) => r.url().includes('/savePreferences') && r.request().method() === 'POST' && r.ok()
 	);
 	await first.getByRole('checkbox', { name: 'Serif headings', exact: true }).check();
 	await saved;
@@ -200,16 +208,16 @@ try {
 	await columnsTab.goto(base + '/jobs');
 	await first.locator('details.columns summary').click();
 	const durationSaved = first.waitForResponse(
-		(r) => r.url().endsWith('/api/preferences') && r.request().method() === 'PATCH' && r.ok()
+		(r) => r.url().includes('/savePreferences') && r.request().method() === 'POST' && r.ok()
 	);
 	await first.getByRole('checkbox', { name: 'Est. time', exact: true }).uncheck();
-	assert.deepEqual((await durationSaved).request().postDataJSON(), { jobsDuration: false });
+	assert.deepEqual(remoteArgument((await durationSaved).request()), { jobsDuration: false });
 	await columnsTab.locator('details.columns summary').click();
 	const sizeSaved = columnsTab.waitForResponse(
-		(r) => r.url().endsWith('/api/preferences') && r.request().method() === 'PATCH' && r.ok()
+		(r) => r.url().includes('/savePreferences') && r.request().method() === 'POST' && r.ok()
 	);
 	await columnsTab.getByRole('checkbox', { name: 'Size', exact: true }).uncheck();
-	assert.deepEqual((await sizeSaved).request().postDataJSON(), { jobsSize: false });
+	assert.deepEqual(remoteArgument((await sizeSaved).request()), { jobsSize: false });
 	await first.reload();
 	await first.locator('details.columns summary').click();
 	assert.equal(
@@ -217,7 +225,7 @@ try {
 		false
 	);
 	assert.equal(await first.getByRole('checkbox', { name: 'Size', exact: true }).isChecked(), false);
-	await context.request.patch(base + '/api/preferences', {
+	await appRequest(context.request, 'PATCH', base + '/api/preferences', {
 		headers: { Origin: base },
 		data: { jobsDuration: true, jobsSize: true }
 	});

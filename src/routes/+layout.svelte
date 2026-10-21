@@ -1,5 +1,7 @@
 <script lang="ts">
 	import '#lib/styles.css';
+	import { followPreferenceLink } from '#lib/client/preference-navigation.js';
+	import { goto } from '$app/navigation';
 	import { onDestroy, untrack } from 'svelte';
 	import { createPreferences, providePreferences } from '#lib/client/preferences.svelte.js';
 	import { defaultPreferences } from '#lib/domain/preferences.js';
@@ -19,6 +21,12 @@
 		preferences.switchAccount(data.user?.id ?? null, data.preferences ?? defaultPreferences)
 	);
 	onDestroy(() => preferences.destroy());
+	const followLink = (event: MouseEvent) =>
+		followPreferenceLink(event, preferences, {
+			document: (url) => location.assign(url),
+			client: (url) => goto(url)
+		});
+
 	$effect(() => {
 		if (
 			calibrationHandoff.proposal &&
@@ -40,7 +48,18 @@
 {#if data.user}{#key page.url.pathname === '/'}<PrintFavicon
 			overview={page.url.pathname === '/'}
 		/>{/key}{/if}
-<div data-sveltekit-reload class="app-preferences" data-serif={preferences.values.serif}>
+<svelte:window
+	onbeforeunload={(event) => {
+		if (preferences.unsaved) event.preventDefault();
+	}}
+/>
+<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+<div
+	onclick={followLink}
+	data-sveltekit-reload
+	class="app-preferences"
+	data-serif={preferences.values.serif}
+>
 	{@render children()}
 	{#if data.preferencesUnavailable}<p class="preference-error" role="status">
 			Saved display preferences are unavailable. Showing defaults until they can be loaded again.

@@ -1,3 +1,4 @@
+import { appRequest, remoteArgument } from './smoke-remote-helper.mjs';
 /** Real synthetic media through the production setup UI, with no printer or NVR. */
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
@@ -103,7 +104,7 @@ try {
 		if (request.method() === 'GET' && new URL(request.url()).pathname === '/api/camera/setup')
 			mountReads.push(request.url());
 	});
-	const ssr = await context.request.get(base + '/camera');
+	const ssr = await appRequest(context.request, 'GET', base + '/camera');
 	assert.equal(ssr.status(), 200);
 	const html = await ssr.text();
 	assert.match(html, /No camera connected/);
@@ -136,7 +137,8 @@ try {
 		.waitFor({ timeout: 30_000 });
 	await page.waitForFunction(() => document.querySelector('.preview img')?.naturalWidth === 640);
 	assert.equal(
-		(await (await context.request.get(base + '/api/camera/setup')).json()).status.name,
+		(await (await appRequest(context.request, 'GET', base + '/api/camera/setup')).json()).status
+			.name,
 		null,
 		'Testing does not replace the active camera'
 	);
@@ -152,8 +154,8 @@ try {
 	const released = new Promise((resolve) => {
 		release = resolve;
 	});
-	await page.route('**/api/camera/setup', async (route) => {
-		if (route.request().method() !== 'POST' || route.request().postDataJSON().operation !== 'save')
+	await page.route('**/_app/remote/*/updateCameraSetup', async (route) => {
+		if (route.request().method() !== 'POST' || remoteArgument(route.request()).operation !== 'save')
 			return route.continue();
 		const response = await route.fetch();
 		saved();
@@ -172,7 +174,7 @@ try {
 		'rtsp://draft.example.invalid/unsaved',
 		'Save response preserves newer edits'
 	);
-	await page.unroute('**/api/camera/setup');
+	await page.unroute('**/_app/remote/*/updateCameraSetup');
 	await page.goto(base + '/');
 	await deadline(
 		() => page.evaluate(() => document.querySelector('video')?.videoWidth === 640),
@@ -226,13 +228,15 @@ try {
 	);
 	await page.goto(base + '/camera');
 	await page.getByRole('button', { name: 'Test connection', exact: true }).waitFor();
-	const before = (await (await context.request.get(base + '/api/camera/setup')).json()).status;
-	const refused = await context.request.post(base + '/api/camera/setup', {
+	const before = (
+		await (await appRequest(context.request, 'GET', base + '/api/camera/setup')).json()
+	).status;
+	const refused = await appRequest(context.request, 'POST', base + '/api/camera/setup', {
 		headers: { Origin: 'https://evil.example.invalid' },
 		data: { operation: 'reset', revision: before.revision }
 	});
 	assert.equal(refused.status(), 403);
-	const invalid = await context.request.post(base + '/api/camera/setup', {
+	const invalid = await appRequest(context.request, 'POST', base + '/api/camera/setup', {
 		headers: { Origin: base },
 		data: {
 			operation: 'test',
@@ -241,19 +245,23 @@ try {
 	});
 	assert.equal(invalid.status(), 400);
 	assert.equal(
-		(await (await context.request.get(base + '/api/camera/setup')).json()).status.revision,
+		(await (await appRequest(context.request, 'GET', base + '/api/camera/setup')).json()).status
+			.revision,
 		before.revision
 	);
 	const anonymous = await browser.newContext();
-	assert.equal((await anonymous.request.get(base + '/api/camera/setup')).status(), 401);
+	assert.equal(
+		(await appRequest(anonymous.request, 'GET', base + '/api/camera/setup')).status(),
+		401
+	);
 	await anonymous.close();
-	const reset = await context.request.post(base + '/api/camera/setup', {
+	const reset = await appRequest(context.request, 'POST', base + '/api/camera/setup', {
 		headers: { Origin: base },
 		data: { operation: 'reset', revision: before.revision }
 	});
 	assert.equal(reset.status(), 200);
 	assert.equal((await reset.json()).name, null);
-	const disconnected = await context.request.get(base + '/api/camera/setup');
+	const disconnected = await appRequest(context.request, 'GET', base + '/api/camera/setup');
 	assert.equal((await disconnected.json()).current.configured, false);
 	await page.goto(base + '/camera');
 	await page
@@ -322,7 +330,11 @@ try {
 	}
 	if (context)
 		console.error(
-			await (await context.request.get(base + '/api/camera/setup')).json().catch(() => ({}))
+			await (
+				await appRequest(context.request, 'GET', base + '/api/camera/setup')
+			)
+				.json()
+				.catch(() => ({}))
 		);
 	throw cause;
 } finally {

@@ -1,3 +1,12 @@
+vi.mock('../../routes/pairing.remote.js', () => ({
+	pairBrowser: vi.fn(async ({ operation, ...body }) => {
+		const response = await fetch('/pairing-fixture/' + operation, {
+			method: 'POST',
+			body: JSON.stringify(body)
+		});
+		return response.json();
+	})
+}));
 import { afterEach, expect, test, vi } from 'vite-plus/test';
 import { render } from 'vitest-browser-svelte';
 import BrowserPairing from './BrowserPairing.svelte';

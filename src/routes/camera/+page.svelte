@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getCameraSetup, getLocalCameras } from './camera.remote.js';
+	import { getCameraSetup, getLocalCameras, updateCameraSetup } from './camera.remote.js';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import { getPrinter } from '../printer.remote.js';
 	let { data } = $props();
@@ -77,42 +77,34 @@
 		failure = '';
 		const submitted = draft;
 		try {
-			const response = await fetch('/api/camera/setup', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				signal: controller?.signal,
-				body: JSON.stringify(
-					operation === 'reset'
-						? { operation, revision: status?.revision }
-						: operation === 'save'
-							? { operation, token: tested?.token }
-							: candidate === 'local'
-								? { operation, localCandidate }
-								: candidate === 'manual'
-									? {
-											operation,
-											input: {
-												kind: mediaKind,
-												name,
-												streamUrl,
-												snapshotUrl,
-												rotation,
-												flipHorizontal,
-												flipVertical
-											}
+			const body = await updateCameraSetup(
+				operation === 'reset'
+					? { operation, revision: status?.revision }
+					: operation === 'save'
+						? { operation, token: tested?.token }
+						: candidate === 'local'
+							? { operation, localCandidate }
+							: candidate === 'manual'
+								? {
+										operation,
+										input: {
+											kind: mediaKind,
+											name,
+											streamUrl,
+											snapshotUrl,
+											rotation,
+											flipHorizontal,
+											flipVertical
 										}
-									: { operation, candidate }
-				)
-			});
-			const body = await response.json();
-			if (!response.ok)
-				throw Error(body.message ?? 'Camera setup failed. Check the connection and try again.');
+									}
+								: { operation, candidate }
+			);
 			if (operation === 'test') {
 				previewFailed = false;
-				tested = body;
+				tested = body as typeof tested;
 				testedDraft = submitted;
 				message =
-					body.codec === 'JPEG'
+					(body as { codec: string }).codec === 'JPEG'
 						? 'Image connection verified. Save to use this camera.'
 						: 'Video connection verified. Save to use this camera.';
 			} else {

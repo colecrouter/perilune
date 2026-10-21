@@ -1,3 +1,4 @@
+import { appRequest } from './smoke-remote-helper.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -86,7 +87,7 @@ try {
 		`; thumbnail begin 1x1 ${png.length}\n; ${png}`,
 		`; thumbnail begin 320x220 ${thumbnail.length}\n; ${thumbnail}`
 	);
-	assert.equal((await context.request.get(base + '/server/info')).status(), 200);
+	assert.equal((await appRequest(context.request, 'GET', base + '/server/info')).status(), 200);
 	await page.getByLabel('Upload G-code', { exact: true }).setInputFiles({
 		name: 'fixture-bracket.gcode',
 		mimeType: 'application/octet-stream',
@@ -103,10 +104,10 @@ try {
 		.waitFor();
 	assert.equal(
 		(
-			await context.request.get(
-				base +
-					'/api/jobs/thumbnail?id=' +
-					(await (await context.request.get(base + '/api/jobs/library')).json()).files[0].id
+			await appRequest(
+				context.request,
+				'GET',
+				base + '/api/jobs/thumbnail?id=' + new URL(page.url()).pathname.split('/').at(-1)
 			)
 		).status(),
 		200
@@ -317,7 +318,9 @@ try {
 	);
 	// Real GET forms/links and server HTML must work without hydration.
 	for (let index = 0; index < 12; index++) {
-		const response = await context.request.post(
+		const response = await appRequest(
+			context.request,
+			'POST',
 			base + '/api/jobs/upload?name=' + `catalog-${String(index).padStart(2, '0')}.gcode`,
 			{
 				headers: { Origin: base, 'Content-Type': 'application/octet-stream' },

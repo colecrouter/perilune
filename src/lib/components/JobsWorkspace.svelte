@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { removeJob } from '../../routes/jobs/jobs.remote.js';
 	import { onMount, untrack } from 'svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page, navigating } from '$app/state';
@@ -101,25 +102,7 @@
 		const source = thumbnail;
 		if (source) thumbnailFailed = false;
 	});
-	async function api<T>(
-		operation: string,
-		body?: Record<string, unknown>,
-		id?: string
-	): Promise<T> {
-		const response = await fetch(
-			resolve('/api/jobs/[operation]', { operation }) + (id ? '?id=' + encodeURIComponent(id) : ''),
-			{
-				method: body ? 'POST' : 'GET',
-				signal: requests.signal,
-				...(body
-					? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-					: {})
-			}
-		);
-		const result = await response.json();
-		if (!response.ok) throw new Error(result.message ?? 'The operation failed. Try again.');
-		return result as T;
-	}
+
 	onMount(() => {
 		let refreshing = false;
 		const timer = setInterval(async () => {
@@ -235,7 +218,7 @@
 		submitting = true;
 		failure = '';
 		try {
-			await api('remove', { id: selected.id });
+			await removeJob(selected.id);
 			message = `Removed ${selected.name}.`;
 
 			removeOpen = false;

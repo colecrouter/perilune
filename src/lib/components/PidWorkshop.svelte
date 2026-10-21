@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { refreshPendingSettings } from '#lib/client/pending-settings.js';
 	import { tick } from 'svelte';
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
 	import { pidActive, pidReason } from '#lib/domain/pid.js';
@@ -91,6 +92,7 @@
 						class="button primary"
 						onclick={() => {
 							reviewMode = 'save';
+							refreshPendingSettings();
 							reviewOpen = true;
 						}}>Save…</button
 					>
@@ -98,6 +100,7 @@
 						class="button secondary"
 						onclick={() => {
 							reviewMode = 'discard';
+							refreshPendingSettings();
 							reviewOpen = true;
 						}}>Discard…</button
 					>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { accountEntry } from '../../routes/access.remote.js';
 	import EntryFrame from './EntryFrame.svelte';
 	let { mode, enabled }: { mode: 'verify' | 'forgot'; enabled: boolean } = $props();
 	let revision = 0;
@@ -45,15 +46,9 @@
 		const started = revision;
 		try {
 			const operation = mode === 'verify' ? 'verify' : token ? 'reset' : 'request-reset';
-			const response = await fetch('/api/access/' + operation, {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ token, email, password })
-			});
-			const result = await response.json();
+			const result = await accountEntry({ operation, token, email, password });
 			if (revision !== started) return;
-			if (!response.ok) throw Error(result.message ?? 'This link could not be used.');
-			message = result.message;
+			message = 'message' in result ? result.message! : '';
 			done = true;
 			password = '';
 			confirm = '';

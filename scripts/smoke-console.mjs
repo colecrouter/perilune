@@ -1,3 +1,4 @@
+import { appRequest } from './smoke-remote-helper.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -110,7 +111,7 @@ try {
 	const command = await submitted;
 	await page.getByText('Simulator · completed', { exact: true }).waitFor();
 	await second.getByText('Simulator · completed', { exact: true }).waitFor();
-	const replay = await sim.context.request.post(command.url(), {
+	const replay = await appRequest(sim.context.request, 'POST', command.url(), {
 		headers: { Origin: sim.base, 'Content-Type': command.headers()['content-type'] },
 		data: command.postData()
 	});
@@ -163,10 +164,15 @@ try {
 	);
 	await page.screenshot({ path: 'test-results/console-submit-mobile.png' });
 	assert.equal(await composer.inputValue(), 'unfinished draft');
-	const invitation = await sim.context.request.post(sim.base + '/api/account/invite', {
-		headers: { Origin: sim.base },
-		data: { role: 'viewer' }
-	});
+	const invitation = await appRequest(
+		sim.context.request,
+		'POST',
+		sim.base + '/api/account/invite',
+		{
+			headers: { Origin: sim.base },
+			data: { role: 'viewer' }
+		}
+	);
 	const { url } = await invitation.json();
 	const viewer = await browser.newContext();
 	const viewerPage = await viewer.newPage();
@@ -184,7 +190,7 @@ try {
 	const enrolled = await enrollment;
 	assert.equal(enrolled.status(), 200, 'Viewer enrollment should succeed');
 	await viewerPage.getByRole('heading', { name: 'Welcome back' }).waitFor();
-	const login = await viewer.request.post(sim.base + '/api/auth/sign-in/email', {
+	const login = await appRequest(viewer.request, 'POST', sim.base + '/api/auth/sign-in/email', {
 		headers: { Origin: sim.base },
 		data: { email: 'console-viewer@example.test', password: 'fixture-viewer-password' }
 	});
@@ -192,12 +198,12 @@ try {
 	await viewerPage.goto(sim.base + '/console');
 	await viewerPage.getByRole('heading', { name: 'Operator access required' }).waitFor();
 	assert.ok(!(await viewerPage.content()).includes('Deliberate simulator failure'));
-	const forbidden = await viewer.request.post(command.url(), {
+	const forbidden = await appRequest(viewer.request, 'POST', command.url(), {
 		headers: { Origin: sim.base, 'Content-Type': command.headers()['content-type'] },
 		data: command.postData()
 	});
 	assert.equal((await forbidden.json()).error.status, 403);
-	const csrf = await sim.context.request.post(command.url(), {
+	const csrf = await appRequest(sim.context.request, 'POST', command.url(), {
 		headers: { Origin: 'https://evil.example', 'Content-Type': command.headers()['content-type'] },
 		data: command.postData()
 	});

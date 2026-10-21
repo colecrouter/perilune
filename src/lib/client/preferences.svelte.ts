@@ -1,3 +1,4 @@
+import { savePreferences } from '../../routes/device.remote.js';
 import { getContext, setContext } from 'svelte';
 import {
 	defaultPreferences,
@@ -15,6 +16,17 @@ export function createPreferences(owner: string | null, initial: Preferences = d
 	let queued: PreferencePatch = {};
 	let controller: AbortController | undefined;
 	let stopped = false;
+	let inFlight: Promise<void> | undefined;
+	function start() {
+		if (inFlight) return;
+		const operation = flush().finally(() => {
+			if (inFlight !== operation) return;
+			inFlight = undefined;
+			if (!error && Object.keys(queued).length && !stopped) start();
+		});
+		inFlight = operation;
+	}
+
 	async function flush() {
 		if (saving || !account || stopped || !Object.keys(queued).length) return;
 		const epoch = generation,
@@ -25,16 +37,7 @@ export function createPreferences(owner: string | null, initial: Preferences = d
 		const request = new AbortController();
 		controller = request;
 		try {
-			const response = await fetch('/api/preferences', {
-				method: 'PATCH',
-				keepalive: true,
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(patch),
-				signal: request.signal
-			});
-			if (!response.ok)
-				throw Error('Could not save display preferences. Your choices are kept in this tab.');
-			const result = await response.json();
+			const result = await savePreferences({ ...patch });
 			if (epoch === generation && !stopped)
 				values = { ...defaultPreferences, ...result.preferences, ...queued };
 		} catch (cause) {
@@ -45,16 +48,22 @@ export function createPreferences(owner: string | null, initial: Preferences = d
 		} finally {
 			if (epoch === generation && !stopped) {
 				saving = false;
-				if (!error) void flush();
 			}
 		}
 	}
 	return {
+		async settle() {
+			while (inFlight) await inFlight;
+			return !error && !Object.keys(queued).length;
+		},
 		get values() {
 			return values;
 		},
 		get error() {
 			return error;
+		},
+		get unsaved() {
+			return saving || Object.keys(queued).length > 0;
 		},
 		get saving() {
 			return saving;
@@ -64,14 +73,15 @@ export function createPreferences(owner: string | null, initial: Preferences = d
 			const checked = preferencePatch(patch);
 			values = { ...values, ...checked };
 			queued = { ...queued, ...checked };
-			void flush();
+			start();
 		},
 		retry() {
-			void flush();
+			start();
 		},
 		switchAccount(owner: string | null, initial: Preferences = defaultPreferences) {
 			if (owner === account) return;
 			generation++;
+			inFlight = undefined;
 			controller?.abort();
 			account = owner;
 			queued = {};
@@ -82,6 +92,7 @@ export function createPreferences(owner: string | null, initial: Preferences = d
 		destroy() {
 			stopped = true;
 			generation++;
+			inFlight = undefined;
 			controller?.abort();
 			queued = {};
 		}

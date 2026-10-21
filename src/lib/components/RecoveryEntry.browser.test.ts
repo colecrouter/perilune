@@ -1,3 +1,11 @@
+vi.mock('../../routes/access.remote.js', () => ({
+	accountEntry: async (body: Record<string, unknown>) => {
+		const r = await fetch('/access-fixture', { method: 'POST', body: JSON.stringify(body) });
+		const result = await r.json();
+		if (!r.ok) throw Error(result.message);
+		return result;
+	}
+}));
 import { afterEach, expect, test, vi } from 'vite-plus/test';
 import { render } from 'vitest-browser-svelte';
 import RecoveryEntry from './RecoveryEntry.svelte';

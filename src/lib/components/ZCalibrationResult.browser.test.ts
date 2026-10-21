@@ -1,3 +1,32 @@
+vi.mock('../../routes/configuration/configuration.remote.js', () => ({
+	getConfigurationRecovery: () =>
+		Object.assign(
+			fetch('/api/configuration/application').then(async (r) => {
+				const value = await r.json();
+				if (!r.ok) throw Error(value.message);
+				return value;
+			}),
+			{ refresh: async () => {} }
+		),
+	reviewPendingConfiguration: () =>
+		Object.assign(
+			fetch('/api/configuration/application?pending').then(async (r) => {
+				const value = await r.json();
+				if (!r.ok) throw Error(value.message);
+				return value;
+			}),
+			{ refresh: async () => {} }
+		),
+	applyConfiguration: async (body: Record<string, unknown>) => {
+		const r = await fetch('/api/configuration/application', {
+			method: 'POST',
+			body: JSON.stringify(body)
+		});
+		if (!r.ok) throw Error('Recovery request failed.');
+		return r.json();
+	},
+	getConfigurationSnapshot: async () => ''
+}));
 import { expect, test, vi } from 'vite-plus/test';
 import { render } from 'vitest-browser-svelte';
 import ZCalibrationResult from './ZCalibrationResult.svelte';

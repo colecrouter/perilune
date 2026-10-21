@@ -612,7 +612,7 @@ advance, temperature/retraction towers remain later print-based tuning work.
 
 ## Configuration workspace
 
-`/configuration` and `/api/configuration` are owner-only surfaces. Operators/viewers
+`/configuration` and its remote queries/commands are owner-only surfaces. Operators/viewers
 receive no filenames, content, backups, or exports. Configuration never enters the
 shared dashboard or action history. A process-scoped ConfigurationService owns
 bounded saves and SQLite access; finite HTTP reads use request aborts and deadlines.
@@ -652,8 +652,8 @@ application of calibration proposals are follow-up milestones. See
 
 ### Prerendered Klipper reference
 
-`/reference/klipper.json` is a public static catalogue containing upstream docs
-only. Its SvelteKit `prerender = true` endpoint fetches a fixed commit at build
+`getKlipperReference` is a public static catalogue containing upstream docs
+only. Its SvelteKit remote `prerender` function fetches a fixed commit at build
 time with an eight-second timeout, redirect refusal, 512KiB stream bound, and
 SHA-256 verification. A byte-identical checked-in snapshot supplies offline builds;
 the bundled hash and minimum extraction coverage are checked. Build-time hook
@@ -705,7 +705,7 @@ Edits/selection changes dismiss help; YAML/JSON do not receive Klipper tooltips.
 
 Issue #33 tracks browser Klipper/Jinja/LSP exploration. Current application safety
 is separate from language tooling. `PERILUNE_LIVE_CONFIGURATION` defaults false;
-when enabled, owner-only `/api/configuration/application` admits one reviewed
+when enabled, owner-only configuration application commands admit one reviewed
 single-file operation without a waiting queue. The ordinary live configuration
 save API still rejects writes. Coordinated physical printer testing is outstanding;
 all automated write/restart tests use a loopback protocol fixture.

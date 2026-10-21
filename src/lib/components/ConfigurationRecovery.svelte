@@ -1,4 +1,9 @@
 <script lang="ts">
+	import {
+		getConfigurationRecovery,
+		applyConfiguration,
+		getConfigurationSnapshot
+	} from '../../routes/configuration/configuration.remote.js';
 	import { onMount } from 'svelte';
 	import type { ConfigRecovery } from '#lib/domain/config-application.js';
 	let {
@@ -21,33 +26,64 @@
 	const pending = $derived(
 		application && ['queued', 'writing', 'restarting'].includes(application.phase)
 	);
+	await (async () => {
+		try {
+			recovery = await getConfigurationRecovery();
+		} catch {
+			networkFailure =
+				'Recovery status unavailable. Keep your draft and check again before sending another operation.';
+		}
+	})();
+	$effect(() => {
+		onEnabled?.(
+			Boolean(
+				recovery?.enabled &&
+				!['queued', 'writing', 'restarting', 'unknown'].includes(recovery.application?.phase ?? '')
+			)
+		);
+		onDiscardEnabled?.(
+			Boolean(
+				(recovery?.discardEnabled ?? recovery?.enabled) &&
+				!['queued', 'writing', 'restarting', 'unknown'].includes(recovery?.application?.phase ?? '')
+			)
+		);
+	});
+	async function download(side: 'before' | 'after') {
+		if (!application) return;
+		try {
+			const text = await getConfigurationSnapshot({ snapshot: application.id, side });
+			const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+			const anchor = document.createElement('a');
+			anchor.href = url;
+			anchor.download = `configuration-${side}.cfg`;
+			anchor.click();
+			setTimeout(() => URL.revokeObjectURL(url), 1000);
+		} catch (cause) {
+			failure = cause instanceof Error ? cause.message : 'Snapshot unavailable.';
+		}
+	}
+
 	async function refresh() {
 		if (!active) return;
 		controller?.abort();
 		const request = new AbortController();
 		controller = request;
 		try {
-			const response = await fetch('/api/configuration/application', {
-				cache: 'no-store',
-				signal: request.signal
-			});
-			if (!response.ok)
-				throw new Error(
-					'Recovery status unavailable. Keep your draft and check again before sending another operation.'
-				);
-			const result = await response.json();
+			const query = getConfigurationRecovery();
+			await query.refresh();
+			const result = await query;
 			if (request.signal.aborted) return;
 			recovery = result;
 			onEnabled?.(
 				Boolean(
 					result.enabled &&
-					!['queued', 'writing', 'restarting', 'unknown'].includes(result.application?.phase)
+					!['queued', 'writing', 'restarting', 'unknown'].includes(result.application?.phase ?? '')
 				)
 			);
 			onDiscardEnabled?.(
 				Boolean(
 					(result.discardEnabled ?? result.enabled) &&
-					!['queued', 'writing', 'restarting', 'unknown'].includes(result.application?.phase)
+					!['queued', 'writing', 'restarting', 'unknown'].includes(result.application?.phase ?? '')
 				)
 			);
 			networkFailure = '';
@@ -60,7 +96,6 @@
 	}
 	onMount(() => {
 		active = true;
-		void refresh();
 		const timer = setInterval(() => {
 			if (!busy) void refresh();
 		}, 3000);
@@ -75,23 +110,17 @@
 		busy = true;
 		failure = '';
 		try {
-			const response = await fetch('/api/configuration/application', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(
-					kind === 'check'
-						? { action: kind, id: application.id }
-						: {
-								action: kind,
-								id: crypto.randomUUID(),
-								revertOf: application.id,
-								confirmedRestart: true
-							}
-				)
-			});
-			const body = await response.json();
+			await applyConfiguration(
+				kind === 'check'
+					? { action: kind, id: application.id }
+					: {
+							action: kind,
+							id: crypto.randomUUID(),
+							revertOf: application.id,
+							confirmedRestart: true
+						}
+			);
 			if (!active) return;
-			if (!response.ok) throw new Error(body.message ?? 'Recovery request failed.');
 			confirmed = false;
 			await refresh();
 		} catch (cause) {
@@ -127,13 +156,9 @@
 						{application.path} · Updated {new Date(application.updatedAt).toLocaleString()}
 					</p>
 					<p class="snapshot-links">
-						<a href={`/api/configuration/application?snapshot=${application.id}&side=before`}
-							>Export previous file</a
-						>
+						<button type="button" onclick={() => download('before')}>Export previous file</button>
 						·
-						<a href={`/api/configuration/application?snapshot=${application.id}&side=after`}
-							>Export reviewed file</a
-						>
+						<button type="button" onclick={() => download('after')}>Export reviewed file</button>
 					</p>
 					<p class="muted">
 						The previous file is the recovery copy from before this operation. The reviewed file is

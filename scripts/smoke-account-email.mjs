@@ -1,3 +1,4 @@
+import { appRequest } from './smoke-remote-helper.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
@@ -122,7 +123,7 @@ try {
 		entry = await unauth.newPage();
 	await entry.goto(verification);
 	assert.equal(
-		(await owner.request.get(base + '/api/account/manage')).status(),
+		(await appRequest(owner.request, 'GET', base + '/api/account/manage')).status(),
 		200,
 		'Opening an email must not revoke sessions'
 	);
@@ -146,7 +147,10 @@ try {
 		.fill('replacement-owner-password');
 	await entry.getByRole('button', { name: 'Update password', exact: true }).click();
 	await entry.getByRole('status').filter({ hasText: 'Password updated.' }).waitFor();
-	assert.equal((await owner.request.get(base + '/api/account/manage')).status(), 401);
+	assert.equal(
+		(await appRequest(owner.request, 'GET', base + '/api/account/manage')).status(),
+		401
+	);
 	await entry.getByRole('link', { name: 'Back to sign in', exact: true }).click();
 	await entry.getByLabel('Email', { exact: true }).fill('owner@example.test');
 	await entry.getByLabel('Password', { exact: true }).fill('replacement-owner-password');
@@ -184,7 +188,7 @@ try {
 		await joinPage.getByRole('button', { name: 'Create account', exact: true }).isDisabled(),
 		true
 	);
-	const request = await guest.request.post(base + '/api/access/request-reset', {
+	const request = await appRequest(guest.request, 'POST', base + '/api/access/request-reset', {
 		headers: { origin: base },
 		data: { email: 'nobody@example.test' }
 	});
@@ -192,7 +196,7 @@ try {
 	assert.match((await request.json()).message, /If this account/);
 	assert.equal(
 		(
-			await guest.request.post(base + '/api/access/request-reset', {
+			await appRequest(guest.request, 'POST', base + '/api/access/request-reset', {
 				headers: { origin: 'https://untrusted.example' },
 				data: { email: 'owner@example.test' }
 			})
