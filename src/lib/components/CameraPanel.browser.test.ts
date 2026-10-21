@@ -1,3 +1,4 @@
+vi.mock('../../routes/camera/camera.remote.js', () => ({ captureCamera: vi.fn() }));
 import { beforeEach, afterEach, expect, test, vi } from 'vite-plus/test';
 import { render } from 'vitest-browser-svelte';
 import { userEvent } from 'vite-plus/test/browser';

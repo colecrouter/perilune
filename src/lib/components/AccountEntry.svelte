@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { accountEntry } from '../../routes/access.remote.js';
 	import EntryFrame from './EntryFrame.svelte';
 	import { onMount } from 'svelte';
 	import { authClient } from '#lib/client/auth.js';
@@ -28,14 +29,8 @@
 		}
 		const requested = token;
 		try {
-			const response = await fetch('/api/access/invitation', {
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ token })
-			});
-			if (!response.ok) throw Error();
-			const result = await response.json();
-			if (token === requested) invitation = result;
+			const result = await accountEntry({ operation: 'invitation', token });
+			if (token === requested) invitation = result as typeof invitation;
 		} catch {
 			if (token !== requested) return;
 			message = 'Could not inspect this invitation. Reload the complete link to try again.';
@@ -91,15 +86,7 @@
 					);
 				location.assign(destination);
 			} else {
-				const response = await fetch('/api/account/enroll', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ token, name, email, password })
-				});
-				if (!response.ok) {
-					const body = await response.json();
-					throw new Error(body.message ?? 'Could not create this account.');
-				}
+				await accountEntry({ operation: 'enroll', token, name, email, password });
 				location.assign('/login?created=1');
 			}
 		} catch (cause) {

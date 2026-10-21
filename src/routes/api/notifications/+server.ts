@@ -1,6 +1,5 @@
-import { readBoundedBody } from '#lib/server/action-body.js';
-import { error, json } from '@sveltejs/kit';
-import { requireIdentity, sameOrigin } from '#lib/server/auth/index.js';
+import { error } from '@sveltejs/kit';
+import { requireIdentity } from '#lib/server/auth/index.js';
 import { runtime } from '#lib/server/runtime.js';
 import { NotificationService } from '#lib/server/notification-service.js';
 export const GET = async (event) => {
@@ -20,30 +19,5 @@ export const GET = async (event) => {
 			}
 		});
 	}
-	return json({ publicKey: service.publicKey });
-};
-export const POST = async (event) => {
-	sameOrigin(event.request);
-	const identity = requireIdentity(event);
-	const text = new TextDecoder().decode(await readBoundedBody(event.request));
-	let body: Record<string, unknown>;
-	try {
-		body = JSON.parse(text);
-		if (!body || typeof body !== 'object') throw new Error();
-	} catch {
-		error(400, 'Invalid notification request.');
-	}
-	const service = await runtime.runPromise(NotificationService);
-	try {
-		return json(
-			await runtime.runPromise(
-				service.manage({ id: identity.user.id, epoch: identity.user.authVersion }, body)
-			)
-		);
-	} catch {
-		error(
-			400,
-			'Could not update notifications. Re-enable notifications or check your preferences and try again. Test messages are limited to one every 30 seconds.'
-		);
-	}
+	error(404, 'Choose a notification image.');
 };

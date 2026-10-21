@@ -1,3 +1,6 @@
+vi.mock('../../routes/configuration/reference.remote.js', () => ({
+	getKlipperReference: vi.fn(async () => (await fetch('/reference-fixture')).json())
+}));
 import { afterEach, expect, test, vi } from 'vite-plus/test';
 import { render } from 'vitest-browser-svelte';
 import ConfigurationReference from './ConfigurationReference.svelte';

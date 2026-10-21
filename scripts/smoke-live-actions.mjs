@@ -1,3 +1,4 @@
+import { appRequest, remoteResult } from './smoke-remote-helper.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -290,15 +291,19 @@ try {
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 	await mkdir('test-results', { recursive: true });
 	await page.screenshot({ path: 'test-results/pid-result-mobile.png', fullPage: true });
-	const pidReviewURL = '**/api/configuration/application?pending';
+	let pendingKp = '20';
+	const pidReviewURL = '**/_app/remote/*/reviewPendingConfiguration*';
 	await page.route(pidReviewURL, (route) =>
 		route.fulfill({
-			json: {
-				path: 'printer.cfg',
-				fingerprint: 'fixture-pending',
-				sources: { root: 'printer.cfg', fingerprint: 'fixture-sources' },
-				manifest: { extruder: { pid_Kp: '20', pid_Ki: '1.2', pid_Kd: '80' } }
-			}
+			json: remoteResult(
+				{
+					path: 'printer.cfg',
+					fingerprint: 'fixture-pending',
+					sources: { root: 'printer.cfg', fingerprint: 'fixture-sources' },
+					manifest: { extruder: { pid_Kp: pendingKp, pid_Ki: '1.2', pid_Kd: '80' } }
+				},
+				route.request()
+			)
 		})
 	);
 	await page.getByRole('button', { name: 'Save…', exact: true }).click();
@@ -313,10 +318,12 @@ try {
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 	await page.screenshot({ path: '/tmp/perilune-pid-inline-save-mobile.png', fullPage: true });
 	await saveReview.getByRole('button', { name: 'Close', exact: true }).click();
+	pendingKp = '21';
 	await page.getByRole('button', { name: 'Discard…', exact: true }).click();
 	const discardReview = page.getByRole('dialog');
 	await discardReview.getByRole('heading', { name: 'Discard pending settings?' }).waitFor();
 	await discardReview.getByText('[extruder] pid_Kp', { exact: true }).waitFor();
+	await discardReview.getByText('21', { exact: true }).waitFor();
 	assert.equal(
 		await discardReview.getByRole('button', { name: 'Discard settings & restart' }).isDisabled(),
 		true
@@ -730,7 +737,7 @@ try {
 		.waitFor();
 	assert.equal(operations.filter((op) => op.script === 'M105\nM114\nM400').length, 1);
 
-	const printKeyResponse = await context.request.post(base + '/api/jobs/key', {
+	const printKeyResponse = await appRequest(context.request, 'POST', base + '/api/jobs/key', {
 		headers: { Origin: base },
 		data: { name: 'Native slicer fixture', canPrint: true }
 	});
@@ -755,7 +762,7 @@ try {
 		operations.filter((op) => op.method === 'printer.print.start').length,
 		startCount + 1
 	);
-	await context.request.post(base + '/api/jobs/revoke-key', {
+	await appRequest(context.request, 'POST', base + '/api/jobs/revoke-key', {
 		headers: { Origin: base },
 		data: { id: printKey.key.id }
 	});

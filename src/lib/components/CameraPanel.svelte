@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { captureCamera } from '../../routes/camera/camera.remote.js';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import type { CameraDescriptor } from '#lib/domain/camera.js';
@@ -181,13 +182,9 @@
 		captureError = '';
 		try {
 			captureAbort = new AbortController();
-			const response = await fetch(camera.snapshotUrl, {
-				cache: 'no-store',
-				signal: captureAbort.signal
-			});
-			if (!response.ok || !response.headers.get('content-type')?.startsWith('image/jpeg'))
-				throw new Error('Snapshot unavailable. Live video may still work; try again shortly.');
-			const url = URL.createObjectURL(await response.blob());
+			const bytes = await captureCamera();
+			if (captureAbort.signal.aborted) return;
+			const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' }));
 			const anchor = document.createElement('a');
 			anchor.href = url;
 			anchor.download = 'perilune-camera.jpg';

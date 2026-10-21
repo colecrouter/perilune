@@ -1,3 +1,18 @@
+vi.mock('../../routes/configuration/configuration.remote.js', () => ({
+	getConfigurationRecovery: () => {
+		const result = fetch('/recovery-fixture').then((r) => r.json());
+		return Object.assign(result, { refresh: async () => {} });
+	},
+	applyConfiguration: async (body: Record<string, unknown>) => {
+		const response = await fetch('/recovery-fixture', {
+			method: 'POST',
+			body: JSON.stringify(body)
+		});
+		if (!response.ok) throw Error('Recovery request failed.');
+		return response.json();
+	},
+	getConfigurationSnapshot: async () => ''
+}));
 import { afterEach, expect, test, vi } from 'vite-plus/test';
 import { render } from 'vitest-browser-svelte';
 import ConfigurationRecovery from './ConfigurationRecovery.svelte';
@@ -52,7 +67,7 @@ test('unknown outcomes offer checking and exports without an unverified revert',
 	await expect
 		.element(screen.getByRole('button', { name: 'Check printer and saved settings' }))
 		.toBeVisible();
-	await expect.element(screen.getByRole('link', { name: 'Export previous file' })).toBeVisible();
+	await expect.element(screen.getByRole('button', { name: 'Export previous file' })).toBeVisible();
 	await expect
 		.element(screen.getByRole('button', { name: 'Revert changes and restart' }))
 		.not.toBeInTheDocument();
@@ -80,5 +95,5 @@ test('verified startup keeps optional recovery controls disclosed while retainin
 	await expect
 		.element(screen.getByRole('button', { name: 'Revert changes and restart' }))
 		.toBeDisabled();
-	await expect.element(screen.getByRole('link', { name: 'Export reviewed file' })).toBeVisible();
+	await expect.element(screen.getByRole('button', { name: 'Export reviewed file' })).toBeVisible();
 });

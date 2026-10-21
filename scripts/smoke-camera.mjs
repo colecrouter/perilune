@@ -1,3 +1,4 @@
+import { appRequest } from './smoke-remote-helper.mjs';
 import { authenticate } from './smoke-auth-helper.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -149,7 +150,7 @@ try {
 	await authenticate(context, base, join(directory, 'state.sqlite'));
 	const selectCamera = async () => {
 		const streamUrl = `http://capture.example.invalid/${source}`;
-		const testResponse = await context.request.post(base + '/api/camera/setup', {
+		const testResponse = await appRequest(context.request, 'POST', base + '/api/camera/setup', {
 			headers: { Origin: base },
 			data: {
 				operation: 'test',
@@ -158,7 +159,7 @@ try {
 		});
 		assert.equal(testResponse.status(), 200);
 		const test = await testResponse.json();
-		const save = await context.request.post(base + '/api/camera/setup', {
+		const save = await appRequest(context.request, 'POST', base + '/api/camera/setup', {
 			headers: { Origin: base },
 			data: { operation: 'save', token: test.token }
 		});
@@ -166,7 +167,8 @@ try {
 		return [...definitions].find(([, value]) => value === streamUrl)[0];
 	};
 	assert.equal(
-		(await (await context.request.get(base + '/api/camera/setup')).json()).current.configured,
+		(await (await appRequest(context.request, 'GET', base + '/api/camera/setup')).json()).current
+			.configured,
 		false,
 		'Moonraker discovery cannot select a camera automatically'
 	);
@@ -222,11 +224,13 @@ try {
 	await page.locator('.camera-panel .tag').getByText('Live', { exact: true }).waitFor();
 	const beforeForbidden = requests;
 	assert.equal(
-		(await context.request.get(`${base}/api/camera/stream.m3u8?src=other`)).status(),
+		(await appRequest(context.request, 'GET', `${base}/api/camera/stream.m3u8?src=other`)).status(),
 		400
 	);
 	assert.equal(requests, beforeForbidden, 'Browser cannot override the source');
-	const oldMaster = await (await context.request.get(`${base}/api/camera/stream.m3u8`)).text();
+	const oldMaster = await (
+		await appRequest(context.request, 'GET', `${base}/api/camera/stream.m3u8`)
+	).text();
 	const oldPlaylist = oldMaster.split('\n').find((line) => line && !line.startsWith('#'));
 	await page.getByRole('spinbutton', { name: 'Bed target' }).fill('85');
 	source = 'replacement_camera';
@@ -243,7 +247,7 @@ try {
 	);
 	assert.ok(requestedSources.includes(replacementId), 'Configuration change reaches gateway');
 	assert.equal(
-		(await context.request.get(new URL(oldPlaylist, base).href)).status(),
+		(await appRequest(context.request, 'GET', new URL(oldPlaylist, base).href)).status(),
 		404,
 		'Old media session invalidated'
 	);
@@ -310,12 +314,7 @@ try {
 	const reader = continuous.body.getReader();
 	await reader.read();
 	const liveURLs = [
-		...new Set(
-			browserRequests.filter(
-				(url) =>
-					new URL(url).pathname.includes('/_app/remote/') && !url.includes('getTemperatureHistory')
-			)
-		)
+		...new Set(browserRequests.filter((url) => new URL(url).pathname.includes('/getDashboard')))
 	];
 	assert.equal(liveURLs.length, 1, 'Printer and camera share one dashboard live query');
 	const liveReaders = await Promise.all(
@@ -327,7 +326,7 @@ try {
 			return liveReader;
 		})
 	);
-	const logout = await context.request.post(`${base}/api/auth/sign-out`, {
+	const logout = await appRequest(context.request, 'POST', `${base}/api/auth/sign-out`, {
 		headers: { Origin: base },
 		data: {}
 	});
@@ -347,7 +346,10 @@ try {
 		[true, true],
 		'Logout closes already-returned camera and idle live query bodies'
 	);
-	assert.equal((await context.request.get(`${base}/api/camera/snapshot`)).status(), 401);
+	assert.equal(
+		(await appRequest(context.request, 'GET', `${base}/api/camera/snapshot`)).status(),
+		401
+	);
 	assert.deepEqual(errors, [], 'No camera browser errors');
 	console.log(
 		'Camera production smoke passed: H.264 decoding, two viewers, capture, same-origin URLs, clean EOF/reconnect, source change, old-session invalidation, orientation, drafts,320px layout, pause/resume.'

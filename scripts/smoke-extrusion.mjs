@@ -1,3 +1,4 @@
+import { appRequest } from './smoke-remote-helper.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -100,7 +101,7 @@ try {
 	await page.getByRole('checkbox', { name: 'I reviewed the source changes.' }).check();
 	await page.getByRole('button', { name: 'Save simulator file' }).click();
 	const saved = await (
-		await context.request.get(base + '/api/configuration?file=printer.cfg')
+		await appRequest(context.request, 'GET', base + '/api/configuration?file=printer.cfg')
 	).json();
 	assert.ok(saved.text.includes('rotation_distance: 7.200'));
 	assert.deepEqual(errors, []);

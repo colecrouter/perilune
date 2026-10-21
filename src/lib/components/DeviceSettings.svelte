@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { getNotificationKey, manageNotifications } from '../../routes/device.remote.js';
+	const notificationKey = await getNotificationKey();
 	import { dev } from '$app/env';
 	import { defaultNoticePreferences, checkNoticePreferences } from '#lib/domain/notifications.js';
 	import { installation } from '#lib/client/install.svelte.js';
@@ -14,14 +16,11 @@
 	let preferences = $state({ ...defaultNoticePreferences });
 	let subscription: PushSubscription | null = null;
 	async function request(action: string) {
-		const response = await fetch('/api/notifications', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action, subscription: subscription?.toJSON(), preferences })
-		});
-		const result = await response.json();
-		if (!response.ok) throw new Error(result.message ?? 'Could not update notifications.');
-		return result;
+		return (await manageNotifications({
+			action,
+			subscription: subscription?.toJSON(),
+			preferences
+		})) as { id?: string; preferences?: unknown };
 	}
 	async function run(action: () => Promise<void>) {
 		pending = true;
@@ -87,9 +86,7 @@
 				)
 			)
 		]);
-		const response = await fetch('/api/notifications');
-		if (!response.ok) throw new Error('Sign in again to enable notifications.');
-		const { publicKey } = await response.json();
+		const { publicKey } = notificationKey;
 		const raw = atob(publicKey.replace(/-/g, '+').replace(/_/g, '/'));
 		const key = Uint8Array.from(raw, (c: string) => c.charCodeAt(0));
 		// Rotate an orphaned browser subscription after switching accounts or restoring a database.

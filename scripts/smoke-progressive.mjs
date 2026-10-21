@@ -1,3 +1,4 @@
+import { appRequest } from './smoke-remote-helper.mjs';
 import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import { spawn } from 'node:child_process';
@@ -62,7 +63,7 @@ try {
 	assert.equal(new URL(page.url()).pathname, `/actions/${original}`);
 	await page.getByRole('link', { name: 'Refresh status' }).click();
 	assert.ok((await page.textContent('body')).includes(original));
-	const replay = await native.request.post(base + '/actions', {
+	const replay = await appRequest(native.request, 'POST', base + '/actions', {
 		headers: { Origin: base },
 		form: payload,
 		maxRedirects: 0
@@ -82,7 +83,7 @@ try {
 	};
 	await idle();
 	assert.equal(db.prepare('SELECT count(*) AS n FROM actions WHERE id=?').get(original).n, 1);
-	const csrf = await native.request.post(base + '/actions', {
+	const csrf = await appRequest(native.request, 'POST', base + '/actions', {
 		headers: { Origin: 'https://evil.example' },
 		form: payload
 	});
@@ -112,7 +113,7 @@ try {
 	);
 	assert.ok(!(await page.textContent('body')).includes('Reconnecting'));
 	// Upload is fixture setup through the authenticated API; native start still uses the public review form.
-	const uploaded = await native.request.post(base + '/api/jobs/upload', {
+	const uploaded = await appRequest(native.request, 'POST', base + '/api/jobs/upload', {
 		headers: { Origin: base },
 		multipart: {
 			file: {
@@ -215,7 +216,7 @@ try {
 	try {
 		await new Promise((resolve) => setTimeout(resolve, 150));
 		const started = Date.now();
-		const tiny = await native.request.post(base + '/actions', {
+		const tiny = await appRequest(native.request, 'POST', base + '/actions', {
 			headers: { Origin: base, 'x-sveltekit-action': 'true', Accept: 'application/json' },
 			form: { id: crypto.randomUUID(), intent: 'temperature', heater: 'bed', target: '40' }
 		});
@@ -277,7 +278,7 @@ try {
 	assert.deepEqual(errors, []);
 
 	db.prepare('UPDATE user SET authVersion=authVersion+1').run();
-	const invalid = await native.request.get(base + '/', { maxRedirects: 0 });
+	const invalid = await appRequest(native.request, 'GET', base + '/', { maxRedirects: 0 });
 	assert.ok(
 		[401, 403, 303].includes(invalid.status()),
 		`Invalidated session received ${invalid.status()}`

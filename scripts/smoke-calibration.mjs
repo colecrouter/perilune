@@ -1,3 +1,4 @@
+import { appRequest } from './smoke-remote-helper.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -43,7 +44,7 @@ try {
 	const errors = [];
 	page.on('pageerror', (error) => errors.push(error.message));
 	const enroll = async (role) => {
-		const invitation = await context.request.post(base + '/api/account/invite', {
+		const invitation = await appRequest(context.request, 'POST', base + '/api/account/invite', {
 			headers: { Origin: base },
 			data: { role }
 		});
@@ -56,14 +57,14 @@ try {
 			email: `${role}@example.test`,
 			password: `fixture-${role}-password`
 		};
-		const result = await account.request.post(base + '/api/account/enroll', {
+		const result = await appRequest(account.request, 'POST', base + '/api/account/enroll', {
 			headers: { Origin: base },
 			data: user
 		});
 		assert.equal(result.status(), 200);
 		assert.equal(
 			(
-				await account.request.post(base + '/api/auth/sign-in/email', {
+				await appRequest(account.request, 'POST', base + '/api/auth/sign-in/email', {
 					headers: { Origin: base },
 					data: { email: user.email, password: user.password }
 				})
@@ -156,12 +157,12 @@ try {
 	const request = await requestPromise;
 	const headers = { Origin: base, 'Content-Type': request.headers()['content-type'] };
 	const otherRejection = await (
-		await operator.request.post(request.url(), { headers, data: request.postData() })
+		await appRequest(operator.request, 'POST', request.url(), { headers, data: request.postData() })
 	).json();
 	assert.equal(otherRejection.type, 'error');
 	assert.equal(otherRejection.error.status, 409);
 	const viewerRejection = await (
-		await viewer.request.post(request.url(), { headers, data: request.postData() })
+		await appRequest(viewer.request, 'POST', request.url(), { headers, data: request.postData() })
 	).json();
 	assert.equal(viewerRejection.type, 'error');
 	assert.equal(viewerRejection.error.status, 403);

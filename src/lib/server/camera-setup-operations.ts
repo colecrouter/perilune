@@ -1,28 +1,12 @@
-import { error, json, type RequestEvent } from '@sveltejs/kit';
+import { error, type RequestEvent } from '@sveltejs/kit';
 import { Effect } from 'effect';
 import { authService, requireIdentity, sameOrigin } from '#lib/server/auth/index.js';
-import { readBoundedBody } from '#lib/server/action-body.js';
 import { CameraSetupService, CameraSetupError } from '#lib/server/camera-setup-service.js';
-import { cameraCandidates, cameraSetupSnapshot } from '#lib/server/camera-setup-read.js';
+import { cameraCandidates } from '#lib/server/camera-setup-read.js';
 import { runtime } from '#lib/server/runtime.js';
-export async function GET(event: RequestEvent) {
-	requireIdentity(event, 'owner');
-	const settings = await cameraSetupSnapshot();
-	requireIdentity(event, 'owner');
-	return json(settings, { headers: { 'Cache-Control': 'no-store' } });
-}
-
-export async function POST(event: RequestEvent) {
+export async function write(event: RequestEvent, body: Record<string, unknown>) {
 	const identity = requireIdentity(event, 'owner');
 	sameOrigin(event.request);
-	const bytes = await readBoundedBody(event.request, 8192);
-	let body: Record<string, unknown>;
-	try {
-		body = JSON.parse(new TextDecoder().decode(bytes));
-		if (!body || typeof body !== 'object' || Array.isArray(body)) throw Error();
-	} catch {
-		error(400, 'Enter valid camera settings.');
-	}
 	const service = await runtime.runPromise(CameraSetupService);
 	const actor = identity.session.id;
 	const lease = authService!.watch(identity);
@@ -80,7 +64,7 @@ export async function POST(event: RequestEvent) {
 		);
 		requireIdentity(event, 'owner');
 		if (!result.ok) error(400, result.message);
-		return json(result.value, { headers: { 'Cache-Control': 'no-store' } });
+		return result.value;
 	} finally {
 		lease.release();
 	}

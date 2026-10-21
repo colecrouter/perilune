@@ -86,6 +86,8 @@ jobs:
         run: node scripts/probe-camera-companion.mjs
       - run: docker build -t perilune:ci .
       - run: docker run --detach --name perilune-ci --publish 127.0.0.1:3000:3000 --env PERILUNE_ORIGIN=http://127.0.0.1:3000 perilune:ci
+      - name: Read remote metadata from the image under test
+        run: docker cp perilune-ci:/app/build ./build
       - run: pnpm run test:smoke
         env:
           PERILUNE_SMOKE_URL: http://127.0.0.1:3000

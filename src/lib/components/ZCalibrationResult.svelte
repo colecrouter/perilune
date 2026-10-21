@@ -1,19 +1,20 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { refreshPendingSettings } from '#lib/client/pending-settings.js';
+	import { getConfigurationRecovery } from '../../routes/configuration/configuration.remote.js';
+	import { onMount, untrack } from 'svelte';
 	import PendingSettingsDialog from './PendingSettingsDialog.svelte';
 	let reviewOpen = $state(false);
 	let reviewMode = $state<'save' | 'discard'>('save');
 	import type { LiveZSession, ZProbeCapability } from '#lib/domain/live-z.js';
 	import type { ConfigRecovery } from '#lib/domain/config-application.js';
+	async function readServerRecovery(_signal: AbortSignal): Promise<ConfigRecovery> {
+		return getConfigurationRecovery();
+	}
 	let {
 		session,
 		capability,
 		role,
-		readRecovery = async (signal: AbortSignal) => {
-			const response = await fetch('/api/configuration/application', { cache: 'no-store', signal });
-			if (!response.ok) throw Error('Recovery status is unavailable.');
-			return response.json() as Promise<ConfigRecovery>;
-		}
+		readRecovery = readServerRecovery
 	}: {
 		session: LiveZSession;
 		capability?: ZProbeCapability;
@@ -22,6 +23,16 @@
 	} = $props();
 	let recovery = $state<ConfigRecovery | null>(null),
 		unavailable = $state(false);
+	await (async () => {
+		if (untrack(() => role) === 'owner') {
+			try {
+				recovery = await untrack(() => readRecovery)(new AbortController().signal);
+			} catch {
+				unavailable = true;
+			}
+		}
+	})();
+
 	const application = $derived(
 		recovery?.application?.calibrationRun === session.id ? recovery.application : null
 	);
@@ -55,6 +66,7 @@
 			busy = true;
 			controller = new AbortController();
 			try {
+				if (readRecovery === readServerRecovery) await getConfigurationRecovery().refresh();
 				const result = await readRecovery(controller.signal);
 				if (active) {
 					recovery = result;
@@ -66,7 +78,6 @@
 				busy = false;
 			}
 		}
-		void refresh();
 		const timer = setInterval(() => void refresh(), 3000);
 		return () => {
 			active = false;
@@ -172,12 +183,14 @@
 				class="button primary"
 				onclick={() => {
 					reviewMode = 'save';
+					refreshPendingSettings();
 					reviewOpen = true;
 				}}>Save…</button
 			><button
 				class="button secondary"
 				onclick={() => {
 					reviewMode = 'discard';
+					refreshPendingSettings();
 					reviewOpen = true;
 				}}>Discard…</button
 			>
