@@ -183,8 +183,7 @@ try {
 	await viewerPage.getByLabel('Email', { exact: true }).fill('console-viewer@example.test');
 	await viewerPage.getByLabel('Password', { exact: true }).fill('fixture-viewer-password');
 	const enrollment = viewerPage.waitForResponse(
-		(response) =>
-			response.url() === sim.base + '/api/account/enroll' && response.request().method() === 'POST'
+		(response) => response.url().includes('/accountEntry') && response.request().method() === 'POST'
 	);
 	await viewerPage.getByRole('button', { name: 'Create account', exact: true }).click();
 	const enrolled = await enrollment;

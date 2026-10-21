@@ -295,12 +295,15 @@ try {
 	const pidReviewURL = '**/_app/remote/*/reviewPendingConfiguration*';
 	await page.route(pidReviewURL, (route) =>
 		route.fulfill({
-			json: remoteResult({
-				path: 'printer.cfg',
-				fingerprint: 'fixture-pending',
-				sources: { root: 'printer.cfg', fingerprint: 'fixture-sources' },
-				manifest: { extruder: { pid_Kp: pendingKp, pid_Ki: '1.2', pid_Kd: '80' } }
-			})
+			json: remoteResult(
+				{
+					path: 'printer.cfg',
+					fingerprint: 'fixture-pending',
+					sources: { root: 'printer.cfg', fingerprint: 'fixture-sources' },
+					manifest: { extruder: { pid_Kp: pendingKp, pid_Ki: '1.2', pid_Kd: '80' } }
+				},
+				route.request()
+			)
 		})
 	);
 	await page.getByRole('button', { name: 'Save…', exact: true }).click();

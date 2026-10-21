@@ -28,3 +28,11 @@ production remote endpoints and serialization rather than restoring removed API
 routes. Retained routes serve media/native URL consumers, upload progress, SDK
 authentication or external slicer contracts. No database migration or physical
 printer command is part of this change.
+
+CI follow-up review approved extracting `/app/build` from the actual runtime image
+before host-side protocol tests, and matching the new enrollment command in the
+console smoke. The isolated Docker smoke and console smoke passed. The simulated
+query response also includes its query-cache node; live-actions passed, including
+reopening a review after the fixture's pending gains changed. All 14 smoke suites
+passed, with affected suites rerun after these test-harness fixes. The 620 tests,
+production build and formatting checks passed.

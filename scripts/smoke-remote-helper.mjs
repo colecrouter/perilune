@@ -19,7 +19,12 @@ for (const hash of readdirSync('build/prerendered/_app/remote')) {
 	if (readdirSync('build/prerendered/_app/remote/' + hash).includes('getKlipperReference'))
 		modules.set('src/routes/configuration/reference.remote.ts', hash);
 }
-export const remoteResult = (value) => ({ type: 'result', data: stringify({ _: value }) });
+export const remoteResult = (value, request) => {
+	const url = new URL(request.url());
+	const id = url.pathname.split('/_app/remote/')[1];
+	const key = id + '/' + (url.searchParams.get('payload') ?? '');
+	return { type: 'result', data: stringify({ _: value, q: { [key]: { v: value } } }) };
+};
 export const remoteArgument = (request) =>
 	parse(Buffer.from(request.postDataJSON().payload, 'base64url').toString('utf8'));
 export function decodeRemote(data) {
