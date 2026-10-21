@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
+	import { getIntegrations } from '../../routes/account/integrations.remote.js';
 	import MoonMark from './MoonMark.svelte';
 	let { approve = false, signedIn = false }: { approve?: boolean; signedIn?: boolean } = $props();
 	let name = $state('My browser');
@@ -10,7 +11,7 @@
 	let pending = $state(false);
 	let inspectedCode = $state('');
 	let integrationId = $state('');
-	let integrations = $state<{ id: string; name: string }[]>([]);
+	const integrations = untrack(() => approve && signedIn) ? (await getIntegrations()).keys : [];
 	const controller = new AbortController();
 	async function api(operation: string, body: unknown) {
 		const response = await fetch(`/api/pairing/${operation}`, {
@@ -53,12 +54,6 @@
 		}
 	}
 	onMount(() => {
-		if (approve && signedIn)
-			void fetch('/api/jobs/keys')
-				.then(async (response) => {
-					if (response.ok) integrations = (await response.json()).keys;
-				})
-				.catch(() => {});
 		let polling = false;
 		const timer = setInterval(async () => {
 			if (!grant || polling || approve) return;

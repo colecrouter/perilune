@@ -62,6 +62,17 @@ export async function testPairing(owner, base, directory, filename) {
 		assert.equal(browsers[0].current, false);
 		const deviceBrowsers = await (await device.request.get(base + '/api/account/browsers')).json();
 		assert.equal(deviceBrowsers.browsers[0].current, true);
+		// Direct documents include private summaries, never the one-time slicer credential.
+		const integrationDocument = await owner.request.get(base + '/account?section=integrations');
+		const integrationHtml = await integrationDocument.text();
+		assert.equal(integrationDocument.status(), 200);
+		assert.ok(integrationHtml.includes('Pairing integration'));
+		assert.ok(integrationHtml.includes('My browser'));
+		assert.ok(!integrationHtml.includes(integration.token));
+		const approvalHtml = await (await owner.request.get(base + '/pair')).text();
+		assert.ok(approvalHtml.includes('Pairing integration'));
+		assert.ok(!approvalHtml.includes(integration.token));
+
 		const db = new DatabaseSync(filename);
 		try {
 			// Age the fixed-lifetime session; ordinary reads must not renew its cookie.

@@ -150,6 +150,11 @@ try {
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 	await page.screenshot({ path: 'test-results/jobs-mobile.png', fullPage: true });
 	const slicerReturnHref = page.url();
+	const legacyIntegrationReads = [];
+	page.on('request', (r) => {
+		if (r.method() === 'GET' && /\/api\/(?:jobs\/keys|account\/browsers)$/.test(r.url()))
+			legacyIntegrationReads.push(r.url());
+	});
 	await page.getByRole('link', { name: 'Connect your slicer in Account → Integrations' }).click();
 	await page.getByRole('button', { name: 'Create key', exact: true }).click();
 	await page.getByLabel('New slicer key', { exact: true }).waitFor();
@@ -159,6 +164,7 @@ try {
 	await page.getByRole('button', { name: 'Hide key', exact: true }).click();
 	assert.equal(await page.getByLabel('New slicer key').getAttribute('type'), 'password');
 	const token = await page.getByLabel('New slicer key', { exact: true }).inputValue();
+	assert.deepEqual(legacyIntegrationReads, [], 'Integration loading/refresh uses remote queries');
 	const headers = { 'X-Api-Key': token };
 	const info = await fetch(base + '/server/info', { headers });
 	assert.equal(info.status, 200);

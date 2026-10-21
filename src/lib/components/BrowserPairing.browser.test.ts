@@ -1,18 +1,18 @@
 import { afterEach, expect, test, vi } from 'vite-plus/test';
 import { render } from 'vitest-browser-svelte';
 import BrowserPairing from './BrowserPairing.svelte';
+vi.mock('../../routes/account/integrations.remote.js', () => ({
+	getIntegrations: vi.fn(async () => ({ keys: [], browsers: [], host: 'http://localhost' }))
+}));
 afterEach(() => vi.unstubAllGlobals());
 
 test('inspection displays requesting browser but never grants access without approval', async () => {
-	const fetcher = vi.fn(async (url: string) =>
-		Response.json(
-			url.endsWith('/api/jobs/keys')
-				? { keys: [] }
-				: { request: { name: 'Living room slicer', expires: Date.now() + 300000 } }
-		)
+	const fetcher = vi.fn(async (_url: string) =>
+		Response.json({ request: { name: 'Living room slicer', expires: Date.now() + 300000 } })
 	);
 	vi.stubGlobal('fetch', fetcher);
 	const screen = await render(BrowserPairing, { approve: true, signedIn: true });
+	expect(fetcher).not.toHaveBeenCalled();
 	await screen.getByRole('textbox', { name: 'Pairing code' }).fill('ABCDE-FGHIJ');
 	await screen.getByRole('button', { name: 'Check code' }).click();
 	await expect.element(screen.getByRole('heading', { name: 'Living room slicer' })).toBeVisible();
