@@ -2,6 +2,9 @@
 	import { configFileIndex, configMacros, configRevision } from '#lib/domain/config-browser.js';
 	import type { ConfigSources } from '#lib/domain/config-sources.js';
 	import { untrack, onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { EditorSessions } from '../editor/sessions.js';
+	import type { Location, Problem } from '../editor/config-analysis.js';
 	import CalibrationDraft from './CalibrationDraft.svelte';
 	import type { CalibrationDraftProposal } from '#lib/domain/calibration-draft.js';
 	import ConfigurationSource from './ConfigurationSource.svelte';
@@ -59,9 +62,70 @@
 		sources?: { root: string; fingerprint: string };
 	}
 	const initial = untrack(() => source);
+	const editorSessions = new EditorSessions();
+	let historyVersion = $state(0);
+	let historyWarning = $state('');
+	let checkedDrafts = $state<Record<string, { text: string; problems: Problem[] }>>({});
+	const editorText = (text: string) => configParts(text).editable.replace(/\r\n/g, '\n');
+	function recordAnalysis(result: { path: string; text: string; problems: Problem[] }) {
+		if (!drafts[result.path] || editorText(drafts[result.path]!.text) !== result.text) return;
+		checkedDrafts = Object.fromEntries([
+			...Object.entries(checkedDrafts)
+				.filter(([path]) => path !== result.path)
+				.slice(-31),
+			[result.path, { text: result.text, problems: result.problems }]
+		]);
+	}
+	const knownPaths = $derived(files.map((file) => file.path));
+	let pendingDefinition = $state<(Location & { text?: string }) | null>(null);
+	function resetHistory(path: string) {
+		editorSessions.clear(path);
+		historyVersion++;
+	}
+	async function navigateDefinition(target: Location) {
+		if (target.path === source.path) {
+			modes[source.path] = 'raw';
+			jump = { line: target.line, token: Date.now() };
+			return;
+		}
+		pendingDefinition = {
+			...target,
+			text: workspace.find((doc) => doc.path === target.path)?.text
+		};
+		try {
+			await goto('/configuration?file=' + encodeURIComponent(target.path), { reset: false });
+		} catch {
+			pendingDefinition = null;
+			failure = 'Could not open the definition. Your drafts have been kept.';
+		}
+	}
 	let drafts = $state<Record<string, Draft>>({
 		[initial.path]: { base: initial, text: initial.text, latest: initial }
 	});
+	const workspace = $derived.by(() => {
+		let budget = 2 * 1024 * 1024;
+		const ordered = [
+			[source.path, drafts[source.path]],
+			...Object.entries(drafts).filter(([path]) => path !== source.path)
+		] as [string, Draft | undefined][];
+		return ordered
+			.filter(([, draft]) => {
+				if (!draft || draft.text.length * 2 > budget) return false;
+				budget -= draft.text.length * 2;
+				return true;
+			})
+			.slice(0, 32)
+			.map(([path, draft]) => ({ path, text: draft!.text }));
+	});
+
+	const otherProblems = $derived(
+		workspace.flatMap((document) => {
+			const checked = checkedDrafts[document.path];
+			return document.path !== source.path && checked?.text === editorText(document.text)
+				? checked.problems.map((problem) => ({ ...problem, checkedText: checked.text }))
+				: [];
+		})
+	);
 	let mounted = $state(false);
 	onMount(() => {
 		mounted = true;
@@ -120,13 +184,23 @@
 		else drafts[doc.path].latest = doc;
 	});
 	$effect(() => {
-		void source.path;
-		jump = null;
-		failure = '';
-		notice = '';
-		invalidField = false;
-		selectedBackup = '';
-		reviewOpen = false;
+		const path = source.path;
+		untrack(() => {
+			jump = null;
+			failure = '';
+			notice = '';
+			invalidField = false;
+			selectedBackup = '';
+			reviewOpen = false;
+			const target = pendingDefinition;
+			if (target?.path === path) {
+				if (target.text === undefined || (drafts[path]?.text ?? source.text) === target.text) {
+					modes[path] = 'raw';
+					jump = { line: target.line, token: Date.now() };
+				} else notice = 'The definition draft changed; select the definition again.';
+				pendingDefinition = null;
+			}
+		});
 	});
 	$effect(() => {
 		onDirty?.(anyDirty);
@@ -204,6 +278,7 @@
 			if (replaceClean && draft.text === draft.base.text) {
 				draft.base = latest;
 				draft.text = latest.text;
+				resetHistory(path);
 			}
 			notice =
 				latest.version === draft.base.version
@@ -224,6 +299,7 @@
 			return;
 		current.base = current.latest;
 		current.text = current.latest.text;
+		resetHistory(source.path);
 		failure = '';
 		notice = 'Loaded the saved version.';
 		invalidField = false;
@@ -629,14 +705,42 @@
 							>Comments, macros, and formatting are preserved.</span
 						>
 					</p>
+					{#if historyWarning}<p class="notice" role="status">{historyWarning}</p>{/if}
 					{#key source.path}<ConfigurationSource
 							value={parts.editable}
 							{jump}
 							{reference}
+							{workspace}
+							paths={knownPaths}
+							sessions={editorSessions}
+							onAnalysis={recordAnalysis}
+							{historyVersion}
+							onNavigate={navigateDefinition}
+							onHistoryLimit={() => {
+								historyWarning =
+									'Your draft is retained. The session undo cache reached its memory limit, so this file’s undo history could not be kept after leaving it.';
+							}}
 							path={source.path}
 							disabled={busy || !mounted || !!revisionOf}
 							onChange={rawEdit}
 						/>{/key}{/if}
+				{#if otherProblems.length}<details class="workspace-problems" open>
+						<summary>Problems in other checked drafts ({otherProblems.length})</summary>
+						<p class="muted small">Only previously checked, unchanged loaded drafts are listed.</p>
+						{#each otherProblems as problem}<button
+								class="workspace-problem"
+								onclick={() => {
+									if (
+										drafts[problem.path] &&
+										editorText(drafts[problem.path]!.text) === problem.checkedText
+									)
+										void navigateDefinition(problem);
+								}}
+								><strong>{problem.path} · line {problem.line} · {problem.severity}</strong><span
+									>{problem.message}</span
+								></button
+							>{/each}
+					</details>{/if}
 				{#if parts.generated || parts.warning}<section class="generated">
 						<h3>Calibration-generated settings</h3>
 						<p>
@@ -734,6 +838,35 @@
 >
 
 <style>
+	.workspace-problems {
+		border: 1px solid var(--border);
+		border-radius: 0.75rem;
+		padding: 1rem;
+		margin-top: 1rem;
+	}
+	.workspace-problems summary {
+		cursor: pointer;
+		font-weight: 600;
+		min-height: 44px;
+		align-content: center;
+	}
+	.workspace-problem {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		width: 100%;
+		background: transparent;
+		color: var(--text);
+		border: 0;
+		border-top: 1px solid var(--border);
+		padding: 0.75rem 0;
+		text-align: left;
+	}
+	.workspace-problem span {
+		font-size: 0.85rem;
+		line-height: 1.5;
+	}
+
 	.upstream-reference {
 		border: 1px solid var(--border);
 		border-radius: 0.7rem;

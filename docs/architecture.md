@@ -1545,3 +1545,21 @@ behind controls, without scripts, image downloads or canvas rendering. Reduced
 motion disables the twinkling and account-entry orbit. Printer data surfaces
 retain the established warm neutrals and teal. This implements issue #72 using
 the owner-provided starfield reference.
+
+### Configuration language intelligence
+
+Issue #33 adds browser-local raw-source assistance: a source-preserving Klipper
+configuration scanner, an adapted MIT Jinja grammar for single-brace expressions,
+conservative structural errors and advisory parser warnings, Problems navigation,
+reference-backed completion, and unambiguous macro/include navigation through
+loaded drafts. It does not evaluate templates or change application safeguards.
+The source/index core is independent of CodeMirror; direct integration is used
+instead of requiring a language-server protocol or Python runtime.
+
+The current file plus bounded loaded drafts provide workspace context; no private
+workspace prefetch is introduced. Large-file diagnostics run in a disposable,
+bounded browser worker and stale results cannot replace current diagnostics.
+Session-local serialized editor history survives file and guided/raw switches
+with fresh callbacks and permissions, explicit reset semantics and memory-limit
+feedback. See [configuration intelligence](configuration-intelligence.md) for
+usage, parser provenance, generation, limits and verification boundaries.
