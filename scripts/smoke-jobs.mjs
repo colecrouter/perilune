@@ -364,8 +364,13 @@ try {
 	await noJS.close();
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	await page.goto(base + '/jobs?q=catalog-&sort=name&direction=asc&size=10');
+	// The mounted printer subscription confirms hydration before testing draft preservation.
+	const mountedPrinter = page.waitForResponse(
+		(response) => response.url().includes('/getPrinter') && response.request().method() === 'GET'
+	);
 	await page.getByRole('link', { name: 'catalog-00.gcode', exact: true }).click();
 	await page.getByRole('heading', { name: 'catalog-00.gcode', exact: true }).waitFor();
+	await mountedPrinter;
 	await page.getByRole('searchbox', { name: 'Find a file' }).fill('unfinished search');
 	await page.waitForTimeout(5500);
 	assert.equal(
