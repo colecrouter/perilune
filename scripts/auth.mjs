@@ -49,7 +49,7 @@ function main() {
 				throw cause;
 			}
 		}
-		for (const version of [2, 3, 4, 5]) {
+		for (const version of [2, 3, 4, 5, 6]) {
 			db.exec('BEGIN IMMEDIATE');
 			try {
 				if (!db.prepare('SELECT 1 FROM auth_migrations WHERE version=?').get(version)) {

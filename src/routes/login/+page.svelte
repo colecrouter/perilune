@@ -3,4 +3,4 @@
 	let { data } = $props();
 </script>
 
-<AccountEntry mode="login" signedIn={Boolean(data.user)} />
+<AccountEntry mode="login" signedIn={Boolean(data.user)} reauthenticate={data.reauthenticate} />

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
 import { testSessionCookieOrdering } from './smoke-session-race-helper.mjs';
+import { testOwnerReset } from './smoke-owner-reset-helper.mjs';
 import { testPairing } from './smoke-pairing-helper.mjs';
 import { authenticate } from './smoke-auth-helper.mjs';
 const directory = await mkdtemp(join(tmpdir(), 'perilune-auth-smoke-'));
@@ -42,6 +43,7 @@ try {
 	browser = await chromium.launch({ headless: true });
 	const owner = await browser.newContext();
 	await authenticate(owner, base, filename);
+	await testOwnerReset(browser, owner, base, filename);
 	for (const endpoint of [
 		'/api/account/manage',
 		'/api/account/browsers',

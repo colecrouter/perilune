@@ -7,6 +7,8 @@
 		requestRecoveryVerification,
 		sendTestEmail
 	} from './account.remote.js';
+	import OwnerPasswordReset from '#lib/components/OwnerPasswordReset.svelte';
+	let resetTarget = $state<{ id: string; name: string; email: string } | null>(null);
 	import DisplayPreferences from '#lib/components/DisplayPreferences.svelte';
 	import Integrations from '#lib/components/Integrations.svelte';
 	import DeviceSettings from '#lib/components/DeviceSettings.svelte';
@@ -268,6 +270,11 @@
 										{messages[account.id]}
 									</p>{/if}
 							</div>
+							{#if account.role !== 'owner'}<button
+									class="button secondary"
+									onclick={() => (resetTarget = account)}
+									aria-label={`Reset password for ${account.name}`}>Reset password…</button
+								>{/if}
 							{#if account.id !== data.user.id}<button
 									class="button danger-outline"
 									disabled={pending[account.id]}
@@ -276,6 +283,7 @@
 								>{/if}
 						</div>{/each}
 				</section>
+				<OwnerPasswordReset bind:target={resetTarget} />
 				<section class="account-card" aria-labelledby="invitations-heading">
 					<h2 id="invitations-heading">Invitations</h2>
 					{#if messages.invitationsResult}<p class="feedback" role="status">

@@ -8,7 +8,8 @@ checks still run in the browser because the server cannot inspect browser APIs.
 ## Implemented scope
 
 - Account access summaries, invitations, revocations, recovery verification and
-  test mail use Account queries/commands.
+  test mail use Account queries/commands. Owner-assisted reset issuance/revocation
+  use commands; only nonsecret status/history enters the access query.
 - Integrations and pairing approval await slicer/paired-browser summaries during
   SSR. Key creation returns its secret only from the explicit command.
 - Public enrollment, invitation inspection and recovery use bounded commands.
