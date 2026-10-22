@@ -25,7 +25,7 @@
 	.entry-sky {
 		min-height: 100svh;
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		justify-content: center;
 		gap: clamp(3rem, 8vw, 8rem);
 		padding: clamp(1rem, 4vw, 3rem);
@@ -72,6 +72,7 @@
 	.entry-context {
 		position: relative;
 		width: 22rem;
+		margin-top: max(0px, calc(50svh - 6rem - clamp(1rem, 4vw, 3rem)));
 		color: #e5e1f4;
 		line-height: 1.7;
 	}
@@ -93,7 +94,7 @@
 		width: var(--orbit-size);
 		height: var(--orbit-size);
 		right: calc(50% - 25rem);
-		bottom: calc(50% + clamp(-3rem, 18rem - 23vw, 3rem));
+		top: calc(50svh - clamp(-3rem, 18rem - 23vw, 3rem) - var(--orbit-size));
 		border: 1px dotted #e5e1f44d;
 		border-radius: 50%;
 	}
@@ -135,7 +136,7 @@
 			display: none;
 		}
 		.entry-sky {
-			align-items: safe center;
+			align-items: flex-start;
 		}
 		.entry-card {
 			position: relative;

@@ -297,17 +297,25 @@
 	}
 	.entry-recovery {
 		margin-top: 1rem;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: var(--canvas);
 	}
 	.entry-recovery summary {
 		cursor: pointer;
 		min-height: 44px;
-		display: flex;
-		align-items: center;
+		display: list-item;
+		list-style: disclosure-closed inside;
+		padding: 0.75rem;
 		font-size: 0.875rem;
-		color: var(--accent);
+		font-weight: 600;
+		color: var(--text);
 	}
-	.entry-recovery p + p {
-		margin-top: 0.75rem;
+	.entry-recovery[open] summary {
+		list-style-type: disclosure-open;
+	}
+	.entry-recovery p {
+		padding: 0 0.75rem 0.75rem;
 	}
 	code {
 		font-size: 0.8rem;
