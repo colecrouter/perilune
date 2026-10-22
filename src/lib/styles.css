@@ -3,6 +3,10 @@
 * {
 	box-sizing: border-box;
 }
+/* Keep page and orbit geometry stable when expanding content introduces a scrollbar. */
+html {
+	scrollbar-gutter: stable;
+}
 body {
 	margin: 0;
 	background: var(--canvas);
