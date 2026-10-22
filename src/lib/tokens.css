@@ -1,12 +1,4 @@
 :root {
-	--stars:
-		radial-gradient(circle at 88% 4%, #ffffff80 1px, transparent 1.5px),
-		radial-gradient(circle at 70% 11%, #ffffff40 0.7px, transparent 1.2px),
-		radial-gradient(circle at 18% 43%, #ffffff50 0.8px, transparent 1.4px),
-		radial-gradient(circle at 82% 54%, #ffffff50 1px, transparent 1.5px),
-		radial-gradient(circle at 42% 63%, #ffffff30 0.7px, transparent 1.2px),
-		radial-gradient(circle at 14% 76%, #ffffff70 1px, transparent 1.5px),
-		radial-gradient(circle at 67% 84%, #ffffff50 0.8px, transparent 1.4px);
 	--canvas: #f5f3ef;
 	--surface: #faf9f7;
 	--text: #242728;

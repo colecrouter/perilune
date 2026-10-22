@@ -3,6 +3,7 @@
 	import { getIntegrations } from '../../routes/account/integrations.remote.js';
 	import { pairBrowser } from '../../routes/pairing.remote.js';
 	import MoonMark from './MoonMark.svelte';
+	import Starfield from './Starfield.svelte';
 	let { approve = false, signedIn = false }: { approve?: boolean; signedIn?: boolean } = $props();
 	let name = $state('My browser');
 	let code = $state('');
@@ -89,6 +90,7 @@
 </script>
 
 <div class="pair-sky serif">
+	<Starfield />
 	<div class="pair-card">
 		<a class="pair-brand" href="/login"><MoonMark /><span>Perilune</span></a>
 		<h1>{approve ? 'Approve a browser' : 'Sign in with another browser'}</h1>
@@ -213,14 +215,6 @@
 		background: var(--rail);
 		position: relative;
 		isolation: isolate;
-	}
-	.pair-sky::before {
-		content: '';
-		position: absolute;
-		inset: 0;
-		z-index: -1;
-		background-image: var(--stars);
-		pointer-events: none;
 	}
 	.pair-card {
 		width: min(100%, 34rem);

@@ -1535,3 +1535,13 @@ unverified email remains unverified. Issuance/revocation/redemption and known fa
 redemptions are audited without raw secrets. Existing host recovery remains the
 path for owners and keeps its stronger revocation policy. Migration 006 is shared
 by application startup and the host auth CLI.
+
+### Shared starfield
+
+The navigation rail and account-entry screens share a decorative CSS starfield.
+Five fixed-size radial-gradient tiles provide static depth and sparse opacity-only
+twinkling, independent of page height. It stays inside each midnight surface,
+behind controls, without scripts, image downloads or canvas rendering. Reduced
+motion disables the twinkling and account-entry orbit. Printer data surfaces
+retain the established warm neutrals and teal. This implements issue #72 using
+the owner-provided starfield reference.

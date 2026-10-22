@@ -97,15 +97,6 @@ small {
 	flex-direction: column;
 	gap: 34px;
 }
-/* Sparse, static stars stay behind navigation and account entry, away from printer data. */
-.sidebar::before {
-	content: '';
-	position: absolute;
-	inset: 0;
-	z-index: -1;
-	pointer-events: none;
-	background-image: var(--stars);
-}
 .brand-mark {
 	width: 26px;
 	height: 26px;

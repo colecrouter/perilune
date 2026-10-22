@@ -1,10 +1,12 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import MoonMark from './MoonMark.svelte';
+	import Starfield from './Starfield.svelte';
 	let { children }: { children: Snippet } = $props();
 </script>
 
 <div class="entry-sky serif">
+	<Starfield />
 	<div class="orbit-window" aria-hidden="true">
 		<span class="orbit"><span class="orbiter"></span></span>
 	</div>
@@ -30,15 +32,6 @@
 		isolation: isolate;
 		position: relative;
 		background: var(--rail);
-	}
-	.entry-sky::before {
-		content: '';
-		position: absolute;
-		inset: 0;
-		z-index: -1;
-		background-image: var(--stars);
-		background-size: 242px 720px;
-		pointer-events: none;
 	}
 	.entry-card {
 		position: relative;
