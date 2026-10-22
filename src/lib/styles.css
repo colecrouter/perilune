@@ -3,6 +3,10 @@
 * {
 	box-sizing: border-box;
 }
+/* Keep page and orbit geometry stable when expanding content introduces a scrollbar. */
+html {
+	scrollbar-gutter: stable;
+}
 body {
 	margin: 0;
 	background: var(--canvas);
@@ -96,15 +100,6 @@ small {
 	display: flex;
 	flex-direction: column;
 	gap: 34px;
-}
-/* Sparse, static stars stay behind navigation and account entry, away from printer data. */
-.sidebar::before {
-	content: '';
-	position: absolute;
-	inset: 0;
-	z-index: -1;
-	pointer-events: none;
-	background-image: var(--stars);
 }
 .brand-mark {
 	width: 26px;

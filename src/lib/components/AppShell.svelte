@@ -6,6 +6,7 @@
 	import PrinterSafetyRegion from './PrinterSafetyRegion.svelte';
 	import ConfigurationRecovery from './ConfigurationRecovery.svelte';
 	import MoonMark from './MoonMark.svelte';
+	import Starfield from './Starfield.svelte';
 	import type { Snippet } from 'svelte';
 	import Icon from './Icon.svelte';
 	let {
@@ -32,6 +33,7 @@
 <a class="skip-link" href="#main-content">Skip to main content</a>
 <div class="app-shell">
 	<aside class="sidebar">
+		<Starfield />
 		<a class="brand" href="/">
 			<MoonMark class="brand-mark" />
 			<span>Perilune</span>

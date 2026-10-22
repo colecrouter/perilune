@@ -1,10 +1,12 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import MoonMark from './MoonMark.svelte';
+	import Starfield from './Starfield.svelte';
 	let { children }: { children: Snippet } = $props();
 </script>
 
 <div class="entry-sky serif">
+	<Starfield />
 	<div class="orbit-window" aria-hidden="true">
 		<span class="orbit"><span class="orbiter"></span></span>
 	</div>
@@ -23,22 +25,13 @@
 	.entry-sky {
 		min-height: 100svh;
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		justify-content: center;
 		gap: clamp(3rem, 8vw, 8rem);
 		padding: clamp(1rem, 4vw, 3rem);
 		isolation: isolate;
 		position: relative;
 		background: var(--rail);
-	}
-	.entry-sky::before {
-		content: '';
-		position: absolute;
-		inset: 0;
-		z-index: -1;
-		background-image: var(--stars);
-		background-size: 242px 720px;
-		pointer-events: none;
 	}
 	.entry-card {
 		position: relative;
@@ -79,6 +72,7 @@
 	.entry-context {
 		position: relative;
 		width: 22rem;
+		margin-top: max(0px, calc(50svh - 6rem - clamp(1rem, 4vw, 3rem)));
 		color: #e5e1f4;
 		line-height: 1.7;
 	}
@@ -100,7 +94,7 @@
 		width: var(--orbit-size);
 		height: var(--orbit-size);
 		right: calc(50% - 25rem);
-		bottom: calc(50% + clamp(-3rem, 18rem - 23vw, 3rem));
+		top: calc(50svh - clamp(-3rem, 18rem - 23vw, 3rem) - var(--orbit-size));
 		border: 1px dotted #e5e1f44d;
 		border-radius: 50%;
 	}
@@ -142,7 +136,7 @@
 			display: none;
 		}
 		.entry-sky {
-			align-items: safe center;
+			align-items: flex-start;
 		}
 		.entry-card {
 			position: relative;

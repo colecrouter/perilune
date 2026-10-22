@@ -48,7 +48,7 @@ Comparison ledger:
 The initial concept established the structure. Following user feedback, the next
 iteration extends serif typography to section headings and keeps orbital linework.
 After the all-green palette was rejected, the original warm neutrals and teal were
-restored. A midnight-blue rail, sparse static stars, a crescent brand mark, and pale
+restored. A midnight-blue rail, a shared fixed-scale starfield, a crescent brand mark, and pale
 lavender selections add lunar identity without tinting the printer workspace.
 These are intentional refinements to the accepted direction. The screenshots above
 show the current implementation, while `overview-concept.png` preserves the initial
@@ -60,3 +60,8 @@ Configured cameras keep the orbital placeholder and its supporting copy while
 connecting, reconnecting, or paused. Camera actions use 44px icon buttons with hover
 and keyboard tooltips plus accessible labels; the mobile placeholder scales its
 orbital linework to fit the video frame.
+
+The shared starfield uses the owner-provided CSS reference: most stars stay still,
+with gentle opacity changes in sparse brighter layers. Reduced-motion preferences
+keep every layer static. Stars remain confined to midnight navigation and entry
+surfaces, away from printer data.
