@@ -1,4 +1,4 @@
-import { appRequest } from './smoke-remote-helper.mjs';
+import { appRequest, remoteArgument, decodeRemote } from './smoke-remote-helper.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -174,7 +174,7 @@ try {
 		}
 	);
 	const { url } = await invitation.json();
-	const viewer = await browser.newContext();
+	const viewer = await browser.newContext({ serviceWorkers: 'block' });
 	const viewerPage = await viewer.newPage();
 	await viewerPage.goto(url);
 	// Registration consumes the invitation fragment on mount; wait before editing SSR inputs.
@@ -182,12 +182,26 @@ try {
 	await viewerPage.getByLabel('Your name').fill('Console viewer');
 	await viewerPage.getByLabel('Email', { exact: true }).fill('console-viewer@example.test');
 	await viewerPage.getByLabel('Password', { exact: true }).fill('fixture-viewer-password');
+	// Capture the real remote result before releasing it to the page: success immediately
+	// hard-navigates, after which Chromium may discard the response body.
+	let enrollmentResult;
 	const enrollment = viewerPage.waitForResponse(
-		(response) => response.url().includes('/accountEntry') && response.request().method() === 'POST'
+		(response) =>
+			response.url().includes('/accountEntry') &&
+			response.request().method() === 'POST' &&
+			remoteArgument(response.request()).operation === 'enroll'
 	);
+	await viewerPage.route('**/accountEntry', async (route) => {
+		if (remoteArgument(route.request()).operation !== 'enroll') return route.continue();
+		const response = await route.fetch();
+		enrollmentResult = await response.json();
+		await route.fulfill({ response });
+	});
 	await viewerPage.getByRole('button', { name: 'Create account', exact: true }).click();
-	const enrolled = await enrollment;
-	assert.equal(enrolled.status(), 200, 'Viewer enrollment should succeed');
+	await enrollment;
+	assert.equal(enrollmentResult?.type, 'result', JSON.stringify(enrollmentResult));
+	assert.deepEqual(decodeRemote(enrollmentResult.data), { ok: true });
+	await viewerPage.waitForURL('**/login?created=1');
 	await viewerPage.getByRole('heading', { name: 'Welcome back' }).waitFor();
 	const login = await appRequest(viewer.request, 'POST', sim.base + '/api/auth/sign-in/email', {
 		headers: { Origin: sim.base },

@@ -36,3 +36,10 @@ The native preview snapshot step twice returned
 `Preview automation snapshot timed out after 15000ms.`; repository headless
 Playwright was used after reporting that limitation. No private configuration was
 captured, and no printer command or configuration write was performed.
+
+CI follow-up: the actions smoke timed out awaiting the viewer login page after
+registration. Its HTTP200 assertion did not distinguish invitation inspection
+from enrollment or verify the remote result. The fixture now matches the enroll
+operation, captures and asserts the real response before allowing the immediate
+hard navigation, and blocks service workers as the other interception-based
+contexts do. No application behavior was changed.
