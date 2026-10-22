@@ -6,6 +6,7 @@ export const getAccess = query(() => {
 	const identity = requireIdentity(getRequestEvent());
 	return {
 		recovery: authService!.recoveryStatus(identity.user.id),
+		resetLinks: identity.user.role === 'owner' ? authService!.ownerResetStatus(identity) : null,
 		accounts:
 			identity.user.role === 'owner'
 				? (authService!.accounts() as unknown as Array<{
@@ -76,4 +77,21 @@ export const sendTestEmail = command(() => {
 		message:
 			'Test email queued. Acceptance status appears below; inbox delivery depends on your mail server.'
 	};
+});
+
+export const createOwnerReset = command(
+	Schema.toStandardSchemaV1(
+		Schema.Struct({
+			target: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+			confirmed: Schema.Literal(true)
+		})
+	),
+	(input) => {
+		const identity = requireIdentity(getRequestEvent(), 'owner');
+		return mutation(() => authService!.createOwnerReset(identity, input.target, input.confirmed));
+	}
+);
+export const revokeOwnerReset = command(textId, (id) => {
+	const identity = requireIdentity(getRequestEvent(), 'owner');
+	mutation(() => authService!.revokeOwnerReset(identity, id));
 });

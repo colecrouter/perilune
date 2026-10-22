@@ -4,8 +4,15 @@
 	import { onMount } from 'svelte';
 	import { authClient } from '#lib/client/auth.js';
 	import { goto } from '$app/navigation';
-	let { mode, signedIn = false }: { mode: 'login' | 'setup' | 'register'; signedIn?: boolean } =
-		$props();
+	let {
+		mode,
+		signedIn = false,
+		reauthenticate = false
+	}: {
+		mode: 'login' | 'setup' | 'register';
+		signedIn?: boolean;
+		reauthenticate?: boolean;
+	} = $props();
 	let token = $state('');
 	let name = $state('');
 	let email = $state('');
@@ -38,6 +45,7 @@
 	}
 	onMount(() => {
 		hydrated = true;
+		if (mode === 'login' && reauthenticate) destination = '/account';
 		const hash = location.hash.slice(1);
 		const query = new URLSearchParams(location.search);
 		if (query.get('next') === 'pair') destination = '/pair';
@@ -51,9 +59,10 @@
 			token = hash.slice(6);
 			reset = true;
 		}
-		history.replaceState(null, '', location.pathname);
+		history.replaceState(null, '', location.pathname + (reauthenticate ? '?reauth=1' : ''));
 		// Recovery tokens live in the fragment, so choose after inspecting it in the browser.
-		if (mode === 'login' && signedIn && !reset) void goto(destination, { replaceState: true });
+		if (mode === 'login' && signedIn && !reset && !reauthenticate)
+			void goto(destination, { replaceState: true });
 		const followInvitation = () => {
 			if (mode !== 'register' || !location.hash) return;
 			token = location.hash.slice(1);
@@ -124,7 +133,9 @@
 				? 'Welcome aboard'
 				: mode === 'register'
 					? 'Your invitation awaits'
-					: 'Welcome back'}
+					: reauthenticate
+						? 'Confirm your sign-in'
+						: 'Welcome back'}
 	</h1>
 	<p>
 		{reset
@@ -133,9 +144,11 @@
 				? 'Create the owner account for this installation.'
 				: mode === 'register'
 					? 'Create your account to join this printer.'
-					: 'Sign in to check on your printer and pick up where you left off.'}
+					: reauthenticate
+						? 'Use your password or passkey to confirm account recovery actions. You will return to Account.'
+						: 'Sign in to check on your printer and pick up where you left off.'}
 	</p>
-	{#if mode === 'login' && !reset}<p class="entry-help">
+	{#if mode === 'login' && !reset && !reauthenticate}<p class="entry-help">
 			Use your password, a passkey, or approve this browser from another device.
 		</p>{/if}
 	{#if mode === 'register' && invitation}<p class="entry-message" role="status">
@@ -204,10 +217,10 @@
 			onclick={signInPasskey}
 			disabled={!hydrated || pending}>Sign in with a passkey</button
 		>
-		<p><a href="/pair/start">Sign in with another browser</a></p>
-		<p class="entry-help">
-			Use this in a slicer Device tab or on a touchscreen where passkeys are unavailable.
-		</p>
+		{#if !reauthenticate}<p><a href="/pair/start">Sign in with another browser</a></p>
+			<p class="entry-help">
+				Use this in a slicer Device tab or on a touchscreen where passkeys are unavailable.
+			</p>{/if}
 		<p><a href="/forgot-password">Forgot your password?</a></p>
 		<details bind:open={recoveryHelp} class="entry-recovery">
 			<summary>Need help signing in?</summary>

@@ -116,3 +116,23 @@ HTML can break Svelte hydration and leave visible controls unresponsive.
 In particular, [Cloudflare Email Address Obfuscation](https://developers.cloudflare.com/waf/tools/scrape-shield/email-address-obfuscation/)
 replaces email text with a link; Cloudflare documents `no-transform` as preventing
 that rewrite. Disable any other HTML-rewriting features that ignore this directive.
+
+## Reset links without SMTP
+
+Owners can open **Account → Access & people**, choose **Reset password…** beside
+an operator or viewer, confirm the recipient, and create a single-use link.
+A password or passkey sign-in within the last ten minutes is required;
+paired-browser sign-in cannot authorize issuance. The dialog offers sign-in again
+when needed. Owner accounts continue to use the host recovery procedure.
+
+The link expires after ten minutes and appears only in the creation dialog.
+Share it privately with the intended recipient. Closing the dialog hides it;
+the history contains status and revocation controls, never the link itself.
+Creating another link for the account revokes the previous owner-generated link.
+Issuance alone does not change credentials or sign out browsers.
+
+Redemption changes the password and signs out ordinary and paired browsers.
+Passkeys, slicer keys, notification registrations and the email verification
+status are preserved. Issuance, revocation, redemption and known failed attempts
+are audited without storing the raw link. Account or issuer credential changes
+invalidate outstanding links. Owners can revoke an unused link from its history.

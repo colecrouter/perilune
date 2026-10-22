@@ -8,6 +8,7 @@ import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { makeSignature } from 'better-auth/crypto';
 import { getCookies } from 'better-auth/cookies';
 import accountSchema from './005.sql?raw';
+import ownerResetSchema from './006.sql?raw';
 import { hashPassword } from 'better-auth/crypto';
 import pairingSchema from './004.sql?raw';
 import { passkey } from '@better-auth/passkey';
@@ -49,7 +50,8 @@ export function createAuthService(
 		[2, recoverySchema],
 		[3, processSchema],
 		[4, pairingSchema],
-		[5, accountSchema]
+		[5, accountSchema],
+		[6, ownerResetSchema]
 	] as const) {
 		db.exec('BEGIN IMMEDIATE');
 		try {
@@ -197,6 +199,28 @@ export function createAuthService(
 			row.role === identity.user.role
 		);
 	};
+	const recentOwner = (identity: Identity) => {
+		if (!valid(identity) || identity.user.role !== 'owner') return false;
+		const session = db.prepare('SELECT createdAt FROM session WHERE id=?').get(identity.session.id);
+		const created = session ? new Date(session.createdAt as string | number).getTime() : 0;
+		return (
+			created <= Date.now() &&
+			created > Date.now() - 10 * 60000 &&
+			!db.prepare('SELECT 1 FROM paired_browser WHERE session_id=?').get(identity.session.id)
+		);
+	};
+	const eligibleOwnerReset = (hash: string) =>
+		db
+			.prepare(`
+		SELECT r.* FROM owner_reset_links r
+		JOIN user actor ON actor.id=r.actor
+		JOIN account credential ON credential.userId=actor.id AND credential.providerId='credential'
+		JOIN user target ON target.id=r.target
+		WHERE r.hash=? AND r.status='active' AND r.expires>?
+		AND actor.role='owner' AND actor.authVersion=r.actor_epoch AND actor.loginVersion=r.actor_login_version
+		AND credential.password IS NOT NULL AND target.role IN ('operator','viewer')
+	`)
+			.get(hash, Date.now());
 	const sweep = () => {
 		for (const watcher of watchers) if (!valid(watcher.session)) watcher.controller.abort();
 	};
@@ -297,7 +321,7 @@ export function createAuthService(
 			throw e;
 		}
 	};
-	const tokenFor = (owner: string, purpose: 'verify' | 'reset') => {
+	const tokenFor = (owner: string, purpose: 'verify' | 'reset' | 'owner-reset') => {
 		const user = db
 			.prepare('SELECT email,authVersion,loginVersion FROM user WHERE id=?')
 			.get(owner);
@@ -338,6 +362,125 @@ export function createAuthService(
 					)
 					.all(owner)
 			};
+		},
+		ownerResetStatus(identity: Identity) {
+			if (!valid(identity) || identity.user.role !== 'owner') throw Error('Owner access required.');
+			const links = db
+				.prepare(`SELECT r.id,r.hash,r.actor,r.target,r.created,r.expires,r.status,r.updated,
+			 issuer.name AS actor_name,recipient.name AS target_name
+			 FROM owner_reset_links r LEFT JOIN user issuer ON issuer.id=r.actor
+			 LEFT JOIN user recipient ON recipient.id=r.target ORDER BY r.created DESC,r.id DESC LIMIT 30`)
+				.all();
+			return {
+				recent: recentOwner(identity),
+				links: links.map((row) => ({
+					id: String(row.id),
+					actor: String(row.actor_name ?? 'Removed account'),
+					target: String(row.target_name ?? 'Removed account'),
+					created: Number(row.created),
+					expires: Number(row.expires),
+					updated: Number(row.updated),
+					status:
+						row.status !== 'active'
+							? String(row.status)
+							: Number(row.expires) <= Date.now()
+								? 'expired'
+								: !eligibleOwnerReset(String(row.hash)) ||
+									  !db
+											.prepare(`SELECT 1 FROM account_tokens t JOIN user u ON u.id=t.owner
+					 JOIN account a ON a.userId=u.id AND a.providerId='credential' WHERE t.hash=? AND t.email=u.email
+					 AND t.epoch=u.authVersion AND t.login_version=u.loginVersion AND a.password IS NOT NULL`)
+											.get(row.hash)
+									? 'invalidated'
+									: 'active'
+				}))
+			};
+		},
+		createOwnerReset(identity: Identity, target: string, confirmed: boolean) {
+			try {
+				if (!valid(identity) || identity.user.role !== 'owner')
+					throw Error('Owner access required.');
+				if (!recentOwner(identity))
+					throw Error(
+						'Sign in again with your password or passkey to create a reset link. Browser pairing does not confirm this action.'
+					);
+				if (!confirmed)
+					throw Error('Confirm the account and the password-reset consequences first.');
+				if (!throttle('owner-reset:' + identity.user.id, 5) || !throttle('owner-reset-global', 100))
+					throw Error('Wait before creating another reset link.');
+				return transaction(() => {
+					if (!recentOwner(identity))
+						throw Error('Sign in again with your password or passkey to create a reset link.');
+					if (
+						Number(
+							db
+								.prepare(
+									"SELECT count(*) AS n FROM owner_reset_links WHERE status='active' AND expires>?"
+								)
+								.get(Date.now())?.n
+						) >= 100
+					)
+						throw Error('Too many active reset links. Revoke an unused link or wait for expiry.');
+					const user = db
+						.prepare(`SELECT u.id FROM user u JOIN account a ON a.userId=u.id AND a.providerId='credential'
+					 WHERE u.id=? AND u.role IN ('operator','viewer') AND a.password IS NOT NULL`)
+						.get(target);
+					if (!user)
+						throw Error(
+							'Choose an active operator or viewer account. Owner recovery must use the host procedure.'
+						);
+					const now = Date.now();
+					if (
+						db
+							.prepare(
+								"UPDATE owner_reset_links SET status='revoked',updated=? WHERE target=? AND status='active'"
+							)
+							.run(now, target).changes
+					)
+						audit(identity.user.id, 'owner-reset.superseded', target);
+					const capability = tokenFor(target, 'owner-reset');
+					const id = randomBytes(16).toString('hex'),
+						expires = now + 10 * 60000;
+					db.prepare('UPDATE account_tokens SET expires=? WHERE hash=?').run(
+						expires,
+						capability.hash
+					);
+					db.prepare('INSERT INTO owner_reset_links VALUES(?,?,?,?,?,?,?,?,?,?)').run(
+						id,
+						capability.hash,
+						identity.user.id,
+						target,
+						identity.user.authVersion,
+						identity.user.loginVersion,
+						now,
+						expires,
+						'active',
+						now
+					);
+					db.prepare(
+						'DELETE FROM owner_reset_links WHERE id IN (SELECT id FROM owner_reset_links ORDER BY created DESC,id DESC LIMIT -1 OFFSET 500)'
+					).run();
+					audit(identity.user.id, 'owner-reset.created', target);
+					return { id, url: `${origin}/forgot-password#${capability.token}`, expires };
+				});
+			} catch (cause) {
+				if (valid(identity) && identity.user.role === 'owner')
+					audit(identity.user.id, 'owner-reset.denied', target);
+				throw cause;
+			}
+		},
+		revokeOwnerReset(identity: Identity, id: string) {
+			if (!valid(identity) || identity.user.role !== 'owner') throw Error('Owner access required.');
+			transaction(() => {
+				const row = db
+					.prepare(
+						"UPDATE owner_reset_links SET status='revoked',updated=? WHERE id=? AND status='active' RETURNING hash,target"
+					)
+					.get(Date.now(), id);
+				if (!row) throw Error('This reset link is no longer active.');
+				db.prepare('DELETE FROM account_tokens WHERE hash=?').run(row.hash);
+				audit(identity.user.id, 'owner-reset.revoked', String(row.target));
+			});
 		},
 		requestVerification(owner: string) {
 			if (!mailEnabled) throw Error('Email is not configured on this installation.');
@@ -410,21 +553,25 @@ export function createAuthService(
 		async resetPassword(token: string, password: string) {
 			if (!/^[A-Za-z0-9_-]{43}$/.test(token) || password.length < 12 || password.length > 128)
 				throw Error('Use a valid reset link and a password of 12–128 characters.');
+			const knownReset = db
+				.prepare('SELECT target FROM owner_reset_links WHERE hash=?')
+				.get(digest(token));
 			const hashed = await hashPassword(password);
 			db.exec('BEGIN IMMEDIATE');
 			try {
 				const row = db
 					.prepare(
-						"DELETE FROM account_tokens WHERE hash=? AND purpose='reset' AND expires>? RETURNING *"
+						"DELETE FROM account_tokens WHERE hash=? AND purpose IN ('reset','owner-reset') AND expires>? RETURNING *"
 					)
 					.get(digest(token), Date.now());
 				if (
 					!row ||
+					(row.purpose === 'owner-reset' && !eligibleOwnerReset(String(row.hash))) ||
 					!db
 						.prepare(
-							"UPDATE user SET loginVersion=loginVersion+1 WHERE id=? AND email=? AND emailVerified=1 AND authVersion=? AND loginVersion=? AND EXISTS(SELECT 1 FROM account WHERE userId=user.id AND providerId='credential' AND password IS NOT NULL)"
+							"UPDATE user SET loginVersion=loginVersion+1 WHERE id=? AND email=? AND (emailVerified=1 OR ?='owner-reset') AND authVersion=? AND loginVersion=? AND EXISTS(SELECT 1 FROM account WHERE userId=user.id AND providerId='credential' AND password IS NOT NULL)"
 						)
-						.run(row.owner, row.email, row.epoch, row.login_version).changes
+						.run(row.owner, row.email, row.purpose, row.epoch, row.login_version).changes
 				)
 					throw Error('This reset link is invalid, expired or already used.');
 				if (
@@ -439,9 +586,14 @@ export function createAuthService(
 				db.prepare(
 					"DELETE FROM verification WHERE value=? AND identifier LIKE 'reset-password:%'"
 				).run(row.owner);
+				db.prepare(
+					"UPDATE owner_reset_links SET status=CASE WHEN hash=? THEN 'redeemed' ELSE 'revoked' END,updated=? WHERE target=? AND status='active'"
+				).run(row.hash, Date.now(), row.owner);
+				if (row.purpose === 'owner-reset') audit(String(row.owner), 'owner-reset.redeemed', null);
 				audit(String(row.owner), 'password.reset', null);
 				if (
 					mailEnabled &&
+					db.prepare('SELECT emailVerified FROM user WHERE id=?').get(row.owner)?.emailVerified &&
 					Number(
 						db
 							.prepare(
@@ -459,6 +611,7 @@ export function createAuthService(
 				db.exec('COMMIT');
 			} catch (e) {
 				db.exec('ROLLBACK');
+				if (knownReset) audit(null, 'owner-reset.redemption-denied', String(knownReset.target));
 				throw e;
 			}
 			sweep();

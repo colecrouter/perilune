@@ -1514,6 +1514,24 @@ Configuration file links explicitly retain client navigation so switching files
 preserves unsaved multi-file drafts. Imperative navigation after uploads and the in-memory calibration proposal handoff
 remains explicit, as do fragment-token handling and interactive menus/actions.
 
-Account and integrations application calls are migrating to typed remote queries
-and commands under #128. See [the remote-function inventory](frontend-remote-functions.md)
-for implemented operations, compatibility boundaries and remaining slices.
+Application reads and mutations use typed remote functions; #128 is complete.
+See [the remote-function inventory](frontend-remote-functions.md) for implemented
+operations and intentional transport boundaries.
+
+### Owner-assisted password reset
+
+Issue #123 adds owner-issued ten-minute, single-use password reset links for
+operator/viewer accounts without requiring SMTP or a verified email address.
+Issuance requires explicit recipient confirmation and a genuine password/passkey
+session created within ten minutes; paired sessions do not qualify. Persistent
+issuance throttles and active/history bounds prevent unbounded storage. Raw tokens
+are returned only by the creation command and held in dialog state; queries expose
+nonsecret history and revocation IDs. Only a token digest is persisted.
+
+Redemption atomically revalidates issuer role/credential epochs and target role,
+email and credential epochs, consumes the token, advances loginVersion and revokes
+browser sessions/pairing grants. Passkeys and integration epochs remain unchanged;
+unverified email remains unverified. Issuance/revocation/redemption and known failed
+redemptions are audited without raw secrets. Existing host recovery remains the
+path for owners and keeps its stronger revocation policy. Migration 006 is shared
+by application startup and the host auth CLI.
