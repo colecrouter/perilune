@@ -159,3 +159,36 @@ it('treats no devices as empty and rejects oversized discovery responses', async
 	});
 	await expect(huge.devices()).rejects.toThrow('Local camera discovery unavailable.');
 });
+
+it.each([
+	['mjpeg', 'mjpeg'],
+	['yuyv422', null],
+	['nv12', null],
+	['h264', null],
+	['hevc', null]
+])(
+	'converts local %s through a shared capture with the appropriate transport',
+	async (format, transport) => {
+		const sources: string[] = [];
+		const client = await fixture((request, response) => {
+			sources.push(new URL(request.url!, 'http://fixture.invalid').searchParams.get('src')!);
+			response.end();
+		});
+		const endpoint = `v4l2:device?video=/dev/video0&input_format=${format}&video_size=640x480&framerate=30`;
+		await client.prepare(id, {
+			kind: 'local',
+			name: 'USB fixture',
+			streamUrl: endpoint,
+			rotation: 0,
+			flipHorizontal: false,
+			flipVertical: false
+		});
+		expect(decodeURIComponent(sources[0])).toBe(endpoint);
+		const source = transport ? `http://127.0.0.1:1984/api/stream.${transport}?src=${id}` : id;
+		expect(sources.slice(1)).toEqual([
+			`ffmpeg:${source}#video=h264`,
+			`ffmpeg:${source}#video=h264#width=640`,
+			`ffmpeg:${source}#video=h264#width=320`
+		]);
+	}
+);

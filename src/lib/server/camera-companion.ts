@@ -121,11 +121,17 @@ export class CameraCompanion {
 			/["'`{}\\]/g,
 			(char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
 		);
+		// Native V4L2 JPEG tracks cannot be relayed to FFmpeg over RTSP.
+		// Read the one shared capture through the companion's private HTTP API.
+		const format =
+			input.kind === 'local' ? new URL(input.streamUrl).searchParams.get('input_format') : null;
+		const conversionSource =
+			format === 'mjpeg' ? `http://127.0.0.1:1984/api/stream.mjpeg?src=${id}` : id;
 		const definitions = [
 			[id, httpRemux ? `ffmpeg:${endpoint}#video=copy` : input.streamUrl],
-			[profiles.compatible, `ffmpeg:${id}#video=h264`],
-			[profiles.balanced, `ffmpeg:${id}#video=h264#width=640`],
-			[profiles['data-saver'], `ffmpeg:${id}#video=h264#width=320`]
+			[profiles.compatible, `ffmpeg:${conversionSource}#video=h264`],
+			[profiles.balanced, `ffmpeg:${conversionSource}#video=h264#width=640`],
+			[profiles['data-saver'], `ffmpeg:${conversionSource}#video=h264#width=320`]
 		];
 		for (const [name, src] of definitions) {
 			const { response, release } = await this.request(

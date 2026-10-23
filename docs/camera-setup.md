@@ -122,7 +122,9 @@ In Camera settings choose **USB camera on this server**, find local cameras,
 select a detected profile, then test and save. H.264 avoids unnecessary encoding;
 MJPEG and raw formats may require conversion. Close another capture process before
 opening its device. Discovery offers each supported format's default profile;
-custom resolution/frame-rate selection is not implemented yet. Unsupported driver
+custom resolution/frame-rate selection is not implemented yet. The managed companion
+uses its private HTTP MJPEG stream for MJPEG USB conversion, with a single shared
+V4L2 capture; its internal API must listen on port 1984 as in the supplied config. Raw-only profiles still need pixel-layout conversion and physical acceptance. Unsupported driver
 formats are omitted. Capture and unplug/replug behavior still need physical USB
 acceptance; the adapter and profile lifecycle are covered by synthetic tests.
 

@@ -1717,3 +1717,10 @@ physical work, so a later original submission is refused rather than executed.
 This operation never dispatches or replays a printer command. Unknown accepted
 physical outcomes still require the existing owner recovery review. Native forms
 retain their server-rendered confirmation and receipt redirect fallback.
+
+Local USB MJPEG profiles feed shared H.264 conversion through the managed
+companion’s loopback HTTP MJPEG endpoint. Native V4L2 JPEG tracks cannot
+use the implicit RTSP hop. H.264/HEVC and network sources retain their existing
+transport. Raw-only USB conversion remains unverified; the pinned companion’s Y4M
+path does not safely normalize packed/semiplanar pixel layouts. This assumes the supplied companion configuration’s internal API port
+1984, independent of host port mappings. Physical acceptance is tracked in #147.
