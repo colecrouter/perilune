@@ -35,3 +35,13 @@ about Klipper's interpolation/compensation surface.
 
 Compatibility reference: [WebKit features in Safari 16.4](https://webkit.org/blog/13966/webkit-features-in-safari-16-4/)
 records color-mix support; runtime detection retains base strokes on older browsers.
+
+CI follow-up found the largest-grid test timing out during the Isometric click.
+Dense connections now batch into at most 33 SVG paths above 512 edges, retaining
+all 8,320 measured edges and 4,225 samples. Only line colors use 33 bands; small meshes
+retain individual colors. Follow-up independent review approved the projection
+against installed LayerChart 2.7.0 and independently passed 7 headless tests in 1.81s.
+
+Additional maintainer geometry assertions count actual path segments and compare
+projected endpoints to sample centers after rotation; all 7 browser tests passed
+in 1.76s locally. The test does not merely increase a timeout or drop dense coverage.

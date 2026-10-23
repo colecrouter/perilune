@@ -35,6 +35,26 @@
 		contrastStroke ? `color-mix(in srgb, ${color(height)}, var(--text) 45%)` : color(height);
 	let context = $state<ChartState>();
 	let amplification = $state(100);
+	// Dense grids retain every edge but batch strokes into 33 color bands, keeping
+	// SVG/reactivity costs close to the original row/column wireframe.
+	const densePaths = $derived.by(() => {
+		if (!context || segments.length <= 512) return [];
+		const lift = context.isometricLift;
+		if (!lift) return [];
+		const project = (x: number, y: number, z: number) => {
+			const height = Number(context!.zScale(z));
+			return `${Number(context!.xScale(x)) + lift.x * height},${Number(context!.yScale(y)) + lift.y * height}`;
+		};
+		const bands = new Map<number, { d: string; count: number }>();
+		for (const edge of segments) {
+			const band = Math.max(-16, Math.min(16, Math.round((edge.height / scale) * 16)));
+			const group = bands.get(band) ?? { d: '', count: 0 };
+			group.d += `M${project(edge.x1, edge.y1, edge.z1)}L${project(edge.x2, edge.y2, edge.z2)}`;
+			group.count++;
+			bands.set(band, group);
+		}
+		return [...bands].map(([band, group]) => ({ ...group, height: (band * scale) / 16 }));
+	});
 	const points = $derived(
 		mesh.points.flatMap((values, row) =>
 			values.map((_, column) => ({ ...meshPoint(mesh, row, column), row, column }))
@@ -103,19 +123,30 @@
 					ticks={[-scale, scale]}
 					tickLabelProps={{ viewport: true, fill: 'var(--muted)' }}
 				/>
-				<Line
-					class="mesh-segment"
-					data={segments}
-					x1="x1"
-					y1="y1"
-					z1="z1"
-					x2="x2"
-					y2="y2"
-					z2="z2"
-					stroke={(segment: (typeof segments)[number]) => lineColor(segment.height)}
-					strokeWidth={2}
-					motion="none"
-				/>
+				{#if segments.length > 512}
+					{#each densePaths as band}<path
+							class="mesh-band"
+							d={band.d}
+							data-segment-count={band.count}
+							fill="none"
+							stroke={lineColor(band.height)}
+							stroke-width="2"
+						/>{/each}
+				{:else}
+					<Line
+						class="mesh-segment"
+						data={segments}
+						x1="x1"
+						y1="y1"
+						z1="z1"
+						x2="x2"
+						y2="y2"
+						z2="z2"
+						stroke={(segment: (typeof segments)[number]) => lineColor(segment.height)}
+						strokeWidth={2}
+						motion="none"
+					/>
+				{/if}
 				<Circle
 					class={(point: (typeof points)[number]) =>
 						point.row === selectedRow && point.column === selectedColumn

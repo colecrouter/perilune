@@ -1609,3 +1609,8 @@ reported reference, not necessarily its lowest point. Zero stays centered even f
 one-sided or flat meshes. Rotation/tilt sliders, amplification, reset and numeric
 sample inspection are retained; extended control and interpretation help lives
 in a disclosure. This work does not initiate probing or change printer state.
+
+Dense mesh connections are batched into at most 33 SVG paths above 512 edges.
+Every measured endpoint and edge is retained; only connection colors are grouped
+into 33 height bands. This avoids thousands of reactive SVG line elements while
+preserving the existing full sample grid. Small meshes retain individual colors.

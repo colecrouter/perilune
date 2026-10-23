@@ -177,13 +177,41 @@ test('renders and rotates the largest supported grid without changing its sample
 	const start = performance.now();
 	const screen = await render(BedMeshInspector, { meshState, showProfiles: false });
 	await screen.getByRole('button', { name: 'Isometric', exact: true }).click();
-	await expect.poll(() => document.querySelectorAll('.mesh-segment').length).toBe(8320);
+	await expect
+		.poll(() =>
+			[...document.querySelectorAll('.mesh-band')].reduce(
+				(sum, path) => sum + Number(path.getAttribute('data-segment-count')),
+				0
+			)
+		)
+		.toBe(8320);
+	expect(document.querySelectorAll('.mesh-band').length).toBeLessThanOrEqual(33);
 	await expect.poll(() => document.querySelectorAll('.mesh-sample').length).toBe(4225);
 	const rendered = performance.now();
 	await screen.getByRole('slider', { name: 'Rotation', exact: true }).fill('15');
 	await expect
 		.element(screen.getByRole('slider', { name: 'Rotation', exact: true }))
 		.toHaveValue('15');
+	const circles = [...document.querySelectorAll('.mesh-sample')].map((node) => {
+		const r = node.getBoundingClientRect();
+		return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+	});
+	let edges = 0;
+	for (const node of document.querySelectorAll('.mesh-band')) {
+		const path = node as SVGPathElement;
+		const moves = [...path.getAttribute('d')!.matchAll(/M([^,]+),([^L]+)L([^,]+),([^M]+)/g)];
+		expect(moves.length).toBe(Number(path.getAttribute('data-segment-count')));
+		edges += moves.length;
+		const first = moves[0]!;
+		for (const [x, y] of [
+			[Number(first[1]), Number(first[2])],
+			[Number(first[3]), Number(first[4])]
+		]) {
+			const point = new DOMPoint(x, y).matrixTransform(path.getScreenCTM()!);
+			expect(circles.some((c) => Math.hypot(c.x - point.x, c.y - point.y) < 1)).toBe(true);
+		}
+	}
+	expect(edges).toBe(8320);
 	console.info(
 		JSON.stringify({
 			meshSamples: 4225,
