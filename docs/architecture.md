@@ -1658,3 +1658,22 @@ Fallback eligibility inspects all raw generated sections, including overridden
 ones omitted from the effective source index. Unreviewable mixed sections are
 refused before staging removal; an effective-value comparison cannot authorize
 dropping unrelated raw configuration.
+
+### Composable workflow notices
+
+The global workflow region uses a shared `WorkflowNotice` shell with named title,
+content and action snippets. Domain lock detection, attention priority and role
+rules remain data-only; workflow presentation is supplied by Svelte components.
+Mesh notices show backend-reported sample counts across navigation. Extrusion
+simulator counts are measured by its synthetic workflow; live filament movement
+and PID use phase text rather than estimated percentages. Manual steps, review,
+and unavailable telemetry remain explicit. Emergency and uncertain action recovery
+continue to take priority. This shell can accommodate future print actions without
+placing UI fragments in backend snapshots.
+
+Bed mesh preparation opens from the Saved meshes action row. New calibration
+chooses its replacement destination inside the dialog, defaulting to Usual mesh;
+a saved row's Replace action opens the same dialog with an explicit fixed target.
+Each opening resets physical acknowledgments and captures the selected target's
+expected mesh evidence. The page retains result review, visualization and recovery
+controls, while measured probing progress lives in the global workflow notice.

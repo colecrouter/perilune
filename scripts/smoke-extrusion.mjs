@@ -46,7 +46,7 @@ try {
 	page.on('pageerror', (error) => errors.push(error.message));
 	// Prepare through the existing job flow, retaining its already-warm nozzle.
 	await page.goto(base + '/calibration/mesh');
-	await page.getByRole('button', { name: 'Probe bed…', exact: true }).click();
+	await page.getByRole('button', { name: 'New calibration…', exact: true }).click();
 	await page.getByRole('button', { name: 'Stop current simulation…', exact: true }).click();
 	await page.getByRole('checkbox', { name: /Cool.*nozzle/i }).uncheck();
 	await page.getByRole('button', { name: 'Stop print', exact: true }).click();

@@ -2,7 +2,11 @@
 	import { Dialog } from 'bits-ui';
 	import { isHttpError } from '@sveltejs/kit';
 	import CancelDialog from './CancelDialog.svelte';
-	import { meshProbeActive, meshProbeReason, probeSample } from '#lib/domain/mesh-probe.js';
+	import {
+		meshProbeActive,
+		meshProbeReason,
+		meshCalibrationTargetSupported
+	} from '#lib/domain/mesh-probe.js';
 	import { liveMeshReason } from '#lib/domain/live-mesh.js';
 	import { allAxesHomed } from '#lib/domain/motion.js';
 	import { heaterTargetsOff } from '#lib/domain/temperature.js';
@@ -14,7 +18,8 @@
 		userId,
 		role,
 		onSubmit,
-		target = $bindable('default')
+		target = $bindable('default'),
+		showTrigger = true
 	}: {
 		snapshot: PrinterSnapshot;
 		connected: boolean;
@@ -22,6 +27,7 @@
 		role: string;
 		onSubmit: (command: PrinterCommand) => Promise<string>;
 		target?: string;
+		showTrigger?: boolean;
 	} = $props();
 	const live = $derived(snapshot.mode === 'moonraker');
 	const plan = $derived(snapshot.meshProbe.session?.plan ?? snapshot.liveMesh.plan);
@@ -39,7 +45,23 @@
 	let keepCopy = $state(false);
 	let expectedTarget = $state('null');
 
-	function prepare() {
+	let replacing = $state(false);
+	export function prepare(nextTarget = 'default', replace = false) {
+		if (
+			!meshCalibrationTargetSupported(nextTarget, !live) ||
+			active ||
+			pending ||
+			!canOperate ||
+			!connected ||
+			(live && !snapshot.liveMesh.enabled)
+		)
+			return;
+		target = nextTarget;
+		replacing = replace;
+		clean = false;
+		clear = false;
+		understand = false;
+		failure = '';
 		expectedTarget = JSON.stringify(
 			snapshot.bedMesh.profiles.find((p) => p.name === target) ?? null
 		);
@@ -86,11 +108,6 @@
 				: live
 					? liveMeshReason(snapshot)
 					: meshProbeReason(snapshot)
-	);
-	const currentSample = $derived(
-		!live && session?.stage === 'probing'
-			? probeSample(Math.min(24, session.completedSamples))
-			: null
 	);
 	const stats = $derived(session?.result ? meshStats(session.result) : null);
 	const sessionId = $derived(session?.id);
@@ -152,157 +169,142 @@
 	}
 </script>
 
-<section id="mesh-calibration" class="probe-workflow" aria-label="Guided bed mesh probing">
-	{#if !active && role === 'owner'}<label class="replacement-target"
-			>Calibration replaces<select bind:value={target}
-				><option value="default">Usual mesh</option
-				>{#each snapshot.bedMesh.profiles.filter((p) => p.name !== 'default' && !p.name.startsWith('perilune_') && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$/.test(p.name)) as p}<option
-						value={p.name}>{p.name}</option
-					>{/each}</select
-			></label
-		>{/if}
-	{#if live && !snapshot.liveMesh.enabled}<div class="probe-entry">
-			<button
+{#if showTrigger || active || failure || receipt || session?.message}<section
+		id="mesh-calibration"
+		class="probe-workflow"
+		aria-label="Guided bed mesh probing"
+	>
+		{#if showTrigger && !active}<button
 				class="button primary"
-				disabled
-				title="Live mesh commands are disabled on this server.">Probe bed…</button
+				disabled={!canOperate || pending || !connected || (live && !snapshot.liveMesh.enabled)}
+				onclick={() => prepare()}>New calibration…</button
+			>{/if}
+		{#if receipt && ['failed', 'unknown'].includes(receipt.status)}<p
+				role="alert"
+				class="error-text"
 			>
-			<p class="fine-hint">
-				Live mesh commands are disabled on this server. Mesh inspection is available.
-			</p>
-		</div>
-	{:else if !active}<div class="probe-entry">
-			<button
-				class="button primary"
-				disabled={!canOperate || pending || !connected}
-				onclick={prepare}>Probe bed…</button
-			>
-			<p class="fine-hint">
-				{live
-					? 'Review the configured path, follow probing, then keep or save the result.'
-					: 'Guided simulator run · review the plan, follow progress, then choose what to keep.'}
-			</p>
-		</div>{/if}
-	{#if receipt && ['failed', 'unknown'].includes(receipt.status)}<p role="alert" class="error-text">
-			{receipt.label}: {receipt.status}. {receipt.message} This action will not be retried automatically.
-		</p>{/if}
-	{#if failure}<p class="error-text" role="alert">{failure}</p>{/if}
-	{#if session}
-		{#if active}<div class="probe-panel">
-				<div class="probe-heading">
-					<div>
-						<p class="eyebrow">
-							{live ? 'Live probing' : 'Simulator probing'} · {session.ownerName}
-						</p>
-						<h2>
-							{session.stage === 'uncertain'
-								? 'Check the printer'
-								: session.stage === 'saving'
-									? 'Saving and restarting'
-									: session.stage === 'probing'
-										? 'Mapping the bed'
-										: 'Review your mesh'}
-						</h2>
-					</div>
-					<span class="mode-badge">{live ? 'Measured samples' : 'Synthetic samples'}</span>
-				</div>
-				{#if !ready}<p class="notice" role="status">
-						Reconnecting. This workflow is owned by the backend; check its state when the connection
-						returns.
-					</p>{/if}
-				{#if session.stage === 'probing'}<label class="progress-label"
-						>{session.completedSamples} of {total} samples<progress
-							max={total}
-							value={session.completedSamples}
-						></progress></label
-					>
-					<p role="status">
-						{currentSample ? `Next sample: X ${currentSample.x} · Y ${currentSample.y} mm` : ''}
-					</p>
-					<p class="muted">
-						{live
-							? 'Homing runs first if needed. Leaving this page does not stop probing. Normal queued commands cannot interrupt probing; use the printer’s emergency stop if movement must stop immediately.'
-							: 'No motors, heaters or probe are operated. Leaving this page does not stop the simulator run.'}
-					</p>
-				{:else if session.stage === 'saving' || session.stage === 'uncertain'}<p role="status">
-						{session.message}
-					</p>
-				{:else if stats}<p>
-						The result below contains {total}
-						{live ? 'measured' : 'synthetic'} samples with a {stats.range.toFixed(3)} mm range. {live
-							? session.usual
-								? 'Klipper has activated the result. The previously saved mesh remains on disk until you accept.'
-								: 'Klipper has already activated this mesh. Your usual saved mesh has not been overwritten.'
-							: 'Your active mesh and saved profiles have not changed.'}
-					</p>
-					{#if live && !liveIdle}<p class="notice" role="status">
-							Waiting for the printer to finish movement before keeping, restoring, or saving this
-							mesh.
+				{receipt.label}: {receipt.status}. {receipt.message} This action will not be retried automatically.
+			</p>{/if}
+		{#if failure}<p class="error-text" role="alert">{failure}</p>{/if}
+		{#if session}
+			{#if active}<div class="probe-panel">
+					{#if ['review', 'uncertain'].includes(session.stage)}<div class="probe-heading">
+							<div>
+								<p class="eyebrow">
+									{live ? 'Live probing' : 'Simulator probing'} · {session.ownerName}
+								</p>
+								<h2>
+									{session.stage === 'uncertain' ? 'Check the printer' : 'Review your mesh'}
+								</h2>
+							</div>
+							<span class="mode-badge">{live ? 'Measured samples' : 'Synthetic samples'}</span>
+						</div>{/if}
+					{#if !ready}<p class="notice" role="status">
+							Reconnecting. This workflow is owned by the backend; check its state when the
+							connection returns.
 						</p>{/if}
-					<div class="review-actions">
-						{#if !session.usual}<button
-								class="button primary"
-								disabled={!owns || !canOperate || !ready || pending || !liveIdle}
-								onclick={() => review('apply')}>Use temporarily…</button
-							>{/if}<button
-							class="button secondary"
-							disabled={!owns || !canOperate || !ready || pending || !liveIdle}
-							onclick={() => review('save')}
-							>{session.usual ? 'Use & save…' : 'Save profile…'}</button
-						>
-					</div>
-					<p class="fine-hint">
-						{live
-							? session.usual
-								? `Accepting replaces ${targetLabel}. Saving or discarding restarts Klipper; unrelated pending changes block either operation.`
-								: 'Keeping this mesh is temporary. Saving writes all pending Klipper configuration and restarts it. Your start macro must load the saved profile to use it for prints.'
-							: 'Temporary use ends on restart. Saving creates a new simulator profile without activating it. Unsaved review expires after ten minutes from the start.'}
-					</p>{/if}
-				{#if !owns}<p class="notice">
-						{session.ownerName} owns this workflow. You can follow progress; an account owner can cancel
-						an abandoned run.
-					</p>{/if}
-				{#if session.stage === 'uncertain' && role === 'owner'}<button
-						class="button secondary"
-						disabled={!ready || pending}
-						onclick={() =>
-							basic({ type: 'meshProbeReconcile', probeId: session.id, confirmed: true })}
-						>Check saved outcome</button
-					>{/if}
-				{#if !session.operation}<div class="cancel-area">
-						<button
-							class="button secondary"
-							disabled={!canOperate ||
-								(!owns && role !== 'owner') ||
-								!ready ||
-								pending ||
-								!liveIdle ||
-								(live && ['probing', 'saving'].includes(session.stage))}
-							onclick={cancel}
-							>{live
+					{#if session.stage === 'probing'}
+						<p class="muted">
+							{live
+								? 'Homing runs first if needed. Leaving this page does not stop probing. Normal queued commands cannot interrupt probing; use the printer’s emergency stop if movement must stop immediately.'
+								: 'No motors, heaters or probe are operated. Leaving this page does not stop the simulator run.'}
+						</p>
+					{:else if session.stage === 'uncertain'}<p role="status">{session.message}</p>
+					{:else if session.stage === 'review' && stats}<p>
+							The result below contains {total}
+							{live ? 'measured' : 'synthetic'} samples with a {stats.range.toFixed(3)} mm range. {live
 								? session.usual
-									? 'Discard calibration…'
-									: 'Restore previous mesh…'
-								: owns
-									? 'Cancel and discard…'
-									: 'Cancel abandoned workflow…'}</button
-						>
-					</div>{/if}
-			</div>{:else if session.message}<p class="notice" role="status">{session.message}</p>{/if}
-	{/if}
-</section>
+									? 'Klipper has activated the result. The previously saved mesh remains on disk until you accept.'
+									: 'Klipper has already activated this mesh. Your usual saved mesh has not been overwritten.'
+								: 'Your active mesh and saved profiles have not changed.'}
+						</p>
+						{#if live && !liveIdle}<p class="notice" role="status">
+								Waiting for the printer to finish movement before keeping, restoring, or saving this
+								mesh.
+							</p>{/if}
+						<div class="review-actions">
+							{#if !session.usual}<button
+									class="button primary"
+									disabled={!owns || !canOperate || !ready || pending || !liveIdle}
+									onclick={() => review('apply')}>Use temporarily…</button
+								>{/if}<button
+								class="button secondary"
+								disabled={!owns || !canOperate || !ready || pending || !liveIdle}
+								onclick={() => review('save')}
+								>{session.usual ? 'Use & save…' : 'Save profile…'}</button
+							>
+						</div>
+						<p class="fine-hint">
+							{live
+								? session.usual
+									? `Accepting replaces ${targetLabel}. Saving or discarding restarts Klipper; unrelated pending changes block either operation.`
+									: 'Keeping this mesh is temporary. Saving writes all pending Klipper configuration and restarts it. Your start macro must load the saved profile to use it for prints.'
+								: 'Temporary use ends on restart. Saving creates a new simulator profile without activating it. Unsaved review expires after ten minutes from the start.'}
+						</p>{/if}
+					{#if !owns}<p class="notice">
+							{session.ownerName} owns this workflow. You can follow progress; an account owner can cancel
+							an abandoned run.
+						</p>{/if}
+					{#if session.stage === 'uncertain' && role === 'owner'}<button
+							class="button secondary"
+							disabled={!ready || pending}
+							onclick={() =>
+								basic({ type: 'meshProbeReconcile', probeId: session.id, confirmed: true })}
+							>Check saved outcome</button
+						>{/if}
+					{#if !session.operation}<div class="cancel-area">
+							<button
+								class="button secondary"
+								disabled={!canOperate ||
+									(!owns && role !== 'owner') ||
+									!ready ||
+									pending ||
+									!liveIdle ||
+									(live && ['probing', 'saving'].includes(session.stage))}
+								onclick={cancel}
+								>{live
+									? session.usual
+										? 'Discard calibration…'
+										: 'Restore previous mesh…'
+									: owns
+										? 'Cancel and discard…'
+										: 'Cancel abandoned workflow…'}</button
+							>
+						</div>{/if}
+				</div>{:else if session.message}<p class="notice" role="status">{session.message}</p>{/if}
+		{/if}
+	</section>{/if}
 <Dialog.Root bind:open
 	><Dialog.Portal
 		><Dialog.Overlay class="dialog-overlay" /><Dialog.Content class="dialog-content probe-dialog"
-			><Dialog.Title class="dialog-title">Prepare to probe the bed</Dialog.Title><Dialog.Description
-				class="muted"
+			><Dialog.Title class="dialog-title"
+				>{replacing
+					? `Replace ${target === 'default' ? 'Usual mesh' : target}`
+					: 'New bed-mesh calibration'}</Dialog.Title
+			><Dialog.Description class="muted"
 				>{live && plan
 					? `Cold probing: ${total} points across X ${plan.min[0]}–${plan.max[0]} and Y ${plan.min[1]}–${plan.max[1]} mm, with ${plan.samples} readings per point. The printer will home if needed, then probe and activate the result. Heater targets remain off.`
 					: 'A cold simulator exercise: 25 synthetic samples across X 20–200 and Y 20–200 mm. No movement, heating, actual probing or printer configuration write occurs.'}</Dialog.Description
 			>
+			{#if role === 'owner' && !replacing}<label class="replacement-target"
+					>Calibration replaces<select
+						bind:value={target}
+						onchange={(event) => {
+							target = event.currentTarget.value;
+							expectedTarget = JSON.stringify(
+								snapshot.bedMesh.profiles.find((p) => p.name === target) ?? null
+							);
+						}}
+						><option value="default">Usual mesh</option
+						>{#each snapshot.bedMesh.profiles.filter((p) => p.name !== 'default' && !p.name.startsWith('perilune_') && meshCalibrationTargetSupported(p.name, !live)) as p}<option
+								value={p.name}>{p.name}</option
+							>{/each}</select
+					></label
+				>{/if}
 			{#if role === 'owner'}<p class="notice">
-					This run replaces {targetLabel} only when accepted. Both Save and Discard restart Klipper. Resolve
-					existing pending configuration before starting.
+					This run replaces {targetLabel} only when accepted. {live
+						? 'Both Save and Discard restart Klipper. Resolve existing pending configuration before starting.'
+						: 'No real printer settings are changed.'}
 				</p>{/if}
 			<div class="automatic-checks" aria-label="Automatic probing checks">
 				<label><input type="checkbox" checked={ready} disabled />Printer connected and ready</label
@@ -529,15 +531,6 @@
 		width: 1.2rem;
 		height: 1.2rem;
 	}
-	.probe-entry {
-		display: flex;
-		gap: 1rem;
-		align-items: center;
-		flex-wrap: wrap;
-	}
-	.probe-entry p {
-		margin: 0;
-	}
 	.probe-panel {
 		padding: 1.4rem;
 		border: 1px solid var(--border);
@@ -552,15 +545,6 @@
 	}
 	h2 {
 		margin: 0.3rem 0 1rem;
-	}
-	.progress-label {
-		display: grid;
-		gap: 0.5rem;
-		font-weight: 600;
-	}
-	progress {
-		width: 100%;
-		accent-color: var(--accent);
 	}
 	.review-actions,
 	.prepare-actions {

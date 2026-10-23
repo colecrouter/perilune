@@ -79,7 +79,7 @@ try {
 	const readOnly = await viewer.newPage();
 
 	const prepare = async (tab) => {
-		await tab.getByRole('button', { name: 'Probe bed…', exact: true }).click();
+		await tab.getByRole('button', { name: 'New calibration…', exact: true }).click();
 		await tab.getByRole('checkbox', { name: /bed and probe cleanliness/ }).check();
 		await tab.getByRole('checkbox', { name: /physical clearance/ }).check();
 		await tab.getByRole('checkbox', { name: /synthetic simulator/ }).check();
@@ -109,7 +109,7 @@ try {
 			)?.disabled
 	);
 	await page.getByRole('button', { name: 'Begin simulator probing' }).click();
-	await page.getByRole('heading', { name: 'Mapping the bed', exact: true }).waitFor();
+	await page.getByText(/Mapping the bed ·/).waitFor();
 	await readOnly.goto(base + '/calibration/mesh');
 	assert.equal(
 		await observer
@@ -162,7 +162,7 @@ try {
 	await page.getByRole('combobox', { name: 'Inspect mesh' }).selectOption('profile:reviewed-bed');
 	await prepare(observer);
 	await observer.getByRole('button', { name: 'Begin simulator probing' }).click();
-	await page.getByRole('heading', { name: 'Mapping the bed', exact: true }).waitFor();
+	await page.getByText(/Mapping the bed ·/).waitFor();
 	await page.getByRole('button', { name: 'Cancel abandoned workflow…', exact: true }).click();
 	await page.getByRole('button', { name: 'Cancel and discard', exact: true }).click();
 	await page

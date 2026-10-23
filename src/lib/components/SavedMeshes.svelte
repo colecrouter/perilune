@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Dialog } from 'bits-ui';
 	import { meshProfileReason } from '#lib/domain/live-mesh.js';
-	import { meshProbeActive } from '#lib/domain/mesh-probe.js';
+	import { meshProbeActive, meshCalibrationTargetSupported } from '#lib/domain/mesh-probe.js';
 	import type { BedMesh } from '#lib/domain/bed-mesh.js';
 	import type { PrinterSnapshot, PrinterCommand } from '#lib/domain/printer.js';
 	let {
@@ -10,7 +10,8 @@
 		role,
 		onSubmit,
 		onInspect,
-		onReplace
+		onReplace,
+		onNew
 	}: {
 		snapshot: PrinterSnapshot;
 		connected: boolean;
@@ -18,6 +19,7 @@
 		onSubmit: (command: PrinterCommand) => Promise<string>;
 		onInspect: (name: string) => void;
 		onReplace: (name: string) => void;
+		onNew?: () => void;
 	} = $props();
 	let open = $state(false),
 		submitting = $state(false),
@@ -85,11 +87,22 @@
 				>
 			</p>
 		</div>
-		{#if snapshot.bedMesh.active}<button
-				class="button secondary"
-				disabled={!allowed || Boolean(blocked) || submitting}
-				onclick={() => review('clear', snapshot.bedMesh.active)}>Clear active mesh…</button
-			>{/if}
+		<div class="actions">
+			{#if onNew}<button
+					class="button primary"
+					disabled={!allowed ||
+						meshProbeActive(snapshot.meshProbe) ||
+						submitting ||
+						!connected ||
+						(snapshot.mode === 'moonraker' && !snapshot.liveMesh.enabled)}
+					onclick={onNew}>New calibration…</button
+				>{/if}
+			{#if snapshot.bedMesh.active}<button
+					class="button secondary"
+					disabled={!allowed || Boolean(blocked) || submitting}
+					onclick={() => review('clear', snapshot.bedMesh.active)}>Clear active mesh…</button
+				>{/if}
+		</div>
 	</header>
 	{#if blocked}<p class="muted" role="status">{blocked}</p>{/if}
 	{#if receipt}<p
@@ -115,7 +128,12 @@
 						onclick={() => review('load', mesh)}>Use…</button
 					><button
 						class="button secondary"
-						disabled={role !== 'owner' || Boolean(blocked) || !supported(mesh.name)}
+						disabled={role !== 'owner' ||
+							Boolean(blocked) ||
+							!meshCalibrationTargetSupported(mesh.name, snapshot.mode === 'simulator')}
+						title={!meshCalibrationTargetSupported(mesh.name, snapshot.mode === 'simulator')
+							? 'Replacement requires a name of 1–40 letters, numbers, underscores or hyphens (spaces are also supported in the simulator).'
+							: undefined}
 						onclick={() => onReplace(mesh.name)}>Replace…</button
 					><button
 						class="button secondary"

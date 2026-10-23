@@ -337,7 +337,7 @@ try {
 	await consoleReady;
 	await consoleObserver.getByRole('textbox', { name: 'Command', exact: true }).fill('M105');
 	const prepare = async () => {
-		await page.getByRole('button', { name: 'Probe bed…', exact: true }).click();
+		await page.getByRole('button', { name: 'New calibration…', exact: true }).click();
 		await page.getByRole('checkbox', { name: /bed and probe cleanliness/ }).check();
 		await page.getByRole('checkbox', { name: /physical clearance/ }).check();
 		await page.getByRole('checkbox', { name: /printer will move and probe/ }).check();
