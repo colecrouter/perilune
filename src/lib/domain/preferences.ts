@@ -1,8 +1,10 @@
 import { Schema } from 'effect';
+import { OverviewLayout, checkedOverviewLayout, overviewPreset } from './overview-layout.js';
 
 // Account-owned display defaults only. Drafts, file selections and physical
 // commands never belong in preferences. Device push permissions remain local.
 export const PreferencePatch = Schema.Struct({
+	overviewLayout: Schema.optional(OverviewLayout),
 	serif: Schema.optional(Schema.Boolean),
 	consoleFilter: Schema.optional(Schema.Literals(['all', 'errors', 'commands'])),
 	consoleShowInternal: Schema.optional(Schema.Boolean),
@@ -18,6 +20,7 @@ export const PreferencePatch = Schema.Struct({
 export type PreferencePatch = typeof PreferencePatch.Type;
 export type Preferences = Required<PreferencePatch>;
 export const defaultPreferences: Preferences = {
+	overviewLayout: overviewPreset('balanced'),
 	serif: true,
 	consoleFilter: 'all',
 	consoleShowInternal: false,
@@ -33,6 +36,7 @@ export const defaultPreferences: Preferences = {
 const decode = Schema.decodeUnknownSync(PreferencePatch, { onExcessProperty: 'error' });
 export function preferencePatch(value: unknown): PreferencePatch {
 	const patch = decode(value);
+	if (patch.overviewLayout) checkedOverviewLayout(patch.overviewLayout);
 	if (Object.keys(patch).length === 0) throw Error('Choose a preference to update.');
 	return patch;
 }

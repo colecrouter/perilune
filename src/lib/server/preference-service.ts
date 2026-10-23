@@ -6,6 +6,7 @@ import {
 	type Preferences,
 	type PreferencePatch
 } from '#lib/domain/preferences.js';
+import { overviewLayout } from '#lib/domain/overview-layout.js';
 import { migrate } from './migrations.js';
 export class PreferenceService extends Context.Service<
 	PreferenceService,
@@ -19,10 +20,14 @@ export const PreferenceServiceLive = Layer.effect(
 	Effect.gen(function* () {
 		const sql = yield* SqlClient;
 		yield* migrate;
-		const from = (value?: string): Preferences => ({
-			...defaultPreferences,
-			...(value ? JSON.parse(value) : {})
-		});
+		const from = (value?: string): Preferences => {
+			const stored = value ? JSON.parse(value) : {};
+			return {
+				...defaultPreferences,
+				...stored,
+				overviewLayout: overviewLayout(stored.overviewLayout)
+			};
+		};
 		return {
 			get: (owner) =>
 				sql<{ value: string }>`SELECT value FROM user_preferences WHERE owner=${owner}`.pipe(

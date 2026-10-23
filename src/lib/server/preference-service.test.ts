@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expect, it } from 'vite-plus/test';
 import { Layer, ManagedRuntime } from 'effect';
 import * as SqliteClient from '@effect/sql-sqlite-node/SqliteClient';
+import { overviewPreset } from '#lib/domain/overview-layout.js';
 import { defaultPreferences, preferencePatch } from '#lib/domain/preferences.js';
 import { PreferenceService, PreferenceServiceLive } from './preference-service.js';
 it('keeps account settings separate and merges concurrent changes without replacing other fields', async () => {
@@ -14,11 +15,14 @@ it('keeps account settings separate and merges concurrent changes without replac
 		const service = await runtime.runPromise(PreferenceService);
 		expect(await runtime.runPromise(service.get('first'))).toEqual(defaultPreferences);
 		await Promise.all([
-			runtime.runPromise(service.patch('first', { serif: false })),
+			runtime.runPromise(
+				service.patch('first', { serif: false, overviewLayout: overviewPreset('compact') })
+			),
 			runtime.runPromise(service.patch('first', { jobsPageSize: 25 }))
 		]);
 		expect(await runtime.runPromise(service.get('first'))).toMatchObject({
 			serif: false,
+			overviewLayout: overviewPreset('compact'),
 			jobsPageSize: 25
 		});
 		expect(await runtime.runPromise(service.get('second'))).toEqual(defaultPreferences);
@@ -53,13 +57,19 @@ it('retains preferences through service restart', async () => {
 	try {
 		let service = await runtime.runPromise(PreferenceService);
 		await runtime.runPromise(
-			service.patch('owner', { serif: false, consoleFilter: 'errors', jobsPageSize: 25 })
+			service.patch('owner', {
+				serif: false,
+				consoleFilter: 'errors',
+				jobsPageSize: 25,
+				overviewLayout: overviewPreset('camera')
+			})
 		);
 		await runtime.dispose();
 		runtime = make();
 		service = await runtime.runPromise(PreferenceService);
 		expect(await runtime.runPromise(service.get('owner'))).toMatchObject({
 			serif: false,
+			overviewLayout: overviewPreset('camera'),
 			consoleFilter: 'errors',
 			jobsPageSize: 25
 		});

@@ -99,3 +99,66 @@ test('settling waits for coalesced saves before document navigation and reports 
 	expect(state.unsaved).toBe(true);
 	state.destroy();
 });
+
+test('explicit layout failure leaves no optimistic value or queued retry behind', async () => {
+	const requests: Array<{ body: Record<string, unknown>; finish: (response: Response) => void }> =
+		[];
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(
+			(_url, init) =>
+				new Promise<Response>((finish) => requests.push({ body: JSON.parse(init.body), finish }))
+		)
+	);
+	const state = createPreferences('owner');
+	const layout = {
+		...defaultPreferences.overviewLayout,
+		preset: 'compact' as const,
+		hidden: ['camera' as const, 'history' as const]
+	};
+	const save = state.commit({ overviewLayout: layout });
+	expect(state.values.overviewLayout).toEqual(defaultPreferences.overviewLayout);
+	requests[0].finish(new Response('', { status: 503 }));
+	await expect(save).rejects.toThrow();
+	await vi.waitFor(() => expect(state.saving).toBe(false));
+	expect(state.values.overviewLayout).toEqual(defaultPreferences.overviewLayout);
+	state.update({ serif: false });
+	expect(requests[1].body).toEqual({ serif: false });
+	requests[1].finish(Response.json({ preferences: { ...defaultPreferences, serif: false } }));
+	await state.settle();
+	expect(state.values.overviewLayout).toEqual(defaultPreferences.overviewLayout);
+	const retry = state.commit({ overviewLayout: layout });
+	state.update({ jobsPageSize: 50 });
+	expect(requests).toHaveLength(3);
+	requests[2].finish(
+		Response.json({ preferences: { ...defaultPreferences, serif: false, overviewLayout: layout } })
+	);
+	await retry;
+	await vi.waitFor(() => expect(requests).toHaveLength(4));
+	expect(requests[3].body).toEqual({ jobsPageSize: 50 });
+	requests[3].finish(
+		Response.json({
+			preferences: { ...defaultPreferences, serif: false, overviewLayout: layout, jobsPageSize: 50 }
+		})
+	);
+	await state.settle();
+	expect(state.values.overviewLayout).toEqual(layout);
+	state.destroy();
+});
+
+test('a confirmed Save waiting behind another write cannot cross accounts', async () => {
+	let finish!: (response: Response) => void;
+	const fetcher = vi.fn(() => new Promise<Response>((resolve) => (finish = resolve)));
+	vi.stubGlobal('fetch', fetcher);
+	const state = createPreferences('first');
+	state.update({ serif: false });
+	const save = state.commit({
+		overviewLayout: { ...defaultPreferences.overviewLayout, preset: 'camera' }
+	});
+	state.switchAccount('second');
+	finish(Response.json({ preferences: { ...defaultPreferences, serif: false } }));
+	await expect(save).rejects.toThrow('Your account changed');
+	expect(fetcher).toHaveBeenCalledTimes(1);
+	expect(state.values).toEqual(defaultPreferences);
+	state.destroy();
+});
