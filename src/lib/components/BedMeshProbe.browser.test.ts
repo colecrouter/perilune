@@ -20,7 +20,7 @@ test('automatic preparation checks update without clearing manual acknowledgment
 		role: actor.role,
 		onSubmit
 	});
-	await screen.getByRole('button', { name: 'Probe bed…', exact: true }).click();
+	await screen.getByRole('button', { name: 'New calibration…', exact: true }).click();
 	await screen.getByRole('checkbox', { name: /bed and probe cleanliness/ }).click();
 	await screen.getByRole('checkbox', { name: /physical clearance/ }).click();
 	await screen.getByRole('checkbox', { name: /synthetic simulator/ }).click();
@@ -96,7 +96,7 @@ test('live preparation explains physical homing and requires manual acknowledgme
 		role: actor.role,
 		onSubmit
 	});
-	await screen.getByRole('button', { name: 'Probe bed…', exact: true }).click();
+	await screen.getByRole('button', { name: 'New calibration…', exact: true }).click();
 	await expect.element(screen.getByRole('button', { name: 'Home and probe bed' })).toBeDisabled();
 	await screen.getByRole('checkbox', { name: /bed and probe cleanliness/ }).click();
 	await screen.getByRole('checkbox', { name: /physical clearance/ }).click();
@@ -185,4 +185,35 @@ test('live review waits for motion to settle before enabling finish controls', a
 		snapshot: { ...snapshot, telemetryReady: false, motion: { ...snapshot.motion, busy: false } }
 	});
 	await expect.element(screen.getByRole('button', { name: 'Save profile…' })).toBeDisabled();
+});
+
+test('destination selection captures the selected saved mesh and reopening resets intent and acknowledgments', async () => {
+	const snapshot = ready();
+	const onSubmit = vi.fn().mockResolvedValue('receipt');
+	const screen = await render(BedMeshProbe, {
+		snapshot,
+		connected: true,
+		userId: actor.id,
+		role: actor.role,
+		onSubmit
+	});
+	await screen.getByRole('button', { name: 'New calibration…', exact: true }).click();
+	await screen.getByRole('combobox', { name: 'Calibration replaces' }).selectOptions('cold-bed');
+	await screen.getByRole('checkbox', { name: /bed and probe cleanliness/ }).click();
+	await screen.getByRole('checkbox', { name: /physical clearance/ }).click();
+	await screen.getByRole('checkbox', { name: /synthetic simulator/ }).click();
+	await screen.getByRole('button', { name: 'Begin simulator probing' }).click();
+	expect(onSubmit).toHaveBeenCalledWith(
+		expect.objectContaining({
+			target: 'cold-bed',
+			expectedTarget: JSON.stringify(snapshot.bedMesh.profiles.find((p) => p.name === 'cold-bed'))
+		})
+	);
+	await screen.getByRole('button', { name: 'New calibration…', exact: true }).click();
+	await expect
+		.element(screen.getByRole('combobox', { name: 'Calibration replaces' }))
+		.toHaveValue('default');
+	await expect
+		.element(screen.getByRole('checkbox', { name: /bed and probe cleanliness/ }))
+		.not.toBeChecked();
 });

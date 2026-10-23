@@ -290,3 +290,9 @@ export function applyMeshProbe(
 	next.motion.calibration = false;
 	return next;
 }
+
+/** Target names must also be saveable after the calibration has completed. */
+export const meshCalibrationTargetSupported = (name: string, simulator: boolean) =>
+	simulator
+		? /^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,39}$/.test(name)
+		: /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$/.test(name);

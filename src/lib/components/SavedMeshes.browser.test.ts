@@ -60,3 +60,41 @@ test('deletion protects the active mesh and requires startup-reference review', 
 		expect.objectContaining({ operation: 'delete', name: 'cold-bed' })
 	);
 });
+
+test('replace blocks unsaveable targets without disabling supported load actions', async () => {
+	const snapshot = initialSnapshot();
+	snapshot.job.state = 'complete';
+	snapshot.mode = 'moonraker';
+	snapshot.liveMesh.enabled = true;
+	snapshot.bedMesh.profiles = [{ ...snapshot.bedMesh.profiles[0], name: 'a'.repeat(41) }];
+	const onReplace = vi.fn();
+	const screen = await render(SavedMeshes, {
+		snapshot,
+		connected: true,
+		role: 'owner',
+		onSubmit: vi.fn(),
+		onInspect: vi.fn(),
+		onReplace
+	});
+	await expect
+		.element(screen.getByRole('button', { name: 'Replace…', exact: true }))
+		.toBeDisabled();
+	await expect
+		.element(screen.getByRole('button', { name: 'Replace…', exact: true }))
+		.toHaveAttribute('title', expect.stringContaining('1–40'));
+	await expect.element(screen.getByRole('button', { name: 'Use…', exact: true })).toBeEnabled();
+	await screen.rerender({
+		snapshot: {
+			...snapshot,
+			mode: 'simulator',
+			bedMesh: {
+				...snapshot.bedMesh,
+				profiles: [{ ...snapshot.bedMesh.profiles[0], name: 'bad/name' }]
+			}
+		}
+	});
+	await expect
+		.element(screen.getByRole('button', { name: 'Replace…', exact: true }))
+		.toBeDisabled();
+	expect(onReplace).not.toHaveBeenCalled();
+});

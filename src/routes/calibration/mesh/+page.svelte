@@ -10,7 +10,7 @@
 	let { data } = $props();
 	let selectedMesh = $state('active');
 	let inspectingSaved = $state(false);
-	let replacementTarget = $state('default');
+	let probe: BedMeshProbe | undefined = $state();
 	const dashboard = getPrinter();
 	const initial = $derived(data.initial!.printer);
 	const updates = liveConnection(() => dashboard.connected);
@@ -52,7 +52,8 @@
 			</div>
 		</header>
 		<BedMeshProbe
-			bind:target={replacementTarget}
+			bind:this={probe}
+			showTrigger={false}
 			{snapshot}
 			connected={updates.available}
 			userId={data.user?.id ?? ''}
@@ -79,12 +80,8 @@
 				</section>{/key}
 		{/if}
 		<SavedMeshes
-			onReplace={(name) => {
-				replacementTarget = name;
-				document
-					.getElementById('mesh-calibration')
-					?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-			}}
+			onNew={() => probe?.prepare()}
+			onReplace={(name) => probe?.prepare(name, true)}
 			{snapshot}
 			connected={updates.available}
 			role={data.user?.role ?? 'viewer'}

@@ -69,3 +69,83 @@ test('does not send viewers to operator-only activity recovery', async () => {
 		.element(screen.getByRole('link', { name: 'Review activity →' }))
 		.toHaveAttribute('href', '/activity');
 });
+
+test('mesh progress follows reported samples, survives stale telemetry and becomes review without a bar', async () => {
+	const snapshot = initialSnapshot();
+	snapshot.meshProbe.session = {
+		id: 'mesh',
+		ownerId: 'owner',
+		ownerName: 'Owner',
+		stage: 'probing',
+		result: null,
+		completedSamples: 7,
+		startedAt: 0,
+		expiresAt: 1,
+		message: null
+	};
+	const screen = await render(PrinterLockNotices, { snapshot, role: 'viewer' });
+	await expect
+		.element(screen.getByRole('progressbar', { name: 'Bed-mesh samples' }))
+		.toHaveAttribute('value', '7');
+	await expect
+		.element(screen.getByText('Mapping the bed · 7 of 25 samples reported', { exact: true }))
+		.toBeVisible();
+	await screen.rerender({ snapshot: { ...snapshot, telemetryReady: false } });
+	await expect.element(screen.getByText(/Showing the last reported workflow state/)).toBeVisible();
+	await expect.element(screen.getByRole('progressbar')).toHaveAttribute('value', '7');
+	await screen.rerender({
+		snapshot: {
+			...snapshot,
+			meshProbe: {
+				...snapshot.meshProbe,
+				session: { ...snapshot.meshProbe.session!, stage: 'review' }
+			}
+		}
+	});
+	await expect.element(screen.getByRole('progressbar')).not.toBeInTheDocument();
+	await expect.element(screen.getByText(/Review the result and choose/)).toBeVisible();
+});
+
+test('live workflows without measured progress do not invent percentages', async () => {
+	const snapshot = initialSnapshot();
+	snapshot.mode = 'moonraker';
+	snapshot.pid = {
+		enabled: true,
+		run: {
+			id: 'pid',
+			ownerId: 'owner',
+			heater: 'bed',
+			target: 60,
+			startedAt: 0,
+			stage: 'running',
+			parameters: null,
+			message: null
+		}
+	};
+	const screen = await render(PrinterLockNotices, { snapshot, role: 'owner' });
+	await expect.element(screen.getByText(/Tuning bed at 60°C/)).toBeVisible();
+	await expect.element(screen.getByRole('progressbar')).not.toBeInTheDocument();
+	await screen.rerender({
+		snapshot: {
+			...snapshot,
+			pid: { enabled: true, run: null },
+			extrusion: {
+				session: {
+					id: 'extrusion',
+					ownerId: 'owner',
+					ownerName: 'Owner',
+					stage: 'extruding',
+					distance: 50,
+					completed: 20,
+					rotationDistance: 1,
+					before: 100,
+					proposal: null,
+					expiresAt: 1,
+					message: null
+				}
+			}
+		}
+	});
+	await expect.element(screen.getByText(/Waiting for the printer’s acknowledgement/)).toBeVisible();
+	await expect.element(screen.getByRole('progressbar')).not.toBeInTheDocument();
+});
