@@ -206,7 +206,10 @@ try {
 	await second.keyboard.press('Escape');
 	klippy = 'shutdown';
 	notify('notify_klippy_shutdown');
-	await first.getByText('Klipper shutdown', { exact: true }).waitFor();
+	await first
+		.getByRole('region', { name: 'Print status', exact: true })
+		.getByText('Klipper is shutdown. Print controls are unavailable.', { exact: true })
+		.waitFor();
 	assert.ok((await first.locator('.heater').last().innerText()).includes('39'));
 	await second.getByText(/Retained mesh data is stale/).waitFor();
 	assert.equal(
@@ -217,7 +220,12 @@ try {
 	temperature = 41;
 	klippy = 'ready';
 	for (const socket of protocol.clients) socket.terminate();
-	await first.getByText('Reconnecting to Moonraker', { exact: true }).waitFor();
+	await first
+		.getByRole('region', { name: 'Print status', exact: true })
+		.getByText('Waiting for the printer connection. Last known progress is retained.', {
+			exact: true
+		})
+		.waitFor();
 	assert.equal(await first.getByRole('spinbutton', { name: 'Bed target' }).inputValue(), '85');
 	await first.waitForFunction(() =>
 		Array.from(document.querySelectorAll('.heater')).at(-1)?.textContent?.includes('41')

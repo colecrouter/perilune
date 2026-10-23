@@ -237,7 +237,17 @@ try {
 	await second.getByRole('button', { name: 'Pause print', exact: true }).waitFor();
 	await first.getByRole('spinbutton', { name: 'Nozzle target' }).fill('225');
 	await first.getByRole('button', { name: 'Disconnect', exact: true }).click();
-	await second.getByText('Printer disconnected', { exact: true }).waitFor();
+	const connectionNotice = second.getByText(
+		'Waiting for the printer connection. Last known progress is retained.',
+		{ exact: true }
+	);
+	await connectionNotice.waitFor();
+	assert.equal(await connectionNotice.count(), 1);
+	assert.equal(await second.locator('.reconnect-banner').count(), 0);
+	assert.equal(
+		await second.getByRole('button', { name: 'Pause print', exact: true }).isDisabled(),
+		true
+	);
 	await first.waitForFunction(
 		(before) => document.querySelector('link[rel="icon"]')?.href !== before,
 		printingIcon
