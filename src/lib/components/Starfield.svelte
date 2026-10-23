@@ -17,8 +17,7 @@
 		position: absolute;
 		inset: 0;
 		z-index: -1;
-		background:
-			radial-gradient(ellipse at 50% 100%, #0d1b2a66 0%, #070b1533 45%, #02030766 100%), var(--rail);
+		background: var(--rail);
 		overflow: hidden;
 		pointer-events: none;
 	}

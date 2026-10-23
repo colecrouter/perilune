@@ -209,7 +209,7 @@
 					</p>
 				</div>
 			</section>{/if}
-		{#if !transportConnected || !connected || snapshot.klippy !== 'ready'}<div
+		{#if !updates.available || !connected || snapshot.klippy !== 'ready'}<div
 				class="reconnect-banner"
 				role="status"
 			>
