@@ -1,4 +1,6 @@
 <script lang="ts">
+	import BedMeshLegend from './BedMeshLegend.svelte';
+	import { meshHeightColor } from '#lib/domain/mesh-visualization.js';
 	import BedMeshSurface from './BedMeshSurface.svelte';
 	import { meshStats, meshPoint, meshDifference, type BedMeshState } from '#lib/domain/bed-mesh.js';
 	let {
@@ -52,11 +54,7 @@
 	const scale = $derived(
 		stats ? Math.max(Math.abs(stats.minimum), Math.abs(stats.maximum), 0.001) : 1
 	);
-	const color = (value: number) => {
-		const weight = Math.min(1, Math.abs(value) / scale) * 0.7;
-		const accent = value < 0 ? [52, 114, 121] : [137, 117, 172];
-		return `rgb(${accent.map((v, i) => Math.round([239, 235, 225][i] * (1 - weight) + v * weight)).join(',')})`;
-	};
+	const color = (value: number) => meshHeightColor(value, scale);
 	function navigate(event: KeyboardEvent) {
 		if (!displayed) return;
 		const changes: Record<string, [number, number]> = {
@@ -157,7 +155,13 @@
 		</div>
 		<div class="mesh-layout">
 			<div class="map-area">
-				{#if view === 'surface'}<BedMeshSurface mesh={displayed} {scale} {color} />{:else}
+				{#if view === 'surface'}<BedMeshSurface
+						mesh={displayed}
+						{scale}
+						{color}
+						{selectedRow}
+						{selectedColumn}
+					/>{:else}
 					<div class="axis-caption">Y {displayed.max[1]} mm · maximum</div>
 					<div
 						class="height-map"
@@ -194,15 +198,7 @@
 						<span>X {displayed.min[0]} mm</span><span>X {displayed.max[0]} mm →</span>
 					</div>
 				{/if}
-				<div class="scale">
-					<span>{signed(-scale)} mm</span>
-					<div aria-hidden="true"></div>
-					<span>{signed(scale)} mm</span>
-				</div>
-				<p class="fine-hint">
-					Teal: below reference · neutral: zero · lavender: above reference. Scale is symmetric
-					about zero.
-				</p>
+				<BedMeshLegend {scale} selected={point.z} difference={!!difference} />
 			</div>
 			<aside class="sample-detail">
 				<p class="eyebrow">Selected sample</p>
@@ -397,22 +393,12 @@
 		font-size: 0.75rem;
 		padding: 0.4rem;
 	}
-	.x-axis,
-	.scale {
+	.x-axis {
 		display: flex;
 		justify-content: space-between;
 		gap: 0.65rem;
 		font-size: 0.75rem;
 		align-items: center;
-	}
-	.scale {
-		margin-top: 1rem;
-	}
-	.scale div {
-		flex: 1;
-		height: 0.7rem;
-		border-radius: 1rem;
-		background: linear-gradient(90deg, #6c9695, #efebe1, #ad99bc);
 	}
 	.sample-detail {
 		padding: 1.3rem;
@@ -427,7 +413,6 @@
 	.sample-fields {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
-		gap: 0.6rem;
 		gap: 0.7rem;
 		margin: 1rem 0;
 	}

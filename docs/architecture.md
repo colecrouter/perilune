@@ -1592,3 +1592,25 @@ rows showing actual/target readings or explicit unavailability. Row buttons focu
 a sensor, All sensors restores combined history, and accessible names include
 readings. Additional heater controls remain read-only. Existing keyboard sample
 inspection, time-window preferences, reconnect history and plotting gaps remain.
+
+### Bed mesh inspection colors and reference
+
+Issue #75 gives adjacent reported sample connections height colors using the
+same symmetric scale as the top-down map, point fills and shared legend. A segment
+uses the mean of its two endpoint heights, with a theme-aware contrast boost
+where CSS color mixing is supported; older browsers retain the base color. Coordinates and exact sample values
+are unchanged. This remains a wireframe of measured samples, not a reconstruction
+of Klipper's interpolated compensation surface. The selected sample has a stronger
+outline in the isometric view.
+
+The compact legend marks zero and the selected height. In comparisons, zero means
+no difference between the selected and reference mesh; otherwise it is the mesh's
+reported reference, not necessarily its lowest point. Zero stays centered even for
+one-sided or flat meshes. Rotation/tilt sliders, amplification, reset and numeric
+sample inspection are retained; extended control and interpretation help lives
+in a disclosure. This work does not initiate probing or change printer state.
+
+Dense mesh connections are batched into at most 33 SVG paths above 512 edges.
+Every measured endpoint and edge is retained; only connection colors are grouped
+into 33 height bands. This avoids thousands of reactive SVG line elements while
+preserving the existing full sample grid. Small meshes retain individual colors.
