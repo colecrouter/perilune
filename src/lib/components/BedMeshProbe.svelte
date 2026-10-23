@@ -42,13 +42,12 @@
 	let submitting = $state(false);
 	let failure = $state('');
 	let name = $state('');
-	let keepCopy = $state(false);
 	let expectedTarget = $state('null');
 
 	let replacing = $state(false);
 	export function prepare(nextTarget = 'default', replace = false) {
 		if (
-			!meshCalibrationTargetSupported(nextTarget, !live) ||
+			(replace && !meshCalibrationTargetSupported(nextTarget, !live)) ||
 			active ||
 			pending ||
 			!canOperate ||
@@ -81,6 +80,7 @@
 				? (session?.target ?? target)
 				: target
 	);
+	const isNew = $derived(Boolean(session?.newProfile || !session?.usual));
 	const owns = $derived(session?.ownerId === userId);
 	const canOperate = $derived(['owner', 'operator'].includes(role));
 	const ready = $derived(
@@ -140,8 +140,9 @@
 				probeId: crypto.randomUUID(),
 				confirmed: clean && clear && understand,
 				usual: role === 'owner',
-				target: role === 'owner' ? target : undefined,
-				expectedTarget: role === 'owner' ? expectedTarget : undefined
+				newProfile: role === 'owner' && !replacing,
+				target: role === 'owner' && replacing ? target : undefined,
+				expectedTarget: role === 'owner' && replacing ? expectedTarget : undefined
 			});
 			open = false;
 		} catch {
@@ -158,7 +159,6 @@
 	function review(outcome: 'apply' | 'save') {
 		if (!session) return;
 		reviewed = { id: session.id, owner: session.ownerName, outcome, force: false };
-		keepCopy = false;
 		name = '';
 		finishOpen = true;
 	}
@@ -214,7 +214,9 @@
 							The result below contains {total}
 							{live ? 'measured' : 'synthetic'} samples with a {stats.range.toFixed(3)} mm range. {live
 								? session.usual
-									? 'Klipper has activated the result. The previously saved mesh remains on disk until you accept.'
+									? isNew
+										? 'Klipper has activated the result. Existing saved profiles are unchanged.'
+										: 'Klipper has activated the result. The previously saved mesh remains on disk until you accept.'
 									: 'Klipper has already activated this mesh. Your usual saved mesh has not been overwritten.'
 								: 'Your active mesh and saved profiles have not changed.'}
 						</p>
@@ -230,16 +232,17 @@
 								>{/if}<button
 								class="button secondary"
 								disabled={!owns || !canOperate || !ready || pending || !liveIdle}
-								onclick={() => review('save')}
-								>{session.usual ? 'Use & save…' : 'Save profile…'}</button
+								onclick={() => review('save')}>{isNew ? 'Save as…' : 'Save replacement…'}</button
 							>
 						</div>
 						<p class="fine-hint">
 							{live
 								? session.usual
-									? `Accepting replaces ${targetLabel}. Saving or discarding restarts Klipper; unrelated pending changes block either operation.`
+									? `${isNew ? 'Save this result under a new unique name.' : `Accepting replaces ${targetLabel}.`} Saving or discarding restarts Klipper; unrelated pending changes block either operation.`
 									: 'Keeping this mesh is temporary. Saving writes all pending Klipper configuration and restarts it. Your start macro must load the saved profile to use it for prints.'
-								: 'Temporary use ends on restart. Saving creates a new simulator profile without activating it. Unsaved review expires after ten minutes from the start.'}
+								: session.usual
+									? 'Saving activates the accepted simulator result. Unsaved review expires after ten minutes from the start.'
+									: 'Temporary use ends on restart. Saving creates a new simulator profile without activating it. Unsaved review expires after ten minutes from the start.'}
 						</p>{/if}
 					{#if !owns}<p class="notice">
 							{session.ownerName} owns this workflow. You can follow progress; an account owner can cancel
@@ -264,7 +267,9 @@
 								onclick={cancel}
 								>{live
 									? session.usual
-										? 'Discard calibration…'
+										? session.discardStarted
+											? 'Restore previous compensation…'
+											: 'Discard calibration…'
 										: 'Restore previous mesh…'
 									: owns
 										? 'Cancel and discard…'
@@ -286,26 +291,14 @@
 					? `Cold probing: ${total} points across X ${plan.min[0]}–${plan.max[0]} and Y ${plan.min[1]}–${plan.max[1]} mm, with ${plan.samples} readings per point. The printer will home if needed, then probe and activate the result. Heater targets remain off.`
 					: 'A cold simulator exercise: 25 synthetic samples across X 20–200 and Y 20–200 mm. No movement, heating, actual probing or printer configuration write occurs.'}</Dialog.Description
 			>
-			{#if role === 'owner' && !replacing}<label class="replacement-target"
-					>Calibration replaces<select
-						bind:value={target}
-						onchange={(event) => {
-							target = event.currentTarget.value;
-							expectedTarget = JSON.stringify(
-								snapshot.bedMesh.profiles.find((p) => p.name === target) ?? null
-							);
-						}}
-						><option value="default">Usual mesh</option
-						>{#each snapshot.bedMesh.profiles.filter((p) => p.name !== 'default' && !p.name.startsWith('perilune_') && meshCalibrationTargetSupported(p.name, !live)) as p}<option
-								value={p.name}>{p.name}</option
-							>{/each}</select
-					></label
-				>{/if}
-			{#if role === 'owner'}<p class="notice">
-					This run replaces {targetLabel} only when accepted. {live
-						? 'Both Save and Discard restart Klipper. Resolve existing pending configuration before starting.'
-						: 'No real printer settings are changed.'}
-				</p>{/if}
+			<p class="notice">
+				{replacing
+					? `This run replaces ${targetLabel} only when accepted.`
+					: 'This run creates a new saved mesh. Existing saved profiles are not replaced; choose a unique name after reviewing the result.'}
+				{live
+					? 'Probing activates the result immediately. Save and Discard restart Klipper; resolve existing pending configuration before starting.'
+					: 'No real printer settings are changed.'}
+			</p>
 			<div class="automatic-checks" aria-label="Automatic probing checks">
 				<label><input type="checkbox" checked={ready} disabled />Printer connected and ready</label
 				><label><input type="checkbox" checked={idle} disabled />No running or paused job</label
@@ -391,34 +384,18 @@
 		><Dialog.Overlay class="dialog-overlay" /><Dialog.Content class="dialog-content"
 			><Dialog.Title class="dialog-title"
 				>{reviewed?.outcome === 'save'
-					? live
-						? session?.usual
-							? `Save ${targetLabel} and restart?`
-							: 'Write configuration and restart?'
-						: 'Save a simulator profile?'
+					? isNew
+						? 'Save mesh as…'
+						: `Save replacement for ${targetLabel}?`
 					: 'Use this mesh temporarily?'}</Dialog.Title
-			><Dialog.Description class="muted"
-				>{reviewed?.outcome === 'save'
-					? live
-						? session?.usual
-							? `Replace ${targetLabel} with this result and restart Klipper. Your existing print-start setup is unchanged. A startup procedure that loads this mesh will use the replacement.`
-							: 'Save a new mesh profile, write ALL pending Klipper configuration changes, and restart Klipper. Existing profiles are never overwritten. Your start macro must load this name to use it for prints.'
-						: session?.usual
-							? `Replace ${targetLabel} and activate it in the simulator. The optional named copy is saved separately. No real printer settings are changed.`
-							: 'Create a new saved profile from the reviewed result. This survives restart and does not change the active mesh.'
-					: live
-						? 'Keep the already active mesh until Klipper restarts or another mesh is loaded. The start macro may load a different mesh.'
-						: 'Use the reviewed result as the active mesh for this simulator process. Restarting clears temporary application.'}</Dialog.Description
 			>
-			{#if reviewed?.outcome === 'save' && session?.usual}<label class="copy-choice"
-					><input type="checkbox" bind:checked={keepCopy} /> Also save a named copy</label
-				>{/if}
-			{#if reviewed?.outcome === 'save' && (!session?.usual || keepCopy)}<label class="profile-name"
-					>Profile name<input
-						bind:value={name}
-						maxlength="40"
-						placeholder="e.g. reviewed-bed"
-					/></label
+			<Dialog.Description class="muted"
+				>{reviewed?.outcome === 'save'
+					? `${isNew ? 'Save this result with a new unique name. Existing saved meshes are unchanged.' : `Replace ${targetLabel} with the reviewed result.`} ${live ? 'Klipper will restart after saving. Your print-start configuration is unchanged.' : 'No real printer settings are changed.'}`
+					: 'Use this mesh temporarily until restart.'}</Dialog.Description
+			>
+			{#if reviewed?.outcome === 'save' && isNew}<label class="profile-name"
+					>Profile name<input bind:value={name} maxlength="40" placeholder="e.g. cold-bed" /></label
 				>
 				<p class="fine-hint">
 					{live
@@ -436,7 +413,7 @@
 						!liveIdle ||
 						pending ||
 						!reviewed ||
-						(reviewed.outcome === 'save' && (!session?.usual || keepCopy) && !name.trim())}
+						(reviewed.outcome === 'save' && isNew && !name.trim())}
 					onclick={async () => {
 						if (!reviewed) return;
 						try {
@@ -444,8 +421,7 @@
 								type: 'meshProbeFinish',
 								probeId: reviewed.id,
 								outcome: reviewed.outcome,
-								name:
-									reviewed.outcome === 'save' && (!session?.usual || keepCopy) ? name : undefined
+								name: reviewed.outcome === 'save' && isNew ? name : undefined
 							});
 							finishOpen = false;
 						} catch {
@@ -454,7 +430,7 @@
 					}}
 					>{reviewed?.outcome === 'save'
 						? live
-							? 'Write and restart'
+							? 'Save and restart'
 							: 'Save profile'
 						: 'Use temporarily'}</button
 				>
@@ -469,7 +445,9 @@
 			><Dialog.Description class="muted"
 				>{live
 					? session?.usual
-						? 'Restart Klipper WITHOUT saving this calibration, then restore the previously active saved mesh. This discards the pending replacement of the usual mesh. Unrelated pending settings block the restart.'
+						? session.discardStarted
+							? 'Verify saved configuration and restore the previous compensation. If the restart is already verified, it will not be repeated.'
+							: 'Restart Klipper WITHOUT saving this calibration, then restore the previously active saved mesh. Existing saved profiles remain unchanged. Unrelated pending settings block the restart.'
 						: 'Confirm the printer has stopped. Restore the previously active saved profile (or clear compensation if none was active) and remove this temporary profile. This does not undo configuration that was already written.'
 					: `Discard the unfinished run or unsaved result belonging to ${reviewed?.owner}. The previous active mesh and saved profiles are retained.`}</Dialog.Description
 			>{#if failure}<p class="error-text" role="alert">{failure}</p>{/if}
@@ -494,7 +472,9 @@
 					}}
 					>{live
 						? session?.usual
-							? 'Discard and restart'
+							? session.discardStarted
+								? 'Restore previous compensation'
+								: 'Discard and restart'
 							: 'Restore previous mesh'
 						: 'Cancel and discard'}</button
 				>
@@ -504,33 +484,6 @@
 >
 
 <style>
-	.replacement-target select {
-		font: inherit;
-		min-height: 2.75rem;
-		padding: 0.65rem 0.8rem;
-		border: 1px solid var(--border);
-		border-radius: 0.65rem;
-		background: var(--surface);
-		color: var(--text);
-		width: 100%;
-	}
-
-	.replacement-target {
-		display: grid;
-		gap: 0.4rem;
-		max-width: 25rem;
-		margin-bottom: 1rem;
-	}
-	.copy-choice {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-		margin: 1rem 0;
-	}
-	.copy-choice input {
-		width: 1.2rem;
-		height: 1.2rem;
-	}
 	.probe-panel {
 		padding: 1.4rem;
 		border: 1px solid var(--border);

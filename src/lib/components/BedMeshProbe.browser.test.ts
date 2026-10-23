@@ -175,19 +175,19 @@ test('live review waits for motion to settle before enabling finish controls', a
 		role: actor.role,
 		onSubmit: vi.fn()
 	});
-	await expect.element(screen.getByRole('button', { name: 'Save profile…' })).toBeDisabled();
+	await expect.element(screen.getByRole('button', { name: 'Save as…' })).toBeDisabled();
 	await expect
 		.element(screen.getByText(/Waiting for the printer to finish movement/))
 		.toBeVisible();
 	await screen.rerender({ snapshot: { ...snapshot, motion: { ...snapshot.motion, busy: false } } });
-	await expect.element(screen.getByRole('button', { name: 'Save profile…' })).toBeEnabled();
+	await expect.element(screen.getByRole('button', { name: 'Save as…' })).toBeEnabled();
 	await screen.rerender({
 		snapshot: { ...snapshot, telemetryReady: false, motion: { ...snapshot.motion, busy: false } }
 	});
-	await expect.element(screen.getByRole('button', { name: 'Save profile…' })).toBeDisabled();
+	await expect.element(screen.getByRole('button', { name: 'Save as…' })).toBeDisabled();
 });
 
-test('destination selection captures the selected saved mesh and reopening resets intent and acknowledgments', async () => {
+test('new calibration has no replacement target and reopening resets acknowledgments', async () => {
 	const snapshot = ready();
 	const onSubmit = vi.fn().mockResolvedValue('receipt');
 	const screen = await render(BedMeshProbe, {
@@ -198,22 +198,78 @@ test('destination selection captures the selected saved mesh and reopening reset
 		onSubmit
 	});
 	await screen.getByRole('button', { name: 'New calibration…', exact: true }).click();
-	await screen.getByRole('combobox', { name: 'Calibration replaces' }).selectOptions('cold-bed');
+	await expect
+		.element(screen.getByRole('combobox', { name: 'Calibration replaces' }))
+		.not.toBeInTheDocument();
 	await screen.getByRole('checkbox', { name: /bed and probe cleanliness/ }).click();
 	await screen.getByRole('checkbox', { name: /physical clearance/ }).click();
 	await screen.getByRole('checkbox', { name: /synthetic simulator/ }).click();
 	await screen.getByRole('button', { name: 'Begin simulator probing' }).click();
 	expect(onSubmit).toHaveBeenCalledWith(
 		expect.objectContaining({
-			target: 'cold-bed',
-			expectedTarget: JSON.stringify(snapshot.bedMesh.profiles.find((p) => p.name === 'cold-bed'))
+			newProfile: true,
+			target: undefined,
+			expectedTarget: undefined
 		})
 	);
 	await screen.getByRole('button', { name: 'New calibration…', exact: true }).click();
 	await expect
 		.element(screen.getByRole('combobox', { name: 'Calibration replaces' }))
-		.toHaveValue('default');
+		.not.toBeInTheDocument();
 	await expect
 		.element(screen.getByRole('checkbox', { name: /bed and probe cleanliness/ }))
 		.not.toBeChecked();
+});
+
+test('replacement result has no naming field while new result requires save-as', async () => {
+	const snapshot = ready();
+	snapshot.meshProbe.session = {
+		id: crypto.randomUUID(),
+		ownerId: actor.id,
+		ownerName: actor.name,
+		stage: 'review',
+		usual: true,
+		target: 'warm-bed',
+		result: snapshot.bedMesh.active,
+		completedSamples: 25,
+		startedAt: 0,
+		expiresAt: Date.now() + 60000,
+		message: null
+	};
+	const onSubmit = vi.fn().mockResolvedValue('receipt');
+	const screen = await render(BedMeshProbe, {
+		snapshot,
+		connected: true,
+		userId: actor.id,
+		role: actor.role,
+		onSubmit
+	});
+	await screen.getByRole('button', { name: 'Save replacement…', exact: true }).click();
+	await expect
+		.element(screen.getByRole('heading', { name: 'Save replacement for warm-bed?' }))
+		.toBeVisible();
+	await expect
+		.element(screen.getByRole('textbox', { name: 'Profile name' }))
+		.not.toBeInTheDocument();
+	await expect
+		.element(screen.getByRole('checkbox', { name: 'Also save a named copy' }))
+		.not.toBeInTheDocument();
+	await screen.getByRole('button', { name: 'Save profile', exact: true }).click();
+	expect(onSubmit).toHaveBeenCalledWith(
+		expect.objectContaining({ type: 'meshProbeFinish', name: undefined })
+	);
+	await screen.rerender({
+		snapshot: {
+			...snapshot,
+			meshProbe: {
+				...snapshot.meshProbe,
+				session: { ...snapshot.meshProbe.session!, newProfile: true, target: undefined }
+			}
+		}
+	});
+	await screen.getByRole('button', { name: 'Save as…', exact: true }).click();
+	await expect.element(screen.getByRole('textbox', { name: 'Profile name' })).toBeVisible();
+	await expect
+		.element(screen.getByRole('button', { name: 'Save profile', exact: true }))
+		.toBeDisabled();
 });

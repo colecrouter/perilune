@@ -24,6 +24,7 @@ export const MeshProbeCommand = Schema.Union([
 		probeId,
 		confirmed: Schema.Boolean,
 		usual: Schema.optional(Schema.Boolean),
+		newProfile: Schema.optional(Schema.Boolean),
 		target: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),
 		expectedTarget: Schema.optional(Schema.String.check(Schema.isMaxLength(100000)))
 	}),
@@ -56,6 +57,8 @@ export interface MeshProbeSession {
 		| 'saving';
 	live?: boolean;
 	usual?: boolean;
+	newProfile?: boolean;
+	discardStarted?: boolean;
 	target?: string;
 	copyName?: string;
 	previousTarget?: BedMesh | null;
@@ -172,6 +175,21 @@ export function applyMeshProbe(
 	if (command.type === 'meshProbeBegin') {
 		const reason = meshProbeReason(state, false);
 		if (reason) throw new CommandRejected({ message: reason });
+		if (command.usual && actor.role !== 'owner')
+			throw new CommandRejected({ message: 'An owner is required for saved calibration.' });
+		if (
+			command.newProfile &&
+			(!command.usual || command.target !== undefined || command.expectedTarget !== undefined)
+		)
+			throw new CommandRejected({ message: 'New calibration has no replacement target.' });
+		const previousTarget =
+			state.bedMesh.profiles.find((p) => p.name === (command.target ?? 'default')) ?? null;
+		if (
+			command.usual &&
+			!command.newProfile &&
+			command.expectedTarget !== JSON.stringify(previousTarget)
+		)
+			throw new CommandRejected({ message: 'The replacement target changed. Review it again.' });
 		if (!command.confirmed)
 			throw new CommandRejected({
 				message: 'Review bed clearance and the simulator probing plan first.'
@@ -182,6 +200,8 @@ export function applyMeshProbe(
 			ownerName: actor.name,
 			stage: 'probing',
 			usual: command.usual,
+			newProfile: command.newProfile,
+			previousTarget: command.usual && !command.newProfile ? previousTarget : undefined,
 			target: command.target,
 			completedSamples: 0,
 			startedAt: Date.now(),
@@ -227,30 +247,36 @@ export function applyMeshProbe(
 		);
 		if (readiness) throw new CommandRejected({ message: readiness });
 		if (command.outcome === 'save') {
-			const target = session.usual ? (session.target ?? 'default') : (command.name?.trim() ?? '');
-			const copy = session.usual ? command.name?.trim() : undefined;
+			const replacement = session.usual && !session.newProfile;
+			const target = replacement ? (session.target ?? 'default') : (command.name?.trim() ?? '');
+			if (
+				replacement &&
+				session.previousTarget !== undefined &&
+				JSON.stringify(state.bedMesh.profiles.find((p) => p.name === target) ?? null) !==
+					JSON.stringify(session.previousTarget)
+			)
+				throw new CommandRejected({
+					message: 'The replacement target changed during calibration.'
+				});
+			if (replacement && command.name !== undefined)
+				throw new CommandRejected({ message: 'Replacement keeps its existing name.' });
 			if (
 				!/^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,39}$/.test(target) ||
-				(copy !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,39}$/.test(copy))
+				(!replacement &&
+					(target.toLowerCase() === 'default' || target.toLowerCase().startsWith('perilune_')))
 			)
 				throw new CommandRejected({
 					message: 'Use a profile name of 1–40 letters, numbers, spaces, underscores or hyphens.'
 				});
 			if (
-				(!session.usual &&
-					state.bedMesh.profiles.some((p) => p.name.toLowerCase() === target.toLowerCase())) ||
-				(copy !== undefined &&
-					(copy.toLowerCase() === target.toLowerCase() ||
-						state.bedMesh.profiles.some((p) => p.name.toLowerCase() === copy.toLowerCase())))
+				!replacement &&
+				state.bedMesh.profiles.some((p) => p.name.toLowerCase() === target.toLowerCase())
 			)
 				throw new CommandRejected({
 					message:
 						'That profile name already exists. Choose a new name; existing profiles are never overwritten.'
 				});
-			const additions = [
-				{ ...session.result, name: target },
-				...(copy ? [{ ...session.result, name: copy }] : [])
-			];
+			const additions = [{ ...session.result, name: target }];
 			const replaced = new Set(additions.map((p) => p.name));
 			const profiles = [
 				...next.bedMesh.profiles.filter((p) => !replaced.has(p.name)),
@@ -273,7 +299,9 @@ export function applyMeshProbe(
 				...session,
 				stage: 'saved',
 				message: session.usual
-					? 'Usual mesh saved and activated in the simulator.'
+					? session.newProfile
+						? `Saved ${name}. Existing saved meshes are unchanged.`
+						: 'Replacement saved and activated in the simulator.'
 					: `Saved ${name}. The active mesh was not changed.`
 			};
 		} else {

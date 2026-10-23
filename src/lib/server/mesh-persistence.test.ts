@@ -451,3 +451,56 @@ it('retains unrelated generated sections with hash or semicolon comments on thei
 		expect(f.readText()).toBe(before);
 	}
 });
+
+it('saves a new mesh with its owned temporary tombstone and preserves every baseline profile', async () => {
+	const f = await fixture();
+	await f.runtime.runPromise(f.service.capture('new', owner, null, null, 'perilune_new'));
+	f.stage({ 'bed_mesh perilune_new': null, 'bed_mesh fresh': measured });
+	await f.runtime.runPromise(
+		f.service.finish('new', owner, f.candidate, ['fresh'], false, () => true)
+	);
+	expect(f.readText()).toContain('[bed_mesh default]');
+	expect(f.readText()).toContain('[bed_mesh alternate]');
+	expect(f.readText()).toContain('[bed_mesh fresh]');
+	expect(f.readText()).not.toContain('perilune_new');
+	expect(await f.runtime.runPromise(f.service.reconcile('new', owner))).toBe('saved');
+	expect(f.writes).toHaveLength(1);
+});
+it('new discard accepts an owned tombstone or empty pending state but refuses unrelated entries', async () => {
+	const f = await fixture();
+	await f.runtime.runPromise(f.service.capture('new', owner, null, null, 'perilune_new'));
+	f.stage({ 'bed_mesh perilune_new': null });
+	await f.runtime.runPromise(
+		f.service.check('new', owner, f.candidate, ['perilune_new', 'fresh'], undefined, 'all')
+	);
+	f.stage({});
+	await f.runtime.runPromise(
+		f.service.check('new', owner, f.candidate, ['perilune_new', 'fresh'], undefined, 'all')
+	);
+	f.stage({ probe: { z_offset: '1' } });
+	await expect(
+		f.runtime.runPromise(
+			f.service.finish('new', owner, f.candidate, ['perilune_new', 'fresh'], true, () => true)
+		)
+	).rejects.toThrow();
+	expect(f.writes).toHaveLength(0);
+	f.stage({ 'bed_mesh perilune_new': null });
+	await f.runtime.runPromise(
+		f.service.finish('new', owner, f.candidate, ['perilune_new', 'fresh'], true, () => true)
+	);
+	expect(f.readText()).toBe(f.originalText);
+	expect(f.writes).toEqual(['/printer/restart']);
+});
+it('new names must be absent from loaded and raw configuration sources', async () => {
+	const f = await fixture();
+	await f.runtime.runPromise(f.service.capture('new', owner, null, null, 'perilune_new'));
+	await expect(
+		f.runtime.runPromise(f.service.prepareName('new', owner, 'default'))
+	).rejects.toThrow(/already/);
+	const g = await fixture();
+	g.setText(g.originalText + '#*# [bed_mesh perilune_hidden] # retained\n#*# points = 0,0\n');
+	await expect(
+		g.runtime.runPromise(g.service.capture('hidden', owner, null, null, 'perilune_hidden'))
+	).rejects.toThrow(/already/);
+	expect(g.writes).toHaveLength(0);
+});

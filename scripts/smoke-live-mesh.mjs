@@ -357,25 +357,19 @@ try {
 		'M105'
 	);
 	await page.goto(base + '/calibration/mesh');
-	await page
-		.getByRole('button', { name: 'Use & save…', exact: true })
-		.waitFor({ state: 'visible' });
+	await page.getByRole('button', { name: 'Save as…', exact: true }).waitFor({ state: 'visible' });
 	await page.waitForFunction(() =>
 		[...document.querySelectorAll('button')].some(
-			(b) => b.textContent === 'Use & save…' && !b.disabled
+			(b) => b.textContent === 'Save as…' && !b.disabled
 		)
 	);
 	assert.equal(await page.locator('.candidate-inspection').getByRole('combobox').count(), 0);
 	assert.ok((await page.locator('body').innerText()).includes('Klipper has activated the result'));
-	await page.getByRole('button', { name: 'Use & save…', exact: true }).click();
-	await page.getByRole('checkbox', { name: 'Also save a named copy' }).check();
+	await page.getByRole('button', { name: 'Save as…', exact: true }).click();
 	await page.getByRole('textbox', { name: 'Profile name' }).fill('reviewed-bed');
-	await page.getByRole('button', { name: 'Write and restart', exact: true }).click();
-	await page.getByText(/Usual mesh saved and verified after restart/).waitFor();
-	assert.deepEqual(
-		status.bed_mesh.profiles.default.points,
-		points.map((r) => r.map((v) => v + 0.1))
-	);
+	await page.getByRole('button', { name: 'Save and restart', exact: true }).click();
+	await page.getByText(/Saved reviewed-bed and verified after restart/).waitFor();
+	assert.deepEqual(status.bed_mesh.profiles.default.points, points);
 	assert.ok(status.bed_mesh.profiles['reviewed-bed']);
 	assert.equal(status.configfile.save_config_pending, false);
 	await observer
@@ -439,7 +433,7 @@ try {
 	assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
 	assert.deepEqual(errors, []);
 	console.log(
-		'Live mesh production smoke passed: shared progress through navigation, homing, immediate activation, usual replacement, optional copy, verified discard, deletion including final autosave section, one socket, private-config filtering and 320px preparation.'
+		'Live mesh production smoke passed: shared progress through navigation, homing, immediate activation, independent named mesh creation, preserved usual mesh, verified discard, deletion including final autosave section, one socket, private-config filtering and 320px preparation.'
 	);
 } catch (error) {
 	const debug = browser?.contexts()[0]?.pages()[0];

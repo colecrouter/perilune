@@ -1618,14 +1618,15 @@ preserving the existing full sample grid. Small meshes retain individual colors.
 ### Bed mesh saving and profile management
 
 The usual-mesh path calibrates directly into Klipper's `default` profile, retaining
-that identifier for existing print-start compatibility. Owners can instead choose
-a named saved mesh to replace. Acceptance replaces the target; an optional named
-copy is explicit and must be unique. Repeated calibration does not create a new
-permanent run profile. The legacy temporary-profile path remains available to
+that identifier for existing print-start compatibility. A saved row’s Replace action retains that fixed target, including Usual mesh.
+Acceptance replaces it without a naming or copy option. New calibration instead
+uses a private temporary profile, then Save as requires a unique new name and
+preserves every existing saved profile. Repeated replacement does not create a
+new permanent run profile. The legacy temporary-profile path remains available to
 operators, who cannot perform the new owner configuration-persistence flow.
 
 The process-owned mesh queue journals the reservation, selected target, previous
-active mesh, candidate, and intended optional copy. Private configuration evidence
+active mesh, candidate, and intended new name. Legacy staged-copy evidence remains recoverable. Private configuration evidence
 is retained separately in a bounded SQLite table, never included in dashboard
 snapshots. Replacement requires no existing pending settings and a durably saved
 previous active mesh. Saving verifies the owned pending manifest and source
@@ -1644,8 +1645,8 @@ deletion. Runtime selection does not configure print startup. The UI explicitly
 marks startup behavior as unverified and links to the configuration editor;
 dynamic macros and slicer start G-code are not inferred or rewritten.
 
-Release validation and attended physical acceptance for this workflow are pending
-under #137. Development uses synthetic fixtures only.
+Release validation passed for #137. Attended physical acceptance remains separate;
+development uses synthetic fixtures only.
 
 Klipper cannot persist removal of its final autosave section using SAVE_CONFIG.
 That deletion case uses the journaled exact main source without the removed
@@ -1672,8 +1673,20 @@ continue to take priority. This shell can accommodate future print actions witho
 placing UI fragments in backend snapshots.
 
 Bed mesh preparation opens from the Saved meshes action row. New calibration
-chooses its replacement destination inside the dialog, defaulting to Usual mesh;
-a saved row's Replace action opens the same dialog with an explicit fixed target.
+has no replacement selector; the result review offers Save as with a unique name.
+A saved row's Replace action opens preparation with an explicit fixed target.
 Each opening resets physical acknowledgments and captures the selected target's
 expected mesh evidence. The page retains result review, visualization and recovery
 controls, while measured probing progress lives in the global workflow notice.
+
+New-profile persistence accepts only a candidate matching the reviewed measurements
+and its evidence-owned temporary section’s null tombstone. Baseline absence is
+verified against loaded configuration, effective definitions and raw source headers,
+including included files. Name intent is journaled before staging, temporary runtime
+removal is verified, and one SAVE_CONFIG persists only the named result. Exact
+source readback and loaded-profile verification also prove the internal section is
+absent. Unrelated pending entries block both save and discard. Evidence-backed new
+discard permits owned entries to be absent after an interrupted cleanup; it still
+requires unchanged baseline sources. Discard intent survives restart, and read-only
+reconciliation retains the compensation-restoration obligation. A fresh explicit
+restoration can complete without repeating an already verified restart.
