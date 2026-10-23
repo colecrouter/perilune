@@ -172,7 +172,9 @@
 							>{/if}
 					</div>{/if}
 				{#if !fresh}<p class="muted">
-						{jobControlReason(snapshot, available, true)}
+						{available && snapshot.connection === 'connected' && snapshot.klippy !== 'ready'
+							? `Klipper is ${snapshot.klippy}. Print controls are unavailable.`
+							: jobControlReason(snapshot, available, true)}
 					</p>{/if}
 				{#if filament}<p>
 						{snapshot.filamentChange?.stage === 'review'

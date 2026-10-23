@@ -206,7 +206,10 @@ try {
 	await second.keyboard.press('Escape');
 	klippy = 'shutdown';
 	notify('notify_klippy_shutdown');
-	await first.getByText('Klipper shutdown', { exact: true }).waitFor();
+	await first
+		.getByRole('region', { name: 'Print status', exact: true })
+		.getByText('Klipper is shutdown. Print controls are unavailable.', { exact: true })
+		.waitFor();
 	assert.ok((await first.locator('.heater').last().innerText()).includes('39'));
 	await second.getByText(/Retained mesh data is stale/).waitFor();
 	assert.equal(
