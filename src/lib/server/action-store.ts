@@ -13,6 +13,7 @@ import { migrate } from './migrations.js';
 export class ActionStore extends Context.Service<
 	ActionStore,
 	{
+		closeUnaccepted: (id: string, actorId: string) => Effect.Effect<ActionRecord | null, SqlError>;
 		commitStart: (id: string, owner: string) => Effect.Effect<void, SqlError>;
 		pid: Effect.Effect<PidState, SqlError>;
 		commitPid: (
@@ -61,13 +62,15 @@ export class ActionStore extends Context.Service<
 		setStatus: (
 			id: string,
 			status: ActionStatus,
-			message: string | null
+			message: string | null,
+			reviewedAt?: number
 		) => Effect.Effect<void, SqlError>;
 		probe: Effect.Effect<void, SqlError>;
 	}
 >()('perilune/ActionStore') {}
 
 interface StoredAction {
+	reviewed_at: number | null;
 	id: string;
 	payload: string;
 	label: string;
@@ -81,7 +84,10 @@ const fromRow = (row: StoredAction): ActionRecord => ({
 	label: row.label,
 	status: row.status,
 	createdAt: row.created_at,
-	message: row.message
+	message: row.message,
+	...(row.reviewed_at === null || row.reviewed_at === undefined
+		? {}
+		: { reviewedAt: row.reviewed_at })
 });
 
 export const ActionStoreLive = Layer.effect(
@@ -104,6 +110,12 @@ export const ActionStoreLive = Layer.effect(
 				Effect.asVoid
 			);
 		return {
+			closeUnaccepted: (id, actorId) =>
+				Effect.gen(function* () {
+					yield* sql`INSERT INTO actions(id,payload,label,status,created_at,message,actor_id) VALUES(${id},'{}','Print submission','failed',${Date.now()},'No accepted action was found. This request ID is closed; a late submission cannot run.',${actorId}) ON CONFLICT(id) DO NOTHING`;
+					const rows = yield* sql<StoredAction>`SELECT * FROM actions WHERE id=${id}`;
+					return rows[0]?.actor_id === actorId ? fromRow(rows[0]) : null;
+				}),
 			commitStart: (id, owner) =>
 				sql
 					.withTransaction(
@@ -197,8 +209,8 @@ export const ActionStoreLive = Layer.effect(
 				sql`INSERT INTO actions (id, payload, label, status, created_at, actor_id) VALUES (${action.id}, ${JSON.stringify(command)}, ${action.label}, ${action.status}, ${action.createdAt}, ${actorId ?? null})`.pipe(
 					Effect.asVoid
 				),
-			setStatus: (id, status, message) =>
-				sql`UPDATE actions SET status = ${status}, message = ${message} WHERE id = ${id}`.pipe(
+			setStatus: (id, status, message, reviewedAt) =>
+				sql`UPDATE actions SET status = ${status}, message = ${message}, reviewed_at = COALESCE(${reviewedAt ?? null},reviewed_at) WHERE id = ${id}`.pipe(
 					Effect.asVoid
 				),
 			probe: sql`SELECT 1`.pipe(Effect.asVoid)

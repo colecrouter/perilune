@@ -24,13 +24,14 @@
 			snapshot.klippy === 'ready' &&
 			snapshot.telemetryReady
 	);
-	async function submit(command: PrinterCommand) {
+	async function submit(command: PrinterCommand, id?: string) {
 		return (
 			await submitAction({
 				id:
-					command.type === 'meshProbeBegin' || command.type === 'meshProbeProfile'
+					id ??
+					(command.type === 'meshProbeBegin' || command.type === 'meshProbeProfile'
 						? command.probeId
-						: crypto.randomUUID(),
+						: crypto.randomUUID()),
 				command
 			})
 		).id;

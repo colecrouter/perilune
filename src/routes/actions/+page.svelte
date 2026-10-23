@@ -21,6 +21,7 @@
 					inspection={data.review.manualInterventions}
 				/>{/if}
 			<ActionForm
+				printAccount={data.user?.id}
 				fields={data.review.intent === 'cancel'
 					? { intent: 'cancel', filename: data.review.filename, runId: data.review.runId }
 					: { intent: 'start', fileId: data.review.fileId }}

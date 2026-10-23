@@ -1,4 +1,4 @@
-import { appRequest } from './smoke-remote-helper.mjs';
+import { appRequest, remoteArgument } from './smoke-remote-helper.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
@@ -128,6 +128,32 @@ try {
 			exact: true
 		})
 		.waitFor();
+	let lostStart;
+	await page.route('**/_app/remote/**/submitAction', async (route) => {
+		lostStart = route.request();
+		await route.abort('failed');
+	});
+	await page
+		.getByRole('dialog')
+		.getByRole('button', { name: 'Start simulated print', exact: true })
+		.click();
+	await page.getByRole('dialog').getByRole('alert').waitFor();
+	assert.ok(lostStart);
+	const lostStartId = remoteArgument(lostStart).id;
+	await page.unroute('**/_app/remote/**/submitAction');
+	await page.getByRole('button', { name: 'Keep reviewing', exact: true }).click();
+	const selectedHref = new URL(page.url()).pathname;
+	await page.goto(base + '/account');
+	await page
+		.getByRole('link', { name: 'View print receipt', exact: true })
+		.getAttribute('href')
+		.then((href) => assert.equal(href, '/actions/' + lostStartId));
+	await page.getByRole('button', { name: 'Check receipt', exact: true }).click();
+	await page
+		.getByRole('region', { name: 'Print status', exact: true })
+		.waitFor({ state: 'detached' });
+	await page.goto(base + selectedHref);
+	await page.getByRole('button', { name: 'Start simulation…', exact: true }).click();
 	await page
 		.getByRole('dialog')
 		.getByRole('button', { name: 'Start simulated print', exact: true })
@@ -272,11 +298,20 @@ try {
 		.getByRole('button', { name: 'Start simulated print', exact: true })
 		.click();
 	await page.getByRole('button', { name: 'Pause print', exact: true }).waitFor();
-	await second.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
+	assert.equal(
+		await second
+			.getByRole('dialog')
+			.getByRole('button', { name: 'Stop print', exact: true })
+			.isDisabled(),
+		true,
+		'Stale stop review cannot target the replacement job'
+	);
 	await second
 		.getByRole('dialog')
-		.getByRole('alert')
-		.filter({ hasText: 'active job changed' })
+		.getByText(
+			'The displayed print changed or ended. Close this dialog and review the current job.',
+			{ exact: true }
+		)
 		.waitFor();
 	await second
 		.getByRole('dialog')

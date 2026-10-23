@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { printActionJournal } from '#lib/client/print-action-journal.svelte.js';
 	import ActionFeedback from './ActionFeedback.svelte';
 	import { enhance, applyAction } from '$app/forms';
 	import { onMount, type Snippet } from 'svelte';
@@ -9,7 +10,8 @@
 		receiptBase = '/actions',
 		children,
 		receipts,
-		onAccepted = () => {}
+		onAccepted = () => {},
+		printAccount
 	}: {
 		fields: Record<string, string>;
 		action?: string;
@@ -19,6 +21,7 @@
 		>;
 		receipts?: ActionRecord[];
 		onAccepted?: (receipt: ActionRecord, submitted: FormData) => void;
+		printAccount?: string;
 	} = $props();
 	let enhanced = $state(false);
 	onMount(() => {
@@ -37,6 +40,26 @@
 		const observed = receipt && receipts?.find((item) => item.id === receipt!.id);
 		if (observed && observed !== receipt) receipt = observed;
 	});
+	$effect(() => {
+		const resolved =
+			printAccount && submittedId
+				? printActionJournal.resolved(printAccount, submittedId)
+				: undefined;
+		if (uncertain && resolved) {
+			uncertain = false;
+			message = '';
+			receipt = resolved;
+			id = crypto.randomUUID();
+		}
+	});
+
+	const journalBlocked = $derived(
+		Boolean(
+			printAccount &&
+			printActionJournal.account === printAccount &&
+			(printActionJournal.entries.length || printActionJournal.error)
+		)
+	);
 	const executing = $derived(
 		!!receipts && !!currentReceipt && ['queued', 'sending'].includes(currentReceipt.status)
 	);
@@ -47,9 +70,35 @@
 	method="POST"
 	{action}
 	use:enhance={({ formData, cancel }) => {
-		if (pending || uncertain || executing) {
+		if (pending || uncertain || executing || journalBlocked) {
 			cancel();
 			return;
+		}
+		const account = printAccount;
+		const intent = String(formData.get('intent'));
+		if (['start', 'pause', 'resume', 'cancel'].includes(intent) && !account) {
+			cancel();
+			message = 'Sign in again before submitting a print action.';
+			return;
+		}
+		if (account) {
+			try {
+				printActionJournal.begin(
+					account,
+					String(formData.get('id')),
+					intent === 'start'
+						? 'Start print'
+						: intent === 'resume'
+							? 'Resume print'
+							: intent === 'pause'
+								? 'Pause print'
+								: 'Stop print'
+				);
+			} catch (error) {
+				cancel();
+				message = error instanceof Error ? error.message : 'Print receipts are unavailable.';
+				return;
+			}
 		}
 		pending = true;
 		message = '';
@@ -61,16 +110,19 @@
 				receipt = result.data.receipt as ActionRecord;
 				message = '';
 				id = crypto.randomUUID();
+				if (account) printActionJournal.observe(account, [receipt]);
 				onAccepted(receipt, formData);
 			} else if (result.type === 'redirect') {
 				await applyAction(result);
 			} else if (result.type === 'failure') {
+				if (account) printActionJournal.reject(account, String(formData.get('id')));
 				message =
 					typeof result.data?.message === 'string'
 						? result.data.message
 						: 'Action rejected. Your input is kept.';
 			} else {
 				uncertain = true;
+				if (account) printActionJournal.unknown(account, String(formData.get('id')));
 				message =
 					'Submission could not be confirmed. Check its receipt before trying again. Nothing will be resent automatically.';
 			}
@@ -82,7 +134,7 @@
 	{@render children({
 		pending: pending || executing,
 		executing,
-		uncertain,
+		uncertain: uncertain || journalBlocked,
 		outcome: currentReceipt
 	})}
 	{#if currentReceipt}<ActionFeedback receipt={currentReceipt} {receiptBase} />{/if}

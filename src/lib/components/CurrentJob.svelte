@@ -1,27 +1,26 @@
 <script lang="ts">
-	import { filamentChangeActive } from '#lib/domain/filament-change.js';
+	import PrintJobActions from './PrintJobActions.svelte';
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
-	import { jobControlReason, jobDescriptions } from '#lib/domain/current-job.js';
-	import ActionForm from './ActionForm.svelte';
+	import { jobDescriptions } from '#lib/domain/current-job.js';
 	import Icon from './Icon.svelte';
 	let {
 		snapshot,
 		available = true,
 		operator = true,
 		compact = false,
+		controls = true,
 		onStop
 	}: {
 		snapshot: PrinterSnapshot;
 		available?: boolean;
 		operator?: boolean;
-		onStop: () => void;
+		onStop?: () => void;
+		controls?: boolean;
 		compact?: boolean;
 	} = $props();
 	const job = $derived(snapshot.job);
 	const active = $derived(job.state === 'printing' || job.state === 'paused');
 	const finished = $derived(['complete', 'cancelled', 'error'].includes(job.state));
-	const reason = $derived(jobControlReason(snapshot, available, operator));
-	const identity = $derived({ filename: job.filename, runId: job.runId ?? '' });
 	const copy = $derived(jobDescriptions[job.state]);
 </script>
 
@@ -52,46 +51,7 @@
 			</div>
 			<div><span>Layer</span><strong>{job.layer ?? '—'} / {job.totalLayers ?? '—'}</strong></div>
 		</div>
-		{#if reason}<p class="control-reason" role="status">{reason}</p>{/if}
-		<div class="job-actions">
-			{#if filamentChangeActive(snapshot.filamentChange)}<a class="button primary" href="/filament"
-					>Continue filament change</a
-				>{:else}{#key job.runId}<ActionForm
-						receipts={snapshot.actions}
-						fields={{ intent: job.state === 'paused' ? 'resume' : 'pause', ...identity }}
-						>{#snippet children({ pending, uncertain, executing, outcome })}<button
-								class="button primary"
-								disabled={!!reason || pending || uncertain}
-								><Icon name={job.state === 'paused' ? 'play' : 'pause'} size={18} />{pending
-									? executing
-										? 'Waiting for printer…'
-										: 'Submitting…'
-									: job.state === 'paused'
-										? 'Resume print'
-										: 'Pause print'}</button
-							>{#if job.state === 'paused' && outcome?.status === 'completed' && outcome.label === 'Resume print' && outcome.message}<p
-									role="status"
-								>
-									{outcome.message}
-								</p>{/if}{/snippet}</ActionForm
-					>{/key}{/if}
-			{#if !filamentChangeActive(snapshot.filamentChange) && operator && snapshot.mode === 'moonraker'}<a
-					class="button secondary"
-					href="/filament">Change filament…</a
-				>{/if}
-			<a
-				role="button"
-				class="button danger-outline"
-				href={`/actions?intent=cancel&filename=${encodeURIComponent(identity.filename)}&runId=${encodeURIComponent(identity.runId)}`}
-				aria-disabled={!!reason}
-				onclick={(event) => {
-					event.preventDefault();
-					if (!reason) onStop();
-				}}><Icon name="stop" size={16} />Stop print</a
-			>
-			{#if job.state === 'paused'}<a class="button secondary" href="/console">Printer messages</a
-				>{/if}
-		</div>
+		{#if controls}<PrintJobActions {snapshot} {available} {operator} {onStop} />{/if}
 	{:else}<div class="job-actions">
 			{#if finished && job.filename}<a
 					class="button primary"
@@ -145,7 +105,6 @@
 			grid-row: 3;
 			margin: 0;
 		}
-		.compact .control-reason,
 		.compact .job-actions {
 			grid-column: 1 / -1;
 		}
@@ -174,15 +133,10 @@
 		font-size: 0.85rem;
 		margin: 0.4rem 0 0;
 	}
-	.job-description,
-	.control-reason {
+	.job-description {
 		font-size: 0.85rem;
 		line-height: 1.6;
 		color: var(--muted);
-	}
-	.control-reason {
-		border-left: 3px solid var(--accent);
-		padding-left: 0.75rem;
 	}
 	.job-actions {
 		display: flex;

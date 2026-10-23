@@ -1690,3 +1690,30 @@ discard permits owned entries to be absent after an interrupted cleanup; it stil
 requires unchanged baseline sources. Discard intent survives restart, and read-only
 reconciliation retains the compensation-restoration obligation. A fresh explicit
 restoration can complete without repeating an already verified restart.
+
+### Shared active print status
+
+The shared workflow region presents reported print progress, filename, remaining
+estimate and pause state on every page. It reuses the existing print action forms
+and explicit heater-choice Stop confirmation. Overview and Jobs keep their detailed
+job summaries without a second control group. Filament guidance replaces ordinary
+Resume, while emergency/recovery retains precedence. No start command or automatic
+print retry is introduced. Overview reuses its dashboard live query; other pages
+reuse the printer live query, preserving one relevant stream per route.
+
+Enhanced print submissions journal their UUID and pending state in browser storage
+before dispatch, scoped to the authenticated account and installation origin.
+Separate keys avoid cross-tab write loss. Navigation, reload and missing receipts
+do not release that uncertainty. Terminal receipts or explicit owner-reviewed
+outcomes resolve it; schema 026 records recovery-review metadata, including the
+previous fixed owner-review history message. Storage failure blocks enhanced print
+submission rather than forgetting an ID. No command payloads, credentials or
+private media are stored in this journal.
+
+An explicit Check receipt command verifies ownership and account identity, returning
+an existing receipt unchanged. For an absent UUID it atomically records a failed
+closed-ID row. Every admission path must commit that unique action row before
+physical work, so a later original submission is refused rather than executed.
+This operation never dispatches or replays a printer command. Unknown accepted
+physical outcomes still require the existing owner recovery review. Native forms
+retain their server-rendered confirmation and receipt redirect fallback.

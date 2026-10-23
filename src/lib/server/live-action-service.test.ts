@@ -1,3 +1,4 @@
+import { reconcilePrintSubmission } from './print-action-reconciliation.js';
 import { createHash } from 'node:crypto';
 import { jobOwner } from './job-attribution.js';
 import { SlicerService, SlicerServiceLive } from './slicer-service.js';
@@ -1937,4 +1938,26 @@ it('generated assisted parking lifts once before feeding and respects server opt
 	await expect(
 		disabled.submit({ ...park, sessionId: disabledSession.id, expectedStep: disabledSession.step })
 	).rejects.toThrow('disabled');
+});
+
+it('a reconciled unaccepted ID cannot later dispatch a live print command', async () => {
+	const f = await fixture();
+	const id = crypto.randomUUID();
+	await f.runtime.runPromise(
+		SubscriptionRef.update(f.state, (s) => ({
+			...s,
+			job: { ...s.job, state: 'printing' as const, filename: 'fixture.gcode', runId: 'fixture-run' }
+		}))
+	);
+	expect((await f.runtime.runPromise(reconcilePrintSubmission(id, owner.id)))?.status).toBe(
+		'failed'
+	);
+	await expect(
+		f.submit(
+			{ type: 'pause', expectedJob: { filename: 'fixture.gcode', runId: 'fixture-run' } },
+			owner,
+			id
+		)
+	).rejects.toThrow(/another command/);
+	expect(f.operations).toHaveLength(0);
 });

@@ -101,6 +101,7 @@ export const ActionRequest = Schema.Struct({
 export type ActionRequest = typeof ActionRequest.Type;
 export type ActionStatus = 'queued' | 'sending' | 'completed' | 'failed' | 'unknown';
 export interface ActionRecord {
+	reviewedAt?: number | null;
 	id: string;
 	label: string;
 	status: ActionStatus;

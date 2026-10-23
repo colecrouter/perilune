@@ -49,7 +49,9 @@ try {
 	await page.getByRole('button', { name: 'New calibration…', exact: true }).click();
 	await page.getByRole('button', { name: 'Stop current simulation…', exact: true }).click();
 	await page.getByRole('checkbox', { name: /Cool.*nozzle/i }).uncheck();
-	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
+	const stopConfirmation = page.getByRole('dialog').filter({ hasText: 'Stop this print?' });
+	await stopConfirmation.getByRole('button', { name: 'Stop print', exact: true }).click();
+	await stopConfirmation.waitFor({ state: 'hidden' });
 	await page.goto(base + '/calibration/extrusion');
 	await page.getByText('Printer idle', { exact: true }).waitFor();
 	assert.equal(await page.title(), 'Filament & extrusion · Perilune');

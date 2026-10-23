@@ -1427,7 +1427,8 @@ export const LiveActionServiceLive = Layer.effect(
 								yield* store.setStatus(
 									id,
 									'unknown',
-									'Owner reviewed the printer and cleared the recovery lock. The previous action was not replayed.'
+									'Owner reviewed the printer and cleared the recovery lock. The previous action was not replayed.',
+									Date.now()
 								);
 								yield* sql`DELETE FROM live_action_reservation WHERE target=${target} AND action_id=${id}`;
 							})
@@ -1441,6 +1442,7 @@ export const LiveActionServiceLive = Layer.effect(
 									? {
 											...a,
 											status: 'unknown',
+											reviewedAt: Date.now(),
 											message:
 												'Owner reviewed the printer and cleared recovery. No command was replayed.'
 										}
