@@ -118,6 +118,14 @@ async function fixture(handler?: (op: MeshOperation) => Promise<void>, filename 
 										]
 									}
 								};
+							if (operation.type === 'remove')
+								return {
+									...s,
+									bedMesh: {
+										...s.bedMesh,
+										profiles: s.bedMesh.profiles.filter((p) => p.name !== operation.name)
+									}
+								};
 							if (operation.type === 'restore')
 								return { ...s, bedMesh: { ...s.bedMesh, active: mesh, profiles: [mesh] } };
 							if (operation.type === 'keep')
@@ -149,17 +157,25 @@ async function fixture(handler?: (op: MeshOperation) => Promise<void>, filename 
 		transport
 	);
 	const core = MoonrakerBridgeLive.pipe(Layer.provideMerge(services));
-	const checks = { reject: false, slow: false };
+	const checks = {
+		reject: false,
+		slow: false,
+		resolution: 'saved' as 'saved' | 'discarded',
+		finishes: 0
+	};
 	const evidence = Layer.succeed(MeshPersistence, {
 		capture: () => Effect.void,
+		prepareName: () => Effect.void,
 		prepareRemoval: () => Effect.void,
 		check: () =>
 			checks.reject
 				? Effect.fail(new MeshPersistenceError({ message: 'Unrelated pending settings appeared.' }))
 				: Effect.void,
-		reconcile: () => Effect.succeed('saved' as const),
+		reconcile: () => Effect.succeed(checks.resolution),
 		finish: (_id, _actor, _candidate, _names, discard) =>
 			Effect.sync(() => {
+				checks.finishes++;
+				if (discard) checks.resolution = 'discarded';
 				if (discard && checks.slow) {
 					const now = Date.now();
 					vi.spyOn(Date, 'now').mockImplementation(() => now + 40000);
@@ -695,7 +711,7 @@ it('journals an intended copy before dispatch and retains it after lost acknowle
 		command: {
 			...base.command,
 			usual: true,
-			expectedTarget: JSON.stringify((await f.snapshot()).bedMesh.profiles[0])
+			newProfile: true
 		}
 	};
 	await f.submit(request);
@@ -719,4 +735,74 @@ it('journals an intended copy before dispatch and retains it after lost acknowle
 	});
 	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('cancelled');
 	expect(f.operations.filter((op) => op.type === 'copy')).toHaveLength(1);
+});
+
+it('new save as preserves existing profiles and removes its private runtime profile exactly once', async () => {
+	const f = await fixture();
+	const before = (await f.snapshot()).bedMesh.profiles;
+	const base = f.begin();
+	await f.submit({ ...base, command: { ...base.command, usual: true, newProfile: true } });
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('review');
+	await f.submit({
+		id: crypto.randomUUID(),
+		command: { type: 'meshProbeFinish', probeId: base.id, outcome: 'save', name: 'fresh' }
+	});
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('saved');
+	expect((await f.snapshot()).bedMesh.profiles.filter((p) => p.name !== 'fresh')).toEqual(before);
+	expect(f.operations.filter((o) => o.type === 'copy')).toEqual([{ type: 'copy', name: 'fresh' }]);
+	expect(f.operations.filter((o) => o.type === 'remove')).toHaveLength(1);
+});
+it('replacement rejects save-as without dispatching a copy', async () => {
+	const f = await fixture();
+	const base = f.begin();
+	await f.submit({
+		...base,
+		command: {
+			...base.command,
+			usual: true,
+			expectedTarget: JSON.stringify((await f.snapshot()).bedMesh.profiles[0])
+		}
+	});
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('review');
+	await expect(
+		f.submit({
+			id: crypto.randomUUID(),
+			command: { type: 'meshProbeFinish', probeId: base.id, outcome: 'save', name: 'fresh' }
+		})
+	).rejects.toThrow(/existing name/);
+	expect(f.operations.filter((o) => o.type === 'copy')).toHaveLength(0);
+});
+
+it('lost discard activation stays unresolved until explicit restoration, without repeating restart', async () => {
+	let lose = true;
+	const f = await fixture(async (op) => {
+		if (op.type === 'load' && lose) {
+			lose = false;
+			throw new MoonrakerCommandError({ sent: true });
+		}
+	});
+	const base = f.begin();
+	await f.submit({ ...base, command: { ...base.command, usual: true, newProfile: true } });
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('review');
+	await f.submit({
+		id: crypto.randomUUID(),
+		command: { type: 'meshProbeCancel', probeId: base.id, confirmed: true }
+	});
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('uncertain');
+	expect(f.checks.finishes).toBe(1);
+	await f.submit({
+		id: crypto.randomUUID(),
+		command: { type: 'meshProbeReconcile', probeId: base.id, confirmed: true }
+	});
+	await expect.poll(async () => (await f.snapshot()).actions[0]?.status).toBe('failed');
+	expect((await f.snapshot()).meshProbe.session?.stage).toBe('uncertain');
+	expect((await f.snapshot()).meshProbe.session?.message).toContain('restoration');
+	await f.submit({
+		id: crypto.randomUUID(),
+		command: { type: 'meshProbeCancel', probeId: base.id, confirmed: true }
+	});
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('cancelled');
+	expect(f.checks.finishes).toBe(1);
+	expect((await f.snapshot()).bedMesh.active?.name).toBe('default');
+	expect(f.operations.filter((op) => op.type === 'load')).toHaveLength(2);
 });

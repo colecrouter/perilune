@@ -28,6 +28,7 @@ interface Evidence {
 	savedNames?: string[];
 	removedNames?: string[];
 	uploaded?: boolean;
+	ephemeralName?: string;
 }
 /** Private source evidence stays in SQLite, never in the dashboard/workflow snapshot. */
 export class MeshPersistence extends Context.Service<
@@ -37,6 +38,11 @@ export class MeshPersistence extends Context.Service<
 			id: string,
 			actor: ConfigActor
 		) => Effect.Effect<'saved' | 'discarded', MeshPersistenceError>;
+		prepareName: (
+			id: string,
+			actor: ConfigActor,
+			name: string
+		) => Effect.Effect<void, MeshPersistenceError>;
 		prepareRemoval: (
 			id: string,
 			actor: ConfigActor,
@@ -55,7 +61,7 @@ export class MeshPersistence extends Context.Service<
 			candidate: BedMesh,
 			names: string[],
 			removed?: string[],
-			allowMissingCopy?: boolean
+			allowMissingCopy?: boolean | 'all'
 		) => Effect.Effect<void, MeshPersistenceError>;
 		finish: (
 			id: string,
@@ -255,6 +261,31 @@ export const MeshPersistenceLive = Layer.effect(
 			const doc = await Effect.runPromise(files.read(sources.root, actor));
 			return { sources, text: doc.text };
 		};
+		const assertNameAbsent = async (
+			sources: ConfigSources,
+			rootText: string,
+			config: Record<string, unknown>,
+			actor: ConfigActor,
+			name: string
+		) => {
+			const section = 'bed_mesh ' + name.toLowerCase();
+			if (
+				Object.keys(config).some((s) => s.toLowerCase() === section) ||
+				sources.definitions.some((d) => d.section.toLowerCase() === section)
+			)
+				throw Error('That mesh name is already defined in saved configuration.');
+			for (const dependency of sources.dependencies) {
+				const text =
+					dependency.path === sources.root
+						? rootText
+						: (await Effect.runPromise(files.read(dependency.path, actor))).text;
+				for (const line of text.replace(/\r\n/g, '\n').split('\n')) {
+					const header = /^(?:#\*# ?)?\s*\[([^\]]+)\]/.exec(line);
+					if (header?.[1]?.trim().toLowerCase() === section)
+						throw Error('That mesh name is already present in a configuration source.');
+				}
+			}
+		};
 		const check = async (
 			id: string,
 			actor: ConfigActor,
@@ -262,7 +293,7 @@ export const MeshPersistenceLive = Layer.effect(
 			names: string[],
 			signal: AbortSignal,
 			removed: string[] = [],
-			allowMissingCopy = false
+			allowMissingCopy: boolean | 'all' = false
 		) => {
 			const before = await read(id),
 				current = await source(actor),
@@ -273,19 +304,30 @@ export const MeshPersistenceLive = Layer.effect(
 				canonical(config.config) !== canonical(before.config)
 			)
 				throw Error('Saved configuration changed during the workflow. Review it before recovery.');
-			const manifest = removed.length
-				? {}
-				: meshPending(
-						config.save_config_pending_items,
-						candidate,
-						allowMissingCopy
-							? names.filter(
-									(n, i) =>
-										i === 0 ||
-										Object.hasOwn(object(config.save_config_pending_items), 'bed_mesh ' + n)
-								)
-							: names
-					);
+			if (
+				!config.save_config_pending_items ||
+				typeof config.save_config_pending_items !== 'object' ||
+				Array.isArray(config.save_config_pending_items) ||
+				typeof config.save_config_pending !== 'boolean'
+			)
+				throw Error('Pending configuration details are unavailable.');
+			const pending = { ...object(config.save_config_pending_items) };
+			if (before.ephemeralName && pending['bed_mesh ' + before.ephemeralName] === null)
+				delete pending['bed_mesh ' + before.ephemeralName];
+			if (allowMissingCopy === 'all' && !before.ephemeralName)
+				throw Error('Optional original entries require an evidence-backed new mesh.');
+			const selectedNames = allowMissingCopy
+				? names.filter(
+						(n, i) =>
+							(i === 0 && allowMissingCopy !== 'all') || Object.hasOwn(pending, 'bed_mesh ' + n)
+					)
+				: names;
+			const emptyDiscard =
+				allowMissingCopy === 'all' &&
+				Object.keys(pending).length === 0 &&
+				selectedNames.length === 0;
+			const manifest =
+				removed.length || emptyDiscard ? {} : meshPending(pending, candidate, selectedNames);
 			if (
 				removed.length &&
 				(canonical(Object.keys(object(config.save_config_pending_items)).sort()) !==
@@ -362,6 +404,28 @@ export const MeshPersistenceLive = Layer.effect(
 					},
 					catch: failure
 				}),
+			prepareName: (id, actor, name) =>
+				Effect.tryPromise({
+					try: async (signal) => {
+						const before = await read(id),
+							current = await source(actor),
+							config = await idle(signal);
+						if (
+							current.sources.fingerprint !== before.sources.fingerprint ||
+							current.text !== before.text ||
+							canonical(config.config) !== canonical(before.config)
+						)
+							throw Error('Saved configuration changed during calibration.');
+						await assertNameAbsent(
+							current.sources,
+							current.text,
+							object(config.config),
+							actor,
+							name
+						);
+					},
+					catch: failure
+				}),
 			prepareRemoval: (id, actor, name) =>
 				Effect.tryPromise({
 					try: async () => {
@@ -407,6 +471,14 @@ export const MeshPersistenceLive = Layer.effect(
 							throw Error(
 								'The active mesh is not durably saved. Save or clear it before calibration.'
 							);
+						if (targetName?.startsWith('perilune_') && !target)
+							await assertNameAbsent(
+								sources.sources,
+								sources.text,
+								object(config.config),
+								actor,
+								targetName
+							);
 						if (targetName) {
 							const saved = savedMesh(object(config.config), targetName);
 							if (target ? !sameMesh(target, saved) : saved !== null)
@@ -418,7 +490,7 @@ export const MeshPersistenceLive = Layer.effect(
 							sql`DELETE FROM mesh_evidence WHERE id NOT IN (SELECT id FROM mesh_evidence ORDER BY rowid DESC LIMIT 19)`
 						);
 						await Effect.runPromise(
-							sql`INSERT INTO mesh_evidence(id,value) VALUES(${id},${JSON.stringify({ target: targetKey, ...sources, config: object(config.config) })})`
+							sql`INSERT INTO mesh_evidence(id,value) VALUES(${id},${JSON.stringify({ target: targetKey, ...sources, config: object(config.config), ...(targetName?.startsWith('perilune_') && !target ? { ephemeralName: targetName } : {}) })})`
 						);
 					},
 					catch: failure
@@ -440,7 +512,7 @@ export const MeshPersistenceLive = Layer.effect(
 							names,
 							signal,
 							removed,
-							discard
+							discard && (await read(id)).ephemeralName ? 'all' : discard
 						);
 						const removedSections = removed?.map((n) => 'bed_mesh ' + n) ?? [];
 						const removal =
@@ -459,7 +531,10 @@ export const MeshPersistenceLive = Layer.effect(
 						before.discard = discard;
 						before.candidate = candidate;
 						before.savedNames = names;
-						before.removedNames = removed ?? [];
+						before.removedNames = [
+							...(removed ?? []),
+							...(before.ephemeralName && !discard ? [before.ephemeralName] : [])
+						];
 						await Effect.runPromise(
 							sql`UPDATE mesh_evidence SET value=${JSON.stringify(before)} WHERE id=${id}`
 						);
@@ -558,7 +633,7 @@ export const MeshPersistenceLive = Layer.effect(
 										)
 								)
 									throw Error('Loaded configuration differs from the reviewed removal.');
-								if (removed?.some((n) => object(config.config)['bed_mesh ' + n]))
+								if (before.removedNames?.some((n) => object(config.config)['bed_mesh ' + n]))
 									throw Error('Deleted mesh is still present after restart.');
 								if (
 									!discard &&

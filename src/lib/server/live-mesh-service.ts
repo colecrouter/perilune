@@ -55,7 +55,7 @@ export const LiveMeshServiceLive = Layer.effect(
 		});
 		const evidenceError = (e: Error) => new ActionRejected({ message: e.message });
 		const targetName = (session: NonNullable<MeshProbeState['session']>) =>
-			session.usual ? (session.target ?? 'default') : runName(session.id);
+			session.usual && !session.newProfile ? (session.target ?? 'default') : runName(session.id);
 		const lock = printerAdmission(printer.state);
 		const interlock = printerInterlock(printer.state);
 		const write = (mesh: MeshProbeState) =>
@@ -218,6 +218,17 @@ export const LiveMeshServiceLive = Layer.effect(
 							const resolution = yield* persistence
 								.reconcile(session.id, configActor(actor))
 								.pipe(Effect.mapError(evidenceError));
+							if (
+								session.newProfile &&
+								session.discardStarted &&
+								resolution === 'discarded' &&
+								(session.previousMesh
+									? !sameMesh(fresh.bedMesh.active, session.previousMesh)
+									: fresh.bedMesh.active !== null)
+							)
+								return yield* fail(
+									'Saved configuration is restored, but previous compensation still needs restoration. Choose Restore previous compensation; no command was replayed.'
+								);
 							message =
 								resolution === 'saved'
 									? 'Saved outcome verified through read-only reconciliation.'
@@ -308,7 +319,8 @@ export const LiveMeshServiceLive = Layer.effect(
 						});
 						if (
 							capacityReason ||
-							(!session.usual && fresh.bedMesh.profiles.some((p) => p.name === targetName(session)))
+							((!session.usual || session.newProfile) &&
+								fresh.bedMesh.profiles.some((p) => p.name === targetName(session)))
 						)
 							return yield* fail(
 								capacityReason ?? 'This internal profile name already exists. Start a new run.'
@@ -363,7 +375,7 @@ export const LiveMeshServiceLive = Layer.effect(
 							);
 						if (
 							afterHome.bedMesh.omittedProfiles > 0 ||
-							(!session.usual &&
+							((!session.usual || session.newProfile) &&
 								afterHome.bedMesh.profiles.some((p) => p.name === targetName(session)))
 						)
 							return yield* fail(
@@ -452,32 +464,48 @@ export const LiveMeshServiceLive = Layer.effect(
 								return yield* fail(
 									'Recovery needs the recorded candidate. Review pending configuration manually; no restart was sent.'
 								);
-							yield* persistence
-								.check(
-									session.id,
-									configActor(actor),
-									session.result,
-									[targetName(session), ...(session.copyName ? [session.copyName] : [])],
-									undefined,
-									true
-								)
-								.pipe(Effect.mapError(evidenceError));
-							sent = true;
-							yield* persistence
-								.finish(
-									session.id,
-									configActor(actor),
-									session.result,
-									[targetName(session), ...(session.copyName ? [session.copyName] : [])],
-									true,
-									() =>
-										interlock.allows(job.epoch) &&
-										authorized(actor) &&
-										Date.now() - action.createdAt < 30000
-								)
-								.pipe(Effect.mapError(evidenceError));
+							let restoreOnly = false;
+							if (session.newProfile) {
+								const resolution = yield* persistence
+									.reconcile(session.id, configActor(actor))
+									.pipe(Effect.result);
+								restoreOnly = resolution._tag === 'Success' && resolution.success === 'discarded';
+							}
+							if (!restoreOnly) {
+								yield* persistence
+									.check(
+										session.id,
+										configActor(actor),
+										session.result,
+										[targetName(session), ...(session.copyName ? [session.copyName] : [])],
+										undefined,
+										session.newProfile ? 'all' : true
+									)
+									.pipe(Effect.mapError(evidenceError));
+								const discarding = {
+									...snapshot.meshProbe,
+									session: { ...session, discardStarted: true }
+								};
+								yield* write(discarding);
+								yield* update((s) => ({ ...s, meshProbe: discarding }));
+								sent = true;
+								yield* persistence
+									.finish(
+										session.id,
+										configActor(actor),
+										session.result,
+										[targetName(session), ...(session.copyName ? [session.copyName] : [])],
+										true,
+										() =>
+											interlock.allows(job.epoch) &&
+											authorized(actor) &&
+											Date.now() - action.createdAt < 30000
+									)
+									.pipe(Effect.mapError(evidenceError));
+							}
 							const restorationDeadline = Date.now() + 30000;
 							const resumed = yield* SubscriptionRef.get(transport.state);
+							sent = true;
 							yield* transport
 								.command(
 									{ type: 'load', name: session.previousProfile ?? null },
@@ -566,12 +594,19 @@ export const LiveMeshServiceLive = Layer.effect(
 						return yield* fail('The active mesh changed outside this workflow.');
 					if (session.usual) {
 						if (command.outcome !== 'save' || !persistence || !session.result)
-							return yield* fail('Accept and save the usual mesh, or discard it.');
+							return yield* fail('Save the reviewed mesh, or discard it.');
+						if (!session.newProfile && command.name !== undefined)
+							return yield* fail('Replacement keeps its existing name.');
+						if (session.newProfile && !command.name)
+							return yield* fail('Choose a unique name for the new mesh.');
 						yield* persistence
 							.check(session.id, configActor(actor), session.result, [targetName(session)])
 							.pipe(Effect.mapError(evidenceError));
 						const names = [targetName(session)];
-						if (command.name) {
+						if (session.newProfile && command.name) {
+							yield* persistence
+								.prepareName(session.id, configActor(actor), command.name)
+								.pipe(Effect.mapError(evidenceError));
 							if (
 								fresh.bedMesh.profiles.some(
 									(p) => p.name.toLowerCase() === command.name!.toLowerCase()
@@ -585,7 +620,18 @@ export const LiveMeshServiceLive = Layer.effect(
 							yield* write(staged);
 							yield* update((s) => ({ ...s, meshProbe: staged }));
 							yield* dispatch({ type: 'copy', name: command.name });
-							names.push(command.name);
+							yield* dispatch({ type: 'remove', name: targetName(session) });
+							const removed = yield* transport
+								.refresh(generation)
+								.pipe(
+									Effect.mapError(
+										() =>
+											new ActionRejected({ message: 'Could not verify temporary profile cleanup.' })
+									)
+								);
+							if (removed.bedMesh.profiles.some((p) => p.name === targetName(session)))
+								return yield* fail('Temporary profile remains. No configuration save was sent.');
+							names.splice(0, names.length, command.name);
 						}
 						// Persist the candidate before the single restart boundary, retaining evidence on failure.
 						yield* write({
@@ -611,8 +657,9 @@ export const LiveMeshServiceLive = Layer.effect(
 							session: {
 								...session,
 								stage: 'saved' as const,
-								message:
-									'Usual mesh saved and verified after restart. Print startup must load the usual mesh, unless it calibrates a fresh mesh.'
+								message: session.newProfile
+									? `Saved ${command.name} and verified after restart. Existing saved meshes are unchanged.`
+									: 'Replacement saved and verified after restart. Existing print-start configuration is unchanged.'
 							}
 						};
 					}
@@ -930,7 +977,17 @@ export const LiveMeshServiceLive = Layer.effect(
 									'An owner and no pending configuration changes are required for usual-mesh calibration.'
 								);
 							if (
+								command.newProfile &&
+								(!command.usual ||
+									command.target !== undefined ||
+									command.expectedTarget !== undefined)
+							)
+								return yield* reject(
+									'New calibration has no replacement target and requires owner-managed persistence.'
+								);
+							if (
 								command.usual &&
+								!command.newProfile &&
 								((command.target && !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$/.test(command.target)) ||
 									command.expectedTarget !==
 										JSON.stringify(
@@ -965,11 +1022,13 @@ export const LiveMeshServiceLive = Layer.effect(
 									stage: 'probing',
 									live: true,
 									usual: command.usual,
+									newProfile: command.newProfile,
 									target: command.target,
-									previousTarget:
-										snapshot.bedMesh.profiles.find(
-											(p) => p.name === (command.target ?? 'default')
-										) ?? null,
+									previousTarget: command.newProfile
+										? null
+										: (snapshot.bedMesh.profiles.find(
+												(p) => p.name === (command.target ?? 'default')
+											) ?? null),
 									plan: snapshot.liveMesh.plan!,
 									previousProfile: previous?.name ?? null,
 									previousMesh: previous,
@@ -1004,6 +1063,15 @@ export const LiveMeshServiceLive = Layer.effect(
 									session.expiresAt <= Date.now()
 								)
 									return yield* reject('The mesh result is unavailable or its review expired.');
+								if (
+									command.outcome === 'save' &&
+									session.usual &&
+									!session.newProfile &&
+									command.name !== undefined
+								)
+									return yield* reject('Replacement keeps its existing name.');
+								if (command.outcome === 'save' && session.newProfile && !command.name)
+									return yield* reject('Choose a name for the new mesh.');
 								if (command.outcome === 'save' && !canSaveProfile(snapshot.bedMesh))
 									return yield* reject(
 										'The full profile list could not be verified. No profile can be safely saved.'
@@ -1013,8 +1081,8 @@ export const LiveMeshServiceLive = Layer.effect(
 									(!(command.name || session.usual) ||
 										(command.name !== undefined &&
 											!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$/.test(command.name)) ||
-										command.name === 'default' ||
-										command.name?.startsWith('perilune_') ||
+										command.name?.toLowerCase() === 'default' ||
+										command.name?.toLowerCase().startsWith('perilune_') ||
 										(command.name !== undefined &&
 											snapshot.bedMesh.profiles.some(
 												(p) => p.name.toLowerCase() === command.name!.toLowerCase()
