@@ -1563,3 +1563,32 @@ Session-local serialized editor history survives file and guided/raw switches
 with fresh callbacks and permissions, explicit reset semantics and memory-limit
 feedback. See [configuration intelligence](configuration-intelligence.md) for
 usage, parser provenance, generation, limits and verification boundaries.
+
+### Account-owned Overview layouts
+
+Issue #79 adds Balanced, Camera focus and Compact starting layouts. A keyboard-
+and touch-accessible Customize dialog stages panel order/visibility, with explicit
+Save, Cancel and reset. The existing authenticated preference remote command
+persists a validated, bounded layout per account; old or malformed stored layouts
+fall back to Balanced. There is no new frontend fetch or schema migration.
+
+Current job/actions, connection/recovery notices and compact readings for every
+heater remain outside optional panels. The logical panel order is also the DOM
+and mobile order; phones use one column without a separate layout. Hidden or
+reordered temperature controls stay mounted, retaining unsent heater targets.
+The mandatory readings can temporarily reveal those controls without altering the
+saved layout. Hidden camera panels unmount to release playback. No layout action
+submits a printer command.
+
+Explicit layout saves use a serialized, non-optimistic preference commit. Failed
+commits neither publish an attempted layout nor leave a queued retry that Cancel
+could accidentally save later. Ordinary preference writes wait behind confirmed
+commits and preserve subsequent local patches. Account changes invalidate results.
+Saved changes appear on other devices on their next document load, rather than
+rearranging a dashboard during use.
+
+Issue #66 replaces the combined history's sensor dropdown with compact labelled
+rows showing actual/target readings or explicit unavailability. Row buttons focus
+a sensor, All sensors restores combined history, and accessible names include
+readings. Additional heater controls remain read-only. Existing keyboard sample
+inspection, time-window preferences, reconnect history and plotting gaps remain.

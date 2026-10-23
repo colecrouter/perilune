@@ -52,6 +52,39 @@ export function createPreferences(owner: string | null, initial: Preferences = d
 		}
 	}
 	return {
+		async commit(patch: PreferencePatch) {
+			// Explicit Save is transactional in the UI: no optimistic change or queued
+			// retry survives failure/Cancel. Ordinary preference writes wait behind it.
+			const epoch = generation;
+			while (inFlight) await inFlight;
+			if (epoch !== generation) throw Error('Your account changed. Reopen layout settings.');
+			if (!account || stopped || error || Object.keys(queued).length)
+				throw Error(error || 'Could not save preferences. Try again.');
+			const checked = preferencePatch(patch);
+			saving = true;
+			const operation = (async () => {
+				const result = await savePreferences(checked);
+				if (epoch !== generation || stopped)
+					throw Error('Your account changed. Reopen layout settings.');
+				values = { ...defaultPreferences, ...result.preferences, ...queued };
+			})();
+			const settled = operation
+				.then(
+					() => {},
+					() => {}
+				)
+				.finally(() => {
+					if (inFlight !== settled) return;
+					inFlight = undefined;
+					if (epoch === generation && !stopped) {
+						saving = false;
+						if (Object.keys(queued).length) start();
+					}
+				});
+			inFlight = settled;
+			await operation;
+			await settled;
+		},
 		async settle() {
 			while (inFlight) await inFlight;
 			return !error && !Object.keys(queued).length;

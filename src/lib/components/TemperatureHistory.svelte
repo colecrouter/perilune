@@ -21,13 +21,15 @@
 		sensors,
 		connected = true,
 		unavailable = false,
-		combined = false
+		combined = false,
+		standalone = false
 	}: {
 		samples: TemperatureSample[];
 		sensors: TemperatureSensor[];
 		connected?: boolean;
 		unavailable?: boolean;
 		combined?: boolean;
+		standalone?: boolean;
 	} = $props();
 	type Point = {
 		at: Date;
@@ -139,7 +141,7 @@
 		value === null || value === undefined ? 'Unavailable' : `${value.toFixed(1)}°C`;
 </script>
 
-<section class="thermal-history" aria-label="Temperature history">
+<section class="thermal-history" class:standalone aria-label="Temperature history">
 	<div class="history-heading">
 		<h3>Temperature history</h3>
 		<span class="history-status"
@@ -151,19 +153,20 @@
 		>
 	</div>
 	<div class="history-options">
-		<label
-			>Sensor<select
-				value={all ? '*' : (sensor?.id ?? '')}
-				onchange={(event) => {
-					selected = event.currentTarget.value;
-					inspectedAt = null;
-					pinned = false;
-				}}
-				>{#if combined}<option value="*">All sensors</option>{/if}{#each sensors as item}<option
-						value={item.id}>{item.label}</option
-					>{/each}</select
-			></label
-		>
+		{#if !combined}
+			<label
+				>Sensor<select
+					value={all ? '*' : (sensor?.id ?? '')}
+					onchange={(event) => {
+						selected = event.currentTarget.value;
+						inspectedAt = null;
+						pinned = false;
+					}}
+					>{#if combined}<option value="*">All sensors</option>{/if}{#each sensors as item}<option
+							value={item.id}>{item.label}</option
+						>{/each}</select
+				></label
+			>{/if}
 		<label
 			>Window<select
 				bind:value={minutes}
@@ -185,7 +188,35 @@
 				>┄ Target</span
 			>{/if}<span>°C</span>
 	</p>
-	{#if all}<div class="sensor-key">
+	{#if combined}<div class="sensor-readings" aria-label="Temperature sensors">
+			<button
+				class="sensor-all"
+				aria-pressed={all}
+				onclick={() => {
+					selected = '*';
+					inspectedAt = null;
+					pinned = false;
+				}}>All sensors</button
+			>
+			<div class="sensor-heading" aria-hidden="true">
+				<span>Sensor</span><span>Actual</span><span>Target</span>
+			</div>
+			{#each sensors as item, i}<button
+					class="sensor-row"
+					aria-pressed={selected === item.id}
+					aria-label={`Focus ${item.label} history. Actual ${connected ? reading(item.current) : 'Unavailable'}. ${item.heater ? `Target ${connected ? reading(item.target) : 'Unavailable'}.` : 'Read-only sensor.'}`}
+					onclick={() => {
+						selected = item.id;
+						inspectedAt = null;
+						pinned = false;
+					}}
+					><span><i style:background={color(i)}></i>{item.label}</span><strong
+						>{connected ? reading(item.current) : 'Unavailable'}</strong
+					><span
+						>{item.heater ? (connected ? reading(item.target) : 'Unavailable') : 'Read-only'}</span
+					></button
+				>{/each}
+		</div>{:else if all}<div class="sensor-key">
 			{#each sensors as item, i}<span style:--sensor-color={color(i)}>{item.label}</span>{/each}
 		</div>{/if}
 	{#if sensor && points.length > 1 && values.length}
@@ -364,6 +395,68 @@
 </section>
 
 <style>
+	.sensor-readings {
+		margin: 0.75rem 0 1rem;
+	}
+	.sensor-all {
+		border: 1px solid var(--border);
+		background: var(--surface);
+		color: var(--text);
+		border-radius: 6px;
+		padding: 0.5rem 0.75rem;
+		font: inherit;
+		font-size: 0.8rem;
+		margin-bottom: 0.5rem;
+		cursor: pointer;
+	}
+	.sensor-heading,
+	.sensor-row {
+		display: grid;
+		grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+		gap: 0.5rem;
+		width: 100%;
+		text-align: left;
+		align-items: center;
+	}
+	.sensor-heading {
+		padding: 0.35rem 0.5rem;
+		font-size: 0.75rem;
+		color: var(--muted);
+	}
+	.sensor-row {
+		border: 0;
+		border-top: 1px solid var(--border);
+		background: transparent;
+		color: var(--text);
+		padding: 0.65rem 0.5rem;
+		font: inherit;
+		font-size: 0.8rem;
+		cursor: pointer;
+		min-height: 44px;
+		font-variant-numeric: tabular-nums;
+	}
+	.sensor-row span,
+	.sensor-row strong {
+		overflow-wrap: anywhere;
+	}
+	.sensor-row i {
+		display: inline-block;
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		margin-right: 0.4rem;
+	}
+	.sensor-row[aria-pressed='true'],
+	.sensor-all[aria-pressed='true'] {
+		background: var(--highlight);
+		color: var(--highlight-text);
+	}
+	.sensor-row:focus-visible,
+	.sensor-all:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
 	.sensor-key {
 		display: flex;
 		flex-wrap: wrap;
@@ -386,6 +479,15 @@
 		margin-top: 1.25rem;
 		padding-top: 1rem;
 		min-width: 0;
+	}
+	.standalone {
+		border-top: 0;
+		margin-top: 0;
+		padding-top: 0;
+	}
+	.standalone h3 {
+		font-size: 1.5rem;
+		font-family: 'Newsreader Variable', Georgia, serif;
 	}
 	.history-heading {
 		display: flex;

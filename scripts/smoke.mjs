@@ -296,6 +296,60 @@ try {
 	);
 	await first.setViewportSize({ width: 1505, height: 1045 });
 
+	// Layout changes preserve mounted heater inputs and apply only after Save.
+	const targetDraft = first.getByRole('spinbutton', { name: 'Nozzle target', exact: true });
+	await targetDraft.fill('185');
+	await first.getByRole('button', { name: 'Customize', exact: true }).click();
+	let customize = first.getByRole('dialog', { name: 'Customize Overview' });
+	await customize.getByRole('button', { name: 'Compact', exact: true }).click();
+	await customize.getByRole('button', { name: 'Cancel', exact: true }).click();
+	assert.equal(await first.locator('[data-overview-panel="camera"]').isVisible(), true);
+	await first.getByRole('button', { name: 'Customize', exact: true }).click();
+	await customize.getByRole('button', { name: 'Compact', exact: true }).click();
+	await customize.getByRole('button', { name: 'Move Temperature controls & sensors up' }).click();
+	await customize
+		.getByRole('checkbox', { name: 'Temperature controls & sensors', exact: true })
+		.uncheck();
+	await customize.getByRole('button', { name: 'Save layout', exact: true }).click();
+	await customize.waitFor({ state: 'hidden' });
+	assert.equal(await first.locator('[data-overview-panel="camera"]').isVisible(), false);
+	assert.equal(await first.locator('[data-overview-panel="temperature"]').isVisible(), false);
+	assert.equal(await first.locator('[data-overview-panel="history"]').isVisible(), false);
+	await first.locator('.thermal-glance a').first().click();
+	assert.equal(
+		await targetDraft.inputValue(),
+		'185',
+		'Hidden/reordered heater retains unsent target'
+	);
+	await second.reload();
+	await second.getByRole('button', { name: 'Customize', exact: true }).waitFor();
+	assert.equal(
+		await second.locator('[data-overview-panel="camera"]').isVisible(),
+		false,
+		'Account layout survives a full document load'
+	);
+	await first.getByRole('button', { name: 'Customize', exact: true }).click();
+	await customize.getByRole('button', { name: 'Camera focus', exact: true }).click();
+	await customize.getByRole('button', { name: 'Save layout', exact: true }).click();
+	await customize.waitFor({ state: 'hidden' });
+	await first.screenshot({ path: 'test-results/overview-camera-focus.png', fullPage: true });
+	await first.setViewportSize({ width: 320, height: 844 });
+	// Chart dimensions update through ResizeObserver after the viewport changes.
+	await first.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
+	await first.getByRole('button', { name: 'Customize', exact: true }).click();
+	assert.equal(
+		await first.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+		false,
+		'Customizer fits 320px'
+	);
+	await first.screenshot({ path: 'test-results/overview-customize-mobile.png', fullPage: true });
+	await customize.getByRole('button', { name: 'Reset to default', exact: true }).click();
+	await customize.getByRole('button', { name: 'Save layout', exact: true }).click();
+	await customize.waitFor({ state: 'hidden' });
+	assert.equal(await targetDraft.inputValue(), '185');
+	await first.setViewportSize({ width: 1505, height: 1045 });
+	await second.reload();
+
 	await first.getByRole('link', { name: 'Controls', exact: true }).click();
 	await first.getByRole('heading', { name: 'Printer controls', exact: true }).waitFor();
 	assert.equal(await first.locator('link[rel="icon"]').count(), 1);

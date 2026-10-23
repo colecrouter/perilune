@@ -4,8 +4,11 @@
 </script>
 
 <script lang="ts">
+	import OverviewCustomizer from '#lib/components/OverviewCustomizer.svelte';
+	import { preferencesContext } from '#lib/client/preferences.svelte.js';
+	import { overviewLayout, type OverviewLayout } from '#lib/domain/overview-layout.js';
 	import { printerLockNotices, canReviewPrinterLock } from '#lib/domain/printer-locks.js';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { liveConnection } from '#lib/client/live-connection.svelte.js';
 	import ActionForm from '#lib/components/ActionForm.svelte';
 	import AppShell from '#lib/components/AppShell.svelte';
@@ -39,6 +42,14 @@
 	} from './printer.remote.js';
 
 	let { data } = $props();
+	let revealedTemperature = $state(false);
+	const preferences = preferencesContext();
+	const layout = $derived(overviewLayout(preferences?.values.overviewLayout));
+	async function saveLayout(value: OverviewLayout) {
+		if (!preferences) throw Error('Sign in again to save your layout.');
+		await preferences.commit({ overviewLayout: value });
+		revealedTemperature = false;
+	}
 	const dashboard = getDashboard();
 	const temperatureHistory = getTemperatureHistory();
 	const initial = $derived(data.initial!);
@@ -157,6 +168,7 @@
 				<h1>Overview</h1>
 			</div>
 			<div class="header-tools">
+				<OverviewCustomizer value={layout} onSave={saveLayout} />
 				<span class="connection-status"
 					><span class="status-dot" class:offline={!connected || !transportConnected}
 					></span>{!transportConnected
@@ -225,8 +237,15 @@
 			</div>{/if}
 		{#if errorMessage}<p class="error-text" role="alert">{errorMessage}</p>{/if}
 		<div class="thermal-glance" aria-label="Temperature summary">
-			{#each sensors.filter((sensor) => ['extruder', 'heater_bed'].includes(sensor.id)) as sensor}
-				<a href="#temperature-controls"
+			{#each sensors.filter((sensor) => sensor.heater) as sensor}
+				<a
+					href="#temperature-controls"
+					onclick={async (event) => {
+						event.preventDefault();
+						revealedTemperature = true;
+						await tick();
+						document.getElementById('temperature-controls')?.focus();
+					}}
 					><span>{sensor.label}</span><strong
 						>{sensor.current === null ? 'Unknown' : `${Math.round(sensor.current)}°C`}</strong
 					><small
@@ -237,129 +256,159 @@
 				>
 			{/each}
 		</div>
-		<div class="dashboard-grid">
-			<div class="primary-column">
-				<CurrentJob
-					{snapshot}
-					available={transportConnected}
-					operator={data.user?.role !== 'viewer'}
-					onStop={() => {
-						stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
-						cancelOpen = true;
-					}}
-				/>
-				<CameraPanel camera={cameraSnapshot} />
-			</div>
-			<div class="secondary-column">
-				<section class="panel temperature-panel" id="temperature-controls" tabindex="-1">
-					<div class="section-header">
-						<h2>Temperature</h2>
-						<ActionForm receipts={snapshot.actions} fields={{ intent: 'cooldown' }}
-							>{#snippet children({ pending, uncertain })}<button
-									class="button secondary"
-									disabled={busy ||
-										readOnly ||
-										!!thermalReason ||
-										alreadyOff ||
-										pending ||
-										uncertain}>Cool down nozzle &amp; bed</button
-								>{/snippet}</ActionForm
-						>
-					</div>
-					{#if thermalReason}<p class="muted">
-							{thermalReason}
-							{#if readOnly && controlLock && canReviewPrinterLock(controlLock, data.user?.role)}<a
-									href={controlLock.href}>{controlLock.label} →</a
-								>{/if}
-						</p>{/if}
-					{#if alreadyOff}<p class="muted">
-							Both heater targets are already off. The heaters may still be cooling.
-						</p>{/if}
-					{#if sensors.some((sensor) => sensor.id === 'extruder')}<HeaterControl
-							receipts={snapshot.actions}
-							heater="nozzle"
-							progressive
-							current={snapshot.heaters.nozzle.current}
-							target={snapshot.heaters.nozzle.target}
-							{readOnly}
-							available={thermalReady &&
-								snapshot.heaters.nozzle.current !== null &&
-								snapshot.heaters.nozzle.target !== null}
-							pending={busy || !transportConnected || !!thermalReason}
-							onSet={(target) => send({ type: 'temperature', heater: 'nozzle', target })}
-						/>{/if}{#if sensors.some((sensor) => sensor.id === 'heater_bed')}<HeaterControl
-							receipts={snapshot.actions}
-							heater="bed"
-							progressive
-							current={snapshot.heaters.bed.current}
-							target={snapshot.heaters.bed.target}
-							{readOnly}
-							available={thermalReady &&
-								snapshot.heaters.bed.current !== null &&
-								snapshot.heaters.bed.target !== null}
-							pending={busy || !transportConnected || !!thermalReason}
-							onSet={(target) => send({ type: 'temperature', heater: 'bed', target })}
-						/>{/if}
-					{#if snapshot.additionalTemperatures.length}<details>
-							<summary>Additional sensors ({snapshot.additionalTemperatures.length})</summary>
+		<div class="job-anchor">
+			<CurrentJob
+				compact
+				{snapshot}
+				available={transportConnected}
+				operator={data.user?.role !== 'viewer'}
+				onStop={() => {
+					stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
+					cancelOpen = true;
+				}}
+			/>
+		</div>
+		<div
+			class="overview-panels"
+			class:camera-focus={layout.preset === 'camera'}
+			class:compact={layout.preset === 'compact'}
+		>
+			{#each layout.order as panel (panel)}
+				<div
+					class="overview-module"
+					class:wide={(panel === 'history' && layout.preset !== 'camera') ||
+						panel === 'connection' ||
+						(panel === 'camera' && layout.preset === 'camera')}
+					hidden={layout.hidden.includes(panel) &&
+						!(panel === 'temperature' && revealedTemperature)}
+					data-overview-panel={panel}
+				>
+					{#if panel === 'camera'}{#if !layout.hidden.includes(panel)}<CameraPanel
+								camera={cameraSnapshot}
+							/>{/if}
+					{:else if panel === 'temperature'}
+						<section class="panel temperature-panel" id="temperature-controls" tabindex="-1">
+							<div class="section-header">
+								<h2>Temperature</h2>
+								<ActionForm receipts={snapshot.actions} fields={{ intent: 'cooldown' }}
+									>{#snippet children({ pending, uncertain })}<button
+											class="button secondary"
+											disabled={busy ||
+												readOnly ||
+												!!thermalReason ||
+												alreadyOff ||
+												pending ||
+												uncertain}>Cool down nozzle &amp; bed</button
+										>{/snippet}</ActionForm
+								>
+							</div>
+							{#if thermalReason}<p class="muted">
+									{thermalReason}
+									{#if readOnly && controlLock && canReviewPrinterLock(controlLock, data.user?.role)}<a
+											href={controlLock.href}>{controlLock.label} →</a
+										>{/if}
+								</p>{/if}
+							{#if alreadyOff}<p class="muted">
+									Both heater targets are already off. The heaters may still be cooling.
+								</p>{/if}
+							{#if sensors.some((sensor) => sensor.id === 'extruder')}<HeaterControl
+									receipts={snapshot.actions}
+									heater="nozzle"
+									progressive
+									current={snapshot.heaters.nozzle.current}
+									target={snapshot.heaters.nozzle.target}
+									{readOnly}
+									available={thermalReady &&
+										snapshot.heaters.nozzle.current !== null &&
+										snapshot.heaters.nozzle.target !== null}
+									pending={busy || !transportConnected || !!thermalReason}
+									onSet={(target) => send({ type: 'temperature', heater: 'nozzle', target })}
+								/>{/if}{#if sensors.some((sensor) => sensor.id === 'heater_bed')}<HeaterControl
+									receipts={snapshot.actions}
+									heater="bed"
+									progressive
+									current={snapshot.heaters.bed.current}
+									target={snapshot.heaters.bed.target}
+									{readOnly}
+									available={thermalReady &&
+										snapshot.heaters.bed.current !== null &&
+										snapshot.heaters.bed.target !== null}
+									pending={busy || !transportConnected || !!thermalReason}
+									onSet={(target) => send({ type: 'temperature', heater: 'bed', target })}
+								/>{/if}
+							{#if snapshot.additionalTemperatures.length}<div class="additional-sensors">
+									<h3>Additional sensors</h3>
+									<dl class="connection-list">
+										{#each snapshot.additionalTemperatures as sensor}<div>
+												<dt>{sensor.label}</dt>
+												<dd>
+													{thermalReady && sensor.current !== null
+														? `${sensor.current.toFixed(1)}°C`
+														: 'Unavailable'}{#if sensor.heater}
+														· target {thermalReady && sensor.target !== null
+															? `${sensor.target}°C`
+															: 'unavailable'}{/if}
+												</dd>
+											</div>{/each}
+									</dl>
+									<p class="muted small">Additional heaters are monitored read-only.</p>
+								</div>{/if}
+						</section>
+					{:else if panel === 'history'}<section class="panel history-panel">
+							{#if TemperatureHistory}<TemperatureHistory
+									standalone
+									combined
+									{samples}
+									{sensors}
+									connected={thermalReady}
+									unavailable={historyUnavailable}
+								/>{:else}<p class="muted">
+									Temperature history loads separately from controls.
+								</p>{/if}
+						</section>
+					{:else}
+						<details class="panel connection-details">
+							<summary
+								>Connection details <span class="muted"
+									>{connected && transportConnected && snapshot.klippy === 'ready'
+										? 'All systems connected'
+										: 'Check connection'}</span
+								></summary
+							>
 							<dl class="connection-list">
-								{#each snapshot.additionalTemperatures as sensor}<div>
-										<dt>{sensor.label}</dt>
-										<dd>
-											{sensor.current?.toFixed(1) ?? '—'}°C{sensor.heater
-												? ` · target ${sensor.target ?? '—'}°C`
-												: ''}
-										</dd>
-									</div>{/each}
+								<div>
+									<dt>Moonraker</dt>
+									<dd>
+										<span class="status-dot" class:offline={!connected}></span>{connectionLabel}
+									</dd>
+								</div>
+								<div>
+									<dt>Klipper</dt>
+									<dd>
+										<span
+											class="status-dot"
+											class:offline={!connected || snapshot.klippy !== 'ready'}
+										></span>{snapshot.klippy.charAt(0).toUpperCase() + snapshot.klippy.slice(1)}
+									</dd>
+								</div>
+								<div>
+									<dt>Updates</dt>
+									<dd>
+										<span class="status-dot" class:offline={!transportConnected}
+										></span>{updates.label}
+									</dd>
+								</div>
 							</dl>
-							<p class="muted">Additional heaters are monitored read-only.</p>
+							<small class="snapshot-meta"
+								>{live ? 'Live state' : 'Simulated state'} · revision {snapshot.revision}{#if live}<br
+									/>{snapshot.telemetryAt === null
+										? 'Awaiting telemetry'
+										: `Last telemetry ${new Date(snapshot.telemetryAt).toLocaleTimeString()}`} · {snapshot
+										.availableObjects.length} available objects{/if}</small
+							>
 						</details>{/if}
-					{#if TemperatureHistory}<TemperatureHistory
-							combined
-							{samples}
-							{sensors}
-							connected={thermalReady}
-							unavailable={historyUnavailable}
-						/>{:else}<p class="muted">Temperature history loads separately from controls.</p>{/if}
-				</section>
-				<details class="panel connection-details">
-					<summary
-						>Connection details <span class="muted"
-							>{connected && transportConnected && snapshot.klippy === 'ready'
-								? 'All systems connected'
-								: 'Check connection'}</span
-						></summary
-					>
-					<dl class="connection-list">
-						<div>
-							<dt>Moonraker</dt>
-							<dd>
-								<span class="status-dot" class:offline={!connected}></span>{connectionLabel}
-							</dd>
-						</div>
-						<div>
-							<dt>Klipper</dt>
-							<dd>
-								<span class="status-dot" class:offline={!connected || snapshot.klippy !== 'ready'}
-								></span>{snapshot.klippy.charAt(0).toUpperCase() + snapshot.klippy.slice(1)}
-							</dd>
-						</div>
-						<div>
-							<dt>Updates</dt>
-							<dd>
-								<span class="status-dot" class:offline={!transportConnected}></span>{updates.label}
-							</dd>
-						</div>
-					</dl>
-					<small class="snapshot-meta"
-						>{live ? 'Live state' : 'Simulated state'} · revision {snapshot.revision}{#if live}<br
-							/>{snapshot.telemetryAt === null
-								? 'Awaiting telemetry'
-								: `Last telemetry ${new Date(snapshot.telemetryAt).toLocaleTimeString()}`} · {snapshot
-								.availableObjects.length} available objects{/if}</small
-					>
-				</details>
-			</div>
+				</div>
+			{/each}
 		</div>
 		<footer class="page-footer">Development preview <a href="/roadmap">What’s next</a></footer>
 	</div>
@@ -374,10 +423,62 @@
 </AppShell>
 
 <style>
-	.thermal-glance {
+	.job-anchor {
+		margin-bottom: 1rem;
+	}
+	.overview-panels {
+		display: grid;
+		grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+		gap: 1rem;
+		align-items: start;
+	}
+	.overview-module {
+		min-width: 0;
+	}
+	.overview-module[hidden] {
 		display: none;
 	}
+	.overview-module.wide {
+		grid-column: 1 / -1;
+	}
+	.overview-panels.compact {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.additional-sensors {
+		margin-top: 1rem;
+		border-top: 1px solid var(--border);
+		padding-top: 1rem;
+	}
+	.additional-sensors h3 {
+		font-size: 1rem;
+	}
+	.thermal-glance {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.75rem;
+		margin-bottom: 1rem;
+	}
+	.thermal-glance a {
+		padding: 0.65rem 0.9rem;
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		background: var(--surface);
+		color: var(--text);
+		text-decoration: none;
+	}
+	.thermal-glance strong {
+		margin-left: 0.5rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.thermal-glance small {
+		display: block;
+		margin-top: 0.2rem;
+	}
 	@media (max-width: 900px) {
+		.overview-panels {
+			grid-template-columns: minmax(0, 1fr);
+		}
 		.thermal-glance {
 			display: grid;
 			grid-template-columns: repeat(2, minmax(0, 1fr));
