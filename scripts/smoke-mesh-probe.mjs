@@ -132,7 +132,7 @@ try {
 		.getByRole('button', { name: 'X 20.0, Y 20.0: +0.034 mm', exact: true })
 		.waitFor();
 	assert.equal(
-		await observer.getByRole('button', { name: 'Save profile…', exact: true }).isDisabled(),
+		await observer.getByRole('button', { name: 'Use & save…', exact: true }).isDisabled(),
 		true
 	);
 	await page.goto(base + '/calibration/mesh');
@@ -146,11 +146,12 @@ try {
 		0,
 		'Candidate review cannot silently show an older profile'
 	);
-	await page.getByRole('button', { name: 'Save profile…', exact: true }).click();
+	await page.getByRole('button', { name: 'Use & save…', exact: true }).click();
+	await page.getByRole('checkbox', { name: 'Also save a named copy' }).check();
 	await page.getByRole('textbox', { name: 'Profile name', exact: true }).fill('reviewed-bed');
 	await page.getByRole('button', { name: 'Save profile', exact: true }).click();
 	await page
-		.getByText('Saved reviewed-bed. The active mesh was not changed.', { exact: true })
+		.getByText('Usual mesh saved and activated in the simulator.', { exact: true })
 		.waitFor();
 	assert.equal(
 		await observer.getByRole('combobox', { name: 'Inspect mesh' }).inputValue(),

@@ -4,6 +4,7 @@ export interface BedMesh {
 	min: [number, number];
 	max: [number, number];
 	points: number[][];
+	parameters?: Record<string, string | number>;
 }
 export interface BedMeshState {
 	status: 'unavailable' | 'empty' | 'ready' | 'invalid';
@@ -49,6 +50,17 @@ function mesh(name: string, min: unknown, max: unknown, points: unknown): BedMes
 		points: points.map((row) => [...row])
 	};
 }
+export function meshParameters(value: unknown): Record<string, string | number> | undefined {
+	const raw = record(value);
+	const result: Record<string, string | number> = {};
+	for (const key of ['x_count', 'y_count', 'mesh_x_pps', 'mesh_y_pps', 'tension', 'algo']) {
+		const v = raw[key];
+		if (key === 'algo') {
+			if (typeof v === 'string' && ['lagrange', 'bicubic', 'direct'].includes(v)) result[key] = v;
+		} else if (v !== undefined && Number.isFinite(Number(v))) result[key] = Number(v);
+	}
+	return Object.keys(result).length ? result : undefined;
+}
 export function normalizeBedMesh(value: unknown, supported: boolean): BedMeshState {
 	if (!supported) return emptyBedMesh();
 	const raw = record(value);
@@ -70,8 +82,14 @@ export function normalizeBedMesh(value: unknown, supported: boolean): BedMeshSta
 				: null;
 		if (parsed && parsed.points.flat().length <= remaining) {
 			remaining -= parsed.points.flat().length;
+			const parameters = meshParameters(params);
+			if (parameters) parsed.parameters = parameters;
 			profiles.push(parsed);
 		}
+	}
+	if (active) {
+		const parameters = profiles.find((p) => p.name === active.name)?.parameters;
+		if (parameters) active.parameters = { ...parameters };
 	}
 	const empty =
 		Array.isArray(raw.probed_matrix) &&

@@ -1,3 +1,4 @@
+import { MeshPersistenceLive } from './mesh-persistence.js';
 import { accountMailLayer } from './account-mail-service.js';
 import { mailConfig } from './auth/mail-config.js';
 import { FilamentChangeStoreLive } from './filament-change-settings.js';
@@ -103,8 +104,30 @@ const safetyLayer = moonrakerUrl
 			Layer.provideMerge(coreLayer)
 		)
 	: Layer.merge(coreLayer, SafetyDisabled);
+const configurationLayer = ConfigurationServiceLive.pipe(
+	Layer.provide(
+		Layer.succeed(ConfigurationSettings, {
+			moonrakerUrl: moonrakerUrl ?? '',
+			apiKey: process.env.PERILUNE_MOONRAKER_API_KEY,
+			klipperWorkingDirectory: process.env.PERILUNE_KLIPPER_WORKING_DIRECTORY
+		})
+	),
+	Layer.provide(databaseLayer)
+);
+const meshPersistenceLayer = MeshPersistenceLive.pipe(
+	Layer.provide(configurationLayer),
+	Layer.provide(
+		Layer.succeed(ConfigurationSettings, {
+			moonrakerUrl: moonrakerUrl ?? '',
+			apiKey: process.env.PERILUNE_MOONRAKER_API_KEY
+		})
+	),
+	Layer.provide(databaseLayer),
+	Layer.provide(liveServices)
+);
 const commandsLayer = moonrakerUrl
 	? LiveMeshServiceLive.pipe(
+			Layer.provide(meshPersistenceLayer),
 			Layer.provide(actionStoreLayer),
 			Layer.provide(databaseLayer),
 			Layer.provideMerge(safetyLayer),
@@ -156,16 +179,6 @@ const liveActionsLayer = moonrakerUrl
 			Layer.provideMerge(jobsLayer)
 		)
 	: Layer.merge(jobsLayer, LiveActionDisabled);
-const configurationLayer = ConfigurationServiceLive.pipe(
-	Layer.provide(
-		Layer.succeed(ConfigurationSettings, {
-			moonrakerUrl: moonrakerUrl ?? '',
-			apiKey: process.env.PERILUNE_MOONRAKER_API_KEY,
-			klipperWorkingDirectory: process.env.PERILUNE_KLIPPER_WORKING_DIRECTORY
-		})
-	),
-	Layer.provide(databaseLayer)
-);
 const applicationLayer = ConfigurationApplicationServiceLive.pipe(
 	Layer.provide(
 		Layer.succeed(ConfigurationApplicationSettings, {

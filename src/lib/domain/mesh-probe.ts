@@ -10,7 +10,23 @@ export const MESH_PROBE_IDLE_MS = 10 * 60 * 1000;
 export const probePlan = { min: [20, 20], max: [200, 200], columns: 5, rows: 5 } as const;
 const probeId = Schema.String.check(Schema.isUUID());
 export const MeshProbeCommand = Schema.Union([
-	Schema.Struct({ type: Schema.Literal('meshProbeBegin'), probeId, confirmed: Schema.Boolean }),
+	Schema.Struct({ type: Schema.Literal('meshProbeReconcile'), probeId, confirmed: Schema.Boolean }),
+	Schema.Struct({
+		type: Schema.Literal('meshProbeProfile'),
+		probeId,
+		operation: Schema.Literals(['load', 'clear', 'delete']),
+		name: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),
+		expected: Schema.String.check(Schema.isMaxLength(100000)),
+		confirmed: Schema.Boolean
+	}),
+	Schema.Struct({
+		type: Schema.Literal('meshProbeBegin'),
+		probeId,
+		confirmed: Schema.Boolean,
+		usual: Schema.optional(Schema.Boolean),
+		target: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),
+		expectedTarget: Schema.optional(Schema.String.check(Schema.isMaxLength(100000)))
+	}),
 	Schema.Struct({
 		type: Schema.Literal('meshProbeFinish'),
 		probeId,
@@ -39,6 +55,11 @@ export interface MeshProbeSession {
 		| 'uncertain'
 		| 'saving';
 	live?: boolean;
+	usual?: boolean;
+	target?: string;
+	copyName?: string;
+	previousTarget?: BedMesh | null;
+	operation?: 'load' | 'clear' | 'delete';
 	plan?: LiveMeshPlan;
 	previousProfile?: string | null;
 	previousMesh?: BedMesh | null;
@@ -50,6 +71,7 @@ export interface MeshProbeSession {
 }
 export interface MeshProbeState {
 	savedProfiles: BedMesh[];
+	removedProfiles?: string[];
 	session: MeshProbeSession | null;
 }
 export const emptyMeshProbe = (): MeshProbeState => ({ savedProfiles: [], session: null });
@@ -116,7 +138,37 @@ export function applyMeshProbe(
 		throw new CommandRejected({ message: 'Live probing requires coordinated printer testing.' });
 	if (!actor || !['owner', 'operator'].includes(actor.role ?? '') || actor.authorized?.() === false)
 		throw new CommandRejected({ message: 'An authorized operator account is required.' });
+	if (command.type === 'meshProbeReconcile')
+		throw new CommandRejected({
+			message: 'Reconciliation is only available for a live uncertain workflow.'
+		});
 	const next = structuredClone(state);
+	if (command.type === 'meshProbeProfile') {
+		const reason = motionReason(state, [], false, false);
+		if (reason || meshProbeActive(state.meshProbe))
+			throw new CommandRejected({ message: reason ?? 'Finish the current bed mesh workflow.' });
+		const profile = state.bedMesh.profiles.find((p) => p.name === command.name);
+		const target = command.operation === 'clear' ? state.bedMesh.active : profile;
+		if (!command.confirmed || JSON.stringify(target ?? null) !== command.expected)
+			throw new CommandRejected({ message: 'The selected mesh changed. Review it again.' });
+		if (command.operation === 'delete') {
+			if (state.bedMesh.active?.name === command.name || actor.role !== 'owner')
+				throw new CommandRejected({
+					message:
+						'An owner can delete an unused named mesh. Clear or replace the active mesh first.'
+				});
+			next.bedMesh.profiles = next.bedMesh.profiles.filter((p) => p.name !== command.name);
+			next.meshProbe.savedProfiles = next.bedMesh.profiles;
+			next.meshProbe.removedProfiles = [
+				...new Set([...(state.meshProbe.removedProfiles ?? []), command.name!])
+			];
+		} else {
+			next.bedMesh.active = command.operation === 'clear' ? null : profile!;
+			next.bedMesh.status = next.bedMesh.active ? 'ready' : 'empty';
+		}
+		return next;
+	}
+
 	if (command.type === 'meshProbeBegin') {
 		const reason = meshProbeReason(state, false);
 		if (reason) throw new CommandRejected({ message: reason });
@@ -129,6 +181,8 @@ export function applyMeshProbe(
 			ownerId: actor.id,
 			ownerName: actor.name,
 			stage: 'probing',
+			usual: command.usual,
+			target: command.target,
 			completedSamples: 0,
 			startedAt: Date.now(),
 			expiresAt: Date.now() + MESH_PROBE_IDLE_MS,
@@ -173,27 +227,54 @@ export function applyMeshProbe(
 		);
 		if (readiness) throw new CommandRejected({ message: readiness });
 		if (command.outcome === 'save') {
-			const name = command.name?.trim() ?? '';
-			if (!/^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,39}$/.test(name))
+			const target = session.usual ? (session.target ?? 'default') : (command.name?.trim() ?? '');
+			const copy = session.usual ? command.name?.trim() : undefined;
+			if (
+				!/^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,39}$/.test(target) ||
+				(copy !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,39}$/.test(copy))
+			)
 				throw new CommandRejected({
 					message: 'Use a profile name of 1–40 letters, numbers, spaces, underscores or hyphens.'
 				});
 			if (
-				state.bedMesh.profiles.some((profile) => profile.name.toLowerCase() === name.toLowerCase())
+				(!session.usual &&
+					state.bedMesh.profiles.some((p) => p.name.toLowerCase() === target.toLowerCase())) ||
+				(copy !== undefined &&
+					(copy.toLowerCase() === target.toLowerCase() ||
+						state.bedMesh.profiles.some((p) => p.name.toLowerCase() === copy.toLowerCase())))
 			)
 				throw new CommandRejected({
 					message:
 						'That profile name already exists. Choose a new name; existing profiles are never overwritten.'
 				});
-			if (state.meshProbe.savedProfiles.length >= 30)
+			const additions = [
+				{ ...session.result, name: target },
+				...(copy ? [{ ...session.result, name: copy }] : [])
+			];
+			const replaced = new Set(additions.map((p) => p.name));
+			const profiles = [
+				...next.bedMesh.profiles.filter((p) => !replaced.has(p.name)),
+				...additions
+			];
+			if (profiles.length > 32)
 				throw new CommandRejected({ message: 'The simulator profile limit has been reached.' });
-			const profile = { ...session.result, name };
-			next.meshProbe.savedProfiles.push(profile);
-			next.bedMesh.profiles.push(profile);
+			next.meshProbe.savedProfiles = [
+				...next.meshProbe.savedProfiles.filter((p) => !replaced.has(p.name)),
+				...additions
+			];
+			next.bedMesh.profiles = profiles;
+			if (session.usual) {
+				next.bedMesh.active = additions[0];
+				next.bedMesh.status = 'ready';
+			}
+			const name = target;
+
 			next.meshProbe.session = {
 				...session,
 				stage: 'saved',
-				message: `Saved ${name}. The active mesh was not changed.`
+				message: session.usual
+					? 'Usual mesh saved and activated in the simulator.'
+					: `Saved ${name}. The active mesh was not changed.`
 			};
 		} else {
 			next.bedMesh.active = session.result;

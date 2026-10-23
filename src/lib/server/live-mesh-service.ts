@@ -1,3 +1,5 @@
+import { MeshPersistence } from './mesh-persistence.js';
+import { Option } from 'effect';
 import { filamentChangeActive } from '#lib/domain/filament-change.js';
 import { printerAdmission, printerInterlock } from './printer-admission.js';
 import { Context, Effect, Layer, Schedule, SubscriptionRef } from 'effect';
@@ -6,7 +8,7 @@ import { ActionStore } from './action-store.js';
 import { ActionRejected, PrinterService } from './printer-service.js';
 import { MoonrakerService } from './moonraker.js';
 import { emptyMeshProbe, meshProbeActive, type MeshProbeState } from '#lib/domain/mesh-probe.js';
-import { liveMeshReason, sameMesh } from '#lib/domain/live-mesh.js';
+import { liveMeshReason, meshProfileReason, sameMesh } from '#lib/domain/live-mesh.js';
 import type { CalibrationActor } from '#lib/domain/calibration.js';
 import type {
 	ActionRecord,
@@ -45,6 +47,15 @@ export const LiveMeshServiceLive = Layer.effect(
 			transport = yield* MoonrakerService,
 			store = yield* ActionStore,
 			sql = yield* SqlClient;
+		const persistence = Option.getOrUndefined(yield* Effect.serviceOption(MeshPersistence));
+		const configActor = (actor: CalibrationActor) => ({
+			id: actor.id,
+			name: actor.name,
+			authorized: () => actor.role === 'owner' && authorized(actor)
+		});
+		const evidenceError = (e: Error) => new ActionRejected({ message: e.message });
+		const targetName = (session: NonNullable<MeshProbeState['session']>) =>
+			session.usual ? (session.target ?? 'default') : runName(session.id);
 		const lock = printerAdmission(printer.state);
 		const interlock = printerInterlock(printer.state);
 		const write = (mesh: MeshProbeState) =>
@@ -59,7 +70,7 @@ export const LiveMeshServiceLive = Layer.effect(
 				session: {
 					...restored.session!,
 					stage: 'uncertain',
-					result: null,
+					result: restored.session!.result,
 					message:
 						'Backend restarted. No command was replayed. Verify that the printer is stopped before clearing this workflow.'
 				}
@@ -105,9 +116,7 @@ export const LiveMeshServiceLive = Layer.effect(
 					unwritten.set(action.id, { status, message });
 					mesh = {
 						...mesh,
-						session: mesh.session
-							? { ...mesh.session, stage: 'uncertain', message, result: null }
-							: null
+						session: mesh.session ? { ...mesh.session, stage: 'uncertain', message } : null
 					};
 				}
 				yield* update((s) => ({
@@ -127,13 +136,16 @@ export const LiveMeshServiceLive = Layer.effect(
 				const fail = (message: string) => Effect.fail(new ActionRejected({ message }));
 				const dispatch = (operation: Parameters<typeof transport.command>[0]) =>
 					Effect.gen(function* () {
-						if (!authorized(actor))
-							return yield* fail('The operator account is no longer authorized.');
+						if (!authorized(actor) || Date.now() - action.createdAt >= 30000)
+							return yield* fail('Authorization ended or the queued action expired.');
 						const outcome = yield* transport
 							.command(
 								operation,
 								generation,
-								() => interlock.allows(job.epoch) && authorized(actor)
+								() =>
+									interlock.allows(job.epoch) &&
+									authorized(actor) &&
+									Date.now() - action.createdAt < 30000
 							)
 							.pipe(Effect.result);
 						if (outcome._tag === 'Failure') {
@@ -170,10 +182,15 @@ export const LiveMeshServiceLive = Layer.effect(
 						liveMesh: fresh.liveMesh,
 						actions: snapshot.actions.filter((a) => a.id !== action.id)
 					};
-					const reason = liveMeshReason(checked, true);
+					const reason =
+						command.type === 'meshProbeProfile' || command.type === 'meshProbeReconcile'
+							? meshProfileReason(checked, true)
+							: liveMeshReason(checked, true);
 					if (reason) return yield* fail(reason);
 					if (fresh.motion.calibration) return yield* fail('Another probe calibration is active.');
 					if (
+						command.type !== 'meshProbeProfile' &&
+						command.type !== 'meshProbeReconcile' &&
 						JSON.stringify(fresh.liveMesh.plan) !== JSON.stringify(snapshot.meshProbe.session?.plan)
 					)
 						return yield* fail('The probing configuration changed. Review a new plan.');
@@ -183,6 +200,106 @@ export const LiveMeshServiceLive = Layer.effect(
 						actions: s.actions.map((a) => (a.id === action.id ? { ...a, status: 'sending' } : a))
 					}));
 					const session = (yield* SubscriptionRef.get(printer.state)).meshProbe.session!;
+					if (command.type === 'meshProbeReconcile') {
+						let message = '';
+						if (session.operation === 'load' || session.operation === 'clear') {
+							if (
+								session.operation === 'clear'
+									? fresh.bedMesh.active !== null
+									: !sameMesh(fresh.bedMesh.active, session.result) ||
+										fresh.bedMesh.active?.name !== session.result?.name
+							)
+								return yield* fail(
+									'Current compensation does not match the recorded operation. Verify it manually before recovery.'
+								);
+							message = 'Current compensation verified through a read-only check.';
+						} else {
+							if (!persistence) return yield* fail('Persistence verification is unavailable.');
+							const resolution = yield* persistence
+								.reconcile(session.id, configActor(actor))
+								.pipe(Effect.mapError(evidenceError));
+							message =
+								resolution === 'saved'
+									? 'Saved outcome verified through read-only reconciliation.'
+									: 'Previous saved configuration verified. No printer command was replayed; choose a saved mesh to activate if needed.';
+						}
+						return {
+							...snapshot.meshProbe,
+							session: { ...session, stage: 'saved' as const, message }
+						};
+					}
+
+					if (command.type === 'meshProbeProfile') {
+						const target =
+							command.operation === 'clear'
+								? fresh.bedMesh.active
+								: fresh.bedMesh.profiles.find((p) => p.name === command.name);
+						if (JSON.stringify(target ?? null) !== command.expected)
+							return yield* fail('The selected mesh changed before execution. Review it again.');
+						if (command.operation === 'delete') {
+							if (
+								!persistence ||
+								!target ||
+								actor.role !== 'owner' ||
+								fresh.bedMesh.active?.name === target.name
+							)
+								return yield* fail('Only an owner can delete an unused named mesh.');
+							yield* persistence
+								.capture(session.id, configActor(actor), target)
+								.pipe(Effect.mapError(evidenceError));
+							yield* persistence
+								.prepareRemoval(session.id, configActor(actor), target.name)
+								.pipe(Effect.mapError(evidenceError));
+							yield* dispatch({ type: 'remove', name: target.name });
+							yield* persistence
+								.finish(
+									session.id,
+									configActor(actor),
+									target,
+									[],
+									false,
+									() =>
+										interlock.allows(job.epoch) &&
+										authorized(actor) &&
+										Date.now() - action.createdAt < 30000,
+									[target.name]
+								)
+								.pipe(Effect.mapError(evidenceError));
+						} else {
+							yield* dispatch({
+								type: 'load',
+								name: command.operation === 'clear' ? null : command.name!
+							});
+							const measured = yield* transport
+								.refresh(generation)
+								.pipe(
+									Effect.mapError(
+										() => new ActionRejected({ message: 'Could not verify active mesh.' })
+									)
+								);
+							if (
+								command.operation === 'clear'
+									? measured.bedMesh.active !== null
+									: !sameMesh(measured.bedMesh.active, target ?? null) ||
+										measured.bedMesh.active?.name !== command.name
+							)
+								return yield* fail('Mesh activation could not be verified.');
+						}
+						return {
+							...snapshot.meshProbe,
+							session: {
+								...session,
+								stage: 'saved' as const,
+								message:
+									command.operation === 'delete'
+										? 'Saved mesh deleted and verified after restart.'
+										: command.operation === 'clear'
+											? 'Mesh compensation cleared. Saved meshes are unchanged.'
+											: 'Saved mesh is active now. Your print-start procedure may select a different mesh.'
+							}
+						};
+					}
+
 					if (command.type === 'meshProbeBegin') {
 						const capacityReason = liveMeshReason({
 							...checked,
@@ -191,7 +308,7 @@ export const LiveMeshServiceLive = Layer.effect(
 						});
 						if (
 							capacityReason ||
-							fresh.bedMesh.profiles.some((p) => p.name === runName(session.id))
+							(!session.usual && fresh.bedMesh.profiles.some((p) => p.name === targetName(session)))
 						)
 							return yield* fail(
 								capacityReason ?? 'This internal profile name already exists. Start a new run.'
@@ -246,7 +363,8 @@ export const LiveMeshServiceLive = Layer.effect(
 							);
 						if (
 							afterHome.bedMesh.omittedProfiles > 0 ||
-							afterHome.bedMesh.profiles.some((p) => p.name === runName(session.id))
+							(!session.usual &&
+								afterHome.bedMesh.profiles.some((p) => p.name === targetName(session)))
 						)
 							return yield* fail(
 								'The profile list changed during homing. Probing was not dispatched.'
@@ -275,7 +393,23 @@ export const LiveMeshServiceLive = Layer.effect(
 							baseline: afterHome.probeResponses.at(-1)?.sequence ?? 0,
 							counts: new Map()
 						};
-						yield* dispatch({ type: 'probe', name: runName(session.id) });
+						if (session.usual) {
+							const existing =
+								afterHome.bedMesh.profiles.find((p) => p.name === targetName(session)) ?? null;
+							if (JSON.stringify(existing) !== JSON.stringify(session.previousTarget ?? null))
+								return yield* fail('The replacement target changed before probing.');
+							if (!persistence) return yield* fail('Mesh persistence is unavailable.');
+							yield* persistence
+								.capture(
+									session.id,
+									configActor(actor),
+									session.previousMesh ?? null,
+									session.previousTarget ?? null,
+									targetName(session)
+								)
+								.pipe(Effect.mapError(evidenceError));
+						}
+						yield* dispatch({ type: 'probe', name: targetName(session) });
 						progress = undefined;
 						const measured = yield* transport
 							.refresh(generation)
@@ -288,7 +422,7 @@ export const LiveMeshServiceLive = Layer.effect(
 							plan = session.plan!;
 						if (
 							!mesh ||
-							mesh.name !== runName(session.id) ||
+							mesh.name !== targetName(session) ||
 							JSON.stringify(mesh.min) !== JSON.stringify(plan.min) ||
 							JSON.stringify(mesh.max) !== JSON.stringify(plan.max) ||
 							mesh.points.length !== plan.rows ||
@@ -313,6 +447,78 @@ export const LiveMeshServiceLive = Layer.effect(
 						};
 					}
 					if (command.type === 'meshProbeCancel') {
+						if (session.usual) {
+							if (!persistence || !session.result)
+								return yield* fail(
+									'Recovery needs the recorded candidate. Review pending configuration manually; no restart was sent.'
+								);
+							yield* persistence
+								.check(
+									session.id,
+									configActor(actor),
+									session.result,
+									[targetName(session), ...(session.copyName ? [session.copyName] : [])],
+									undefined,
+									true
+								)
+								.pipe(Effect.mapError(evidenceError));
+							sent = true;
+							yield* persistence
+								.finish(
+									session.id,
+									configActor(actor),
+									session.result,
+									[targetName(session), ...(session.copyName ? [session.copyName] : [])],
+									true,
+									() =>
+										interlock.allows(job.epoch) &&
+										authorized(actor) &&
+										Date.now() - action.createdAt < 30000
+								)
+								.pipe(Effect.mapError(evidenceError));
+							const restorationDeadline = Date.now() + 30000;
+							const resumed = yield* SubscriptionRef.get(transport.state);
+							yield* transport
+								.command(
+									{ type: 'load', name: session.previousProfile ?? null },
+									resumed.generation,
+									() =>
+										interlock.allows(job.epoch) &&
+										authorized(actor) &&
+										Date.now() < restorationDeadline
+								)
+								.pipe(
+									Effect.mapError(
+										() =>
+											new ActionRejected({
+												message: 'Previous mesh activation could not be verified.'
+											})
+									)
+								);
+							const restored = yield* transport
+								.refresh(resumed.generation)
+								.pipe(
+									Effect.mapError(
+										() => new ActionRejected({ message: 'Could not verify restoration.' })
+									)
+								);
+							if (
+								session.previousMesh
+									? !sameMesh(restored.bedMesh.active, session.previousMesh)
+									: restored.bedMesh.active !== null
+							)
+								return yield* fail('Previous active mesh was not restored.');
+							return {
+								...snapshot.meshProbe,
+								session: {
+									...session,
+									stage: 'cancelled' as const,
+									result: null,
+									message:
+										'Calibration discarded. Saved configuration is unchanged; the previous active mesh was restored after restart.'
+								}
+							};
+						}
 						if (
 							session.previousProfile &&
 							!sameMesh(
@@ -326,7 +532,7 @@ export const LiveMeshServiceLive = Layer.effect(
 						yield* dispatch({
 							type: 'restore',
 							name: session.previousProfile ?? null,
-							remove: runName(session.id)
+							remove: targetName(session)
 						});
 						const measured = yield* transport
 							.refresh(generation)
@@ -355,11 +561,63 @@ export const LiveMeshServiceLive = Layer.effect(
 					if (command.type !== 'meshProbeFinish') return yield* fail('Unsupported live command.');
 					if (
 						!sameMesh(session.result, fresh.bedMesh.active) ||
-						fresh.bedMesh.active?.name !== runName(session.id)
+						fresh.bedMesh.active?.name !== targetName(session)
 					)
 						return yield* fail('The active mesh changed outside this workflow.');
+					if (session.usual) {
+						if (command.outcome !== 'save' || !persistence || !session.result)
+							return yield* fail('Accept and save the usual mesh, or discard it.');
+						yield* persistence
+							.check(session.id, configActor(actor), session.result, [targetName(session)])
+							.pipe(Effect.mapError(evidenceError));
+						const names = [targetName(session)];
+						if (command.name) {
+							if (
+								fresh.bedMesh.profiles.some(
+									(p) => p.name.toLowerCase() === command.name!.toLowerCase()
+								)
+							)
+								return yield* fail('The named mesh already exists. Choose another name.');
+							const staged = {
+								...snapshot.meshProbe,
+								session: { ...session, copyName: command.name }
+							};
+							yield* write(staged);
+							yield* update((s) => ({ ...s, meshProbe: staged }));
+							yield* dispatch({ type: 'copy', name: command.name });
+							names.push(command.name);
+						}
+						// Persist the candidate before the single restart boundary, retaining evidence on failure.
+						yield* write({
+							...snapshot.meshProbe,
+							session: { ...session, copyName: command.name, stage: 'saving' }
+						});
+						sent = true;
+						yield* persistence
+							.finish(
+								session.id,
+								configActor(actor),
+								session.result,
+								names,
+								false,
+								() =>
+									interlock.allows(job.epoch) &&
+									authorized(actor) &&
+									Date.now() - action.createdAt < 30000
+							)
+							.pipe(Effect.mapError(evidenceError));
+						return {
+							...snapshot.meshProbe,
+							session: {
+								...session,
+								stage: 'saved' as const,
+								message:
+									'Usual mesh saved and verified after restart. Print startup must load the usual mesh, unless it calibrates a fresh mesh.'
+							}
+						};
+					}
 					if (command.outcome === 'apply') {
-						yield* dispatch({ type: 'keep', remove: runName(session.id) });
+						yield* dispatch({ type: 'keep', remove: targetName(session) });
 						const measured = yield* transport
 							.refresh(generation)
 							.pipe(
@@ -412,7 +670,7 @@ export const LiveMeshServiceLive = Layer.effect(
 					)
 						return yield* fail('The printer or profile storage changed. Nothing was saved.');
 					const saveResult = yield* transport
-						.command({ type: 'save', name: command.name!, remove: runName(session.id) }, generation)
+						.command({ type: 'save', name: command.name!, remove: targetName(session) }, generation)
 						.pipe(Effect.result);
 					sent ||= saveResult._tag === 'Success' || saveResult.failure.sent;
 					if (!sent) return yield* fail('Save was not dispatched.');
@@ -463,13 +721,10 @@ export const LiveMeshServiceLive = Layer.effect(
 									...current.meshProbe.session,
 									stage: sent
 										? ('uncertain' as const)
-										: command.type === 'meshProbeBegin'
+										: command.type === 'meshProbeBegin' || command.type === 'meshProbeProfile'
 											? ('interrupted' as const)
 											: initial.meshProbe.session!.stage,
-									result:
-										sent || command.type === 'meshProbeBegin'
-											? null
-											: initial.meshProbe.session!.result,
+									result: current.meshProbe.session.result,
 									message
 								}
 							: null
@@ -491,7 +746,7 @@ export const LiveMeshServiceLive = Layer.effect(
 								? {
 										...current.meshProbe.session,
 										stage: 'uncertain' as const,
-										result: null,
+										result: current.meshProbe.session.result,
 										message:
 											'Unexpected backend failure. Verify the printer has stopped; no command was replayed.'
 									}
@@ -609,13 +864,84 @@ export const LiveMeshServiceLive = Layer.effect(
 							snapshot.actions.some((a) => ['queued', 'sending'].includes(a.status))
 						)
 							return yield* reject('Another action is pending.');
-						const reason = liveMeshReason(snapshot, command.type !== 'meshProbeBegin');
+						const reason =
+							command.type === 'meshProbeReconcile'
+								? meshProfileReason(snapshot, true)
+								: command.type === 'meshProbeProfile'
+									? meshProfileReason(snapshot)
+									: liveMeshReason(snapshot, command.type !== 'meshProbeBegin');
 						if (reason) return yield* reject(reason);
 						const telemetry = yield* SubscriptionRef.get(transport.state);
 						let mesh = snapshot.meshProbe;
-						if (command.type === 'meshProbeBegin') {
+						if (command.type === 'meshProbeReconcile') {
+							if (
+								actor.role !== 'owner' ||
+								!command.confirmed ||
+								mesh.session?.id !== command.probeId ||
+								mesh.session.stage !== 'uncertain'
+							)
+								return yield* reject('An owner must review the current uncertain mesh workflow.');
+						} else if (command.type === 'meshProbeProfile') {
+							const target =
+								command.operation === 'clear'
+									? snapshot.bedMesh.active
+									: snapshot.bedMesh.profiles.find((p) => p.name === command.name);
+							if (
+								!command.confirmed ||
+								command.probeId !== request.id ||
+								JSON.stringify(target ?? null) !== command.expected ||
+								(command.operation !== 'clear' &&
+									(!target || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(target.name)))
+							)
+								return yield* reject('Review the current saved mesh with a unique action ID.');
+							if (
+								command.operation === 'delete' &&
+								(actor.role !== 'owner' ||
+									snapshot.bedMesh.active?.name === target?.name ||
+									!persistence)
+							)
+								return yield* reject(
+									'An owner can delete unused named meshes. Clear or replace the active mesh first; check print-start references before deletion.'
+								);
+							mesh = {
+								...mesh,
+								session: {
+									id: command.probeId,
+									ownerId: actor.id,
+									ownerName: actor.name,
+									stage: 'saving',
+									operation: command.operation,
+									live: true,
+									completedSamples: 0,
+									startedAt: Date.now(),
+									expiresAt: Date.now() + 600000,
+									result: target ?? null,
+									message: 'Updating the selected mesh.'
+								}
+							};
+						} else if (command.type === 'meshProbeBegin') {
 							if (snapshot.bedMesh.profiles.some((p) => p.name === runName(command.probeId)))
 								return yield* reject('This internal profile name already exists. Start a new run.');
+							if (
+								command.usual &&
+								(actor.role !== 'owner' || !persistence || snapshot.liveMesh.pendingConfig)
+							)
+								return yield* reject(
+									'An owner and no pending configuration changes are required for usual-mesh calibration.'
+								);
+							if (
+								command.usual &&
+								((command.target && !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$/.test(command.target)) ||
+									command.expectedTarget !==
+										JSON.stringify(
+											snapshot.bedMesh.profiles.find(
+												(p) => p.name === (command.target ?? 'default')
+											) ?? null
+										))
+							)
+								return yield* reject(
+									'The replacement target changed. Review the saved mesh again.'
+								);
 							if (!command.confirmed || command.probeId !== request.id)
 								return yield* reject('Confirm the reviewed plan with a unique run ID.');
 							const previous = snapshot.bedMesh.active;
@@ -638,6 +964,12 @@ export const LiveMeshServiceLive = Layer.effect(
 									ownerName: actor.name,
 									stage: 'probing',
 									live: true,
+									usual: command.usual,
+									target: command.target,
+									previousTarget:
+										snapshot.bedMesh.profiles.find(
+											(p) => p.name === (command.target ?? 'default')
+										) ?? null,
 									plan: snapshot.liveMesh.plan!,
 									previousProfile: previous?.name ?? null,
 									previousMesh: previous,
@@ -678,13 +1010,15 @@ export const LiveMeshServiceLive = Layer.effect(
 									);
 								if (
 									command.outcome === 'save' &&
-									(!command.name ||
-										!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$/.test(command.name) ||
+									(!(command.name || session.usual) ||
+										(command.name !== undefined &&
+											!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$/.test(command.name)) ||
 										command.name === 'default' ||
-										command.name.startsWith('perilune_') ||
-										snapshot.bedMesh.profiles.some(
-											(p) => p.name.toLowerCase() === command.name!.toLowerCase()
-										))
+										command.name?.startsWith('perilune_') ||
+										(command.name !== undefined &&
+											snapshot.bedMesh.profiles.some(
+												(p) => p.name.toLowerCase() === command.name!.toLowerCase()
+											)))
 								)
 									return yield* reject(
 										'Choose a new profile name using letters, numbers, underscores or hyphens. Default and internal names are reserved.'
@@ -694,13 +1028,19 @@ export const LiveMeshServiceLive = Layer.effect(
 						const action: ActionRecord = {
 							id: request.id,
 							label:
-								command.type === 'meshProbeBegin'
-									? 'Probe live bed mesh'
-									: command.type === 'meshProbeCancel'
-										? 'Restore previous bed mesh'
-										: command.type === 'meshProbeFinish' && command.outcome === 'save'
-											? 'Save pending configuration and restart'
-											: 'Keep temporary bed mesh',
+								command.type === 'meshProbeProfile'
+									? command.operation === 'delete'
+										? 'Delete saved mesh and restart'
+										: command.operation === 'clear'
+											? 'Clear active mesh'
+											: 'Load saved mesh'
+									: command.type === 'meshProbeBegin'
+										? 'Probe live bed mesh'
+										: command.type === 'meshProbeCancel'
+											? 'Restore previous bed mesh'
+											: command.type === 'meshProbeFinish' && command.outcome === 'save'
+												? 'Save pending configuration and restart'
+												: 'Keep temporary bed mesh',
 							status: 'queued',
 							createdAt: Date.now(),
 							message: null

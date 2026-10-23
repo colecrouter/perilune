@@ -2,11 +2,15 @@
 	import { onMount } from 'svelte';
 	import { liveConnection } from '#lib/client/live-connection.svelte.js';
 	import AppShell from '#lib/components/AppShell.svelte';
+	import SavedMeshes from '#lib/components/SavedMeshes.svelte';
 	import BedMeshProbe from '#lib/components/BedMeshProbe.svelte';
 	import type { PrinterCommand } from '#lib/domain/printer.js';
 	import BedMeshInspector from '#lib/components/BedMeshInspector.svelte';
 	import { getPrinter, submitAction } from '../../printer.remote.js';
 	let { data } = $props();
+	let selectedMesh = $state('active');
+	let inspectingSaved = $state(false);
+	let replacementTarget = $state('default');
 	const dashboard = getPrinter();
 	const initial = $derived(data.initial!.printer);
 	const updates = liveConnection(() => dashboard.connected);
@@ -23,7 +27,10 @@
 	async function submit(command: PrinterCommand) {
 		return (
 			await submitAction({
-				id: command.type === 'meshProbeBegin' ? command.probeId : crypto.randomUUID(),
+				id:
+					command.type === 'meshProbeBegin' || command.type === 'meshProbeProfile'
+						? command.probeId
+						: crypto.randomUUID(),
 				command
 			})
 		).id;
@@ -45,6 +52,7 @@
 			</div>
 		</header>
 		<BedMeshProbe
+			bind:target={replacementTarget}
 			{snapshot}
 			connected={updates.available}
 			userId={data.user?.id ?? ''}
@@ -70,8 +78,28 @@
 					/>
 				</section>{/key}
 		{/if}
-		<div hidden={Boolean(candidate)}>
+		<SavedMeshes
+			onReplace={(name) => {
+				replacementTarget = name;
+				document
+					.getElementById('mesh-calibration')
+					?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+			}}
+			{snapshot}
+			connected={updates.available}
+			role={data.user?.role ?? 'viewer'}
+			onSubmit={submit}
+			onInspect={(name) => {
+				selectedMesh = `profile:${name}`;
+				inspectingSaved = true;
+				document
+					.getElementById('saved-mesh-inspection')
+					?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+			}}
+		/>
+		<div id="saved-mesh-inspection" hidden={Boolean(candidate) && !inspectingSaved}>
 			<BedMeshInspector
+				bind:selected={selectedMesh}
 				meshState={snapshot.bedMesh}
 				{fresh}
 				simulator={snapshot.mode === 'simulator'}
@@ -105,9 +133,9 @@
 				</div>
 			</div>
 			<p>
-				Inspecting a profile does not activate it. The simulator workflow supports probing, result
-				review, temporary use and saving new profiles. Servers can opt into the cold live probing
-				workflow; other live calibration remains planned.
+				Inspecting a mesh does not activate it. Use the Saved meshes actions to change active
+				compensation. The usual-mesh calibration replaces its saved result only after acceptance.
+				Live save and discard restart Klipper; review any pending settings first.
 			</p>
 			<a href="https://www.klipper3d.org/Bed_Mesh.html" target="_blank" rel="noreferrer"
 				>Understanding bed mesh in Klipper ↗</a

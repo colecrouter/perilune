@@ -1,5 +1,6 @@
+import { MeshPersistence, MeshPersistenceError } from './mesh-persistence.js';
 import { printerInterlock } from './printer-admission.js';
-import { afterEach, expect, it } from 'vite-plus/test';
+import { afterEach, expect, it, vi } from 'vite-plus/test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -23,6 +24,7 @@ import type { BedMesh } from '#lib/domain/bed-mesh.js';
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
 	for (const fn of cleanup.splice(0).reverse()) await fn();
+	vi.restoreAllMocks();
 });
 const owner = { id: 'owner', name: 'Owner', role: 'owner', authorized: () => true };
 async function fixture(handler?: (op: MeshOperation) => Promise<void>, filename = ':memory:') {
@@ -84,10 +86,38 @@ async function fixture(handler?: (op: MeshOperation) => Promise<void>, filename 
 								};
 								return {
 									...s,
-									bedMesh: { ...s.bedMesh, active: result, profiles: [mesh, result] },
+									bedMesh: {
+										...s.bedMesh,
+										active: result,
+										profiles: [
+											...s.bedMesh.profiles.filter((p) => p.name !== operation.name),
+											result
+										]
+									},
 									liveMesh: { ...s.liveMesh, pendingConfig: true }
 								};
 							}
+							if (operation.type === 'load')
+								return {
+									...s,
+									bedMesh: {
+										...s.bedMesh,
+										active: operation.name
+											? (s.bedMesh.profiles.find((p) => p.name === operation.name) ?? null)
+											: null
+									}
+								};
+							if (operation.type === 'copy')
+								return {
+									...s,
+									bedMesh: {
+										...s.bedMesh,
+										profiles: [
+											...s.bedMesh.profiles,
+											{ ...s.bedMesh.active!, name: operation.name }
+										]
+									}
+								};
 							if (operation.type === 'restore')
 								return { ...s, bedMesh: { ...s.bedMesh, active: mesh, profiles: [mesh] } };
 							if (operation.type === 'keep')
@@ -119,8 +149,40 @@ async function fixture(handler?: (op: MeshOperation) => Promise<void>, filename 
 		transport
 	);
 	const core = MoonrakerBridgeLive.pipe(Layer.provideMerge(services));
+	const checks = { reject: false, slow: false };
+	const evidence = Layer.succeed(MeshPersistence, {
+		capture: () => Effect.void,
+		prepareRemoval: () => Effect.void,
+		check: () =>
+			checks.reject
+				? Effect.fail(new MeshPersistenceError({ message: 'Unrelated pending settings appeared.' }))
+				: Effect.void,
+		reconcile: () => Effect.succeed('saved' as const),
+		finish: (_id, _actor, _candidate, _names, discard) =>
+			Effect.sync(() => {
+				if (discard && checks.slow) {
+					const now = Date.now();
+					vi.spyOn(Date, 'now').mockImplementation(() => now + 40000);
+				}
+			}).pipe(
+				Effect.andThen(
+					SubscriptionRef.update(state, (s) => ({
+						...s,
+						generation: s.generation + 1,
+						restartSerial: (s.restartSerial ?? 0) + 1,
+						liveMesh: { ...s.liveMesh, pendingConfig: false },
+						bedMesh: { ...s.bedMesh, active: null, profiles: discard ? [mesh] : s.bedMesh.profiles }
+					}))
+				)
+			)
+	});
 	const runtime = ManagedRuntime.make(
-		LiveMeshServiceLive.pipe(Layer.provide(store), Layer.provideMerge(db), Layer.provideMerge(core))
+		LiveMeshServiceLive.pipe(
+			Layer.provide(evidence),
+			Layer.provide(store),
+			Layer.provideMerge(db),
+			Layer.provideMerge(core)
+		)
 	);
 	cleanup.push(() => runtime.dispose());
 	const controller = await runtime.runPromise(LiveMeshService),
@@ -133,7 +195,7 @@ async function fixture(handler?: (op: MeshOperation) => Promise<void>, filename 
 		const id = crypto.randomUUID();
 		return { id, command: { type: 'meshProbeBegin' as const, probeId: id, confirmed: true } };
 	};
-	return { runtime, controller, printer, state, snapshot, submit, begin, operations };
+	return { runtime, controller, printer, state, snapshot, submit, begin, operations, checks };
 }
 it('homes once, measures without blocking telemetry, and keeps an active temporary mesh', async () => {
 	let release!: () => void;
@@ -482,4 +544,179 @@ it('emergency epoch prevents probing after a delayed home acknowledgement', asyn
 	release();
 	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('uncertain');
 	expect(f.operations.map((o) => o.type)).toEqual(['home']);
+});
+
+it('replaces the usual mesh repeatedly without accumulating profiles and requires a reviewed target', async () => {
+	const f = await fixture();
+	for (let n = 0; n < 2; n++) {
+		const base = f.begin();
+		const target = (await f.snapshot()).bedMesh.profiles.find((p) => p.name === 'default')!;
+		const request = {
+			...base,
+			command: { ...base.command, usual: true, expectedTarget: JSON.stringify(target) }
+		};
+		await f.submit(request);
+		await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('review');
+		await f.submit({
+			id: crypto.randomUUID(),
+			command: { type: 'meshProbeFinish', probeId: request.id, outcome: 'save' }
+		});
+		await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('saved');
+		expect((await f.snapshot()).bedMesh.profiles.map((p) => p.name)).toEqual(['default']);
+	}
+	expect(f.operations.filter((o) => o.type === 'probe').map((o) => o.name)).toEqual([
+		'default',
+		'default'
+	]);
+});
+it('blocks unrelated settings before save or discard and retains the candidate', async () => {
+	const f = await fixture();
+	const base = f.begin();
+	const request = {
+		...base,
+		command: {
+			...base.command,
+			usual: true,
+			expectedTarget: JSON.stringify((await f.snapshot()).bedMesh.profiles[0])
+		}
+	};
+	await f.submit(request);
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('review');
+	f.checks.reject = true;
+	await f.submit({
+		id: crypto.randomUUID(),
+		command: { type: 'meshProbeFinish', probeId: request.id, outcome: 'save' }
+	});
+	await expect.poll(async () => (await f.snapshot()).actions[0].status).toBe('failed');
+	expect((await f.snapshot()).meshProbe.session?.stage).toBe('review');
+	expect((await f.snapshot()).meshProbe.session?.result).not.toBeNull();
+	await f.submit({
+		id: crypto.randomUUID(),
+		command: { type: 'meshProbeCancel', probeId: request.id, confirmed: true }
+	});
+	await expect.poll(async () => (await f.snapshot()).actions[0].status).toBe('failed');
+	expect(f.operations.map((o) => o.type)).toEqual(['home', 'probe']);
+});
+it('discards usual calibration through verified restart then restores compensation', async () => {
+	const f = await fixture();
+	const base = f.begin();
+	const request = {
+		...base,
+		command: {
+			...base.command,
+			usual: true,
+			expectedTarget: JSON.stringify((await f.snapshot()).bedMesh.profiles[0])
+		}
+	};
+	await f.submit(request);
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('review');
+	await f.submit({
+		id: crypto.randomUUID(),
+		command: { type: 'meshProbeCancel', probeId: request.id, confirmed: true }
+	});
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('cancelled');
+	expect((await f.snapshot()).bedMesh.active?.name).toBe('default');
+	expect(f.operations.at(-1)).toEqual({ type: 'load', name: 'default' });
+});
+it('loads and clears saved compensation with stale target and duplicate protection', async () => {
+	const f = await fixture();
+	const profile = (await f.snapshot()).bedMesh.active!;
+	const id = crypto.randomUUID();
+	const request = {
+		id,
+		command: {
+			type: 'meshProbeProfile' as const,
+			probeId: id,
+			operation: 'clear' as const,
+			expected: JSON.stringify(profile),
+			confirmed: true
+		}
+	};
+	await f.submit(request);
+	await f.submit(request);
+	await expect.poll(async () => (await f.snapshot()).actions[0].status).toBe('completed');
+	expect((await f.snapshot()).bedMesh.active).toBeNull();
+	expect(f.operations).toEqual([{ type: 'load', name: null }]);
+	const staleId = crypto.randomUUID();
+	await expect(
+		f.submit({
+			id: staleId,
+			command: {
+				...request.command,
+				probeId: staleId,
+				operation: 'load',
+				name: 'default',
+				expected: 'null'
+			}
+		})
+	).rejects.toThrow(/Review/);
+	const loadId = crypto.randomUUID();
+	await f.submit({
+		id: loadId,
+		command: {
+			type: 'meshProbeProfile',
+			probeId: loadId,
+			operation: 'load',
+			name: 'default',
+			expected: JSON.stringify(profile),
+			confirmed: true
+		}
+	});
+	await expect.poll(async () => (await f.snapshot()).bedMesh.active?.name).toBe('default');
+});
+it('restores the previous active mesh after restart exceeds the original queue expiry', async () => {
+	const f = await fixture();
+	const base = f.begin();
+	const request = {
+		...base,
+		command: {
+			...base.command,
+			usual: true,
+			expectedTarget: JSON.stringify((await f.snapshot()).bedMesh.profiles[0])
+		}
+	};
+	await f.submit(request);
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('review');
+	f.checks.slow = true;
+	await f.submit({
+		id: crypto.randomUUID(),
+		command: { type: 'meshProbeCancel', probeId: request.id, confirmed: true }
+	});
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('cancelled');
+	expect((await f.snapshot()).bedMesh.active?.name).toBe('default');
+});
+it('journals an intended copy before dispatch and retains it after lost acknowledgement', async () => {
+	const f = await fixture(async (op) => {
+		if (op.type === 'copy') throw new MoonrakerCommandError({ sent: true });
+	});
+	const base = f.begin();
+	const request = {
+		...base,
+		command: {
+			...base.command,
+			usual: true,
+			expectedTarget: JSON.stringify((await f.snapshot()).bedMesh.profiles[0])
+		}
+	};
+	await f.submit(request);
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('review');
+	await f.submit({
+		id: crypto.randomUUID(),
+		command: { type: 'meshProbeFinish', probeId: request.id, outcome: 'save', name: 'named-copy' }
+	});
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('uncertain');
+	expect((await f.snapshot()).meshProbe.session?.copyName).toBe('named-copy');
+	const stored = await f.runtime.runPromise(
+		Effect.flatMap(
+			SqlClient,
+			(sql) => sql<{ state: string }>`SELECT state FROM live_mesh_workflow WHERE id=1`
+		)
+	);
+	expect(JSON.parse(stored[0].state).session.copyName).toBe('named-copy');
+	await f.submit({
+		id: crypto.randomUUID(),
+		command: { type: 'meshProbeCancel', probeId: request.id, confirmed: true }
+	});
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('cancelled');
+	expect(f.operations.filter((op) => op.type === 'copy')).toHaveLength(1);
 });

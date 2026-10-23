@@ -230,6 +230,14 @@ export function actionLabel(command: PrinterCommand): string {
 			return 'Finish extrusion measurement (proposal only)';
 		case 'extrusionCancel':
 			return 'Cancel filament workflow';
+		case 'meshProbeReconcile':
+			return 'Check saved mesh outcome';
+		case 'meshProbeProfile':
+			return command.operation === 'delete'
+				? 'Delete saved mesh'
+				: command.operation === 'clear'
+					? 'Clear active mesh'
+					: 'Load saved mesh';
 		case 'meshProbeBegin':
 			return 'Begin simulator bed mesh probing';
 		case 'meshProbeFinish':

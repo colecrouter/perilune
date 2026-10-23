@@ -31,6 +31,7 @@ export function decodeRemote(data) {
 	return parse(data)._;
 }
 const files = {
+	printer: 'src/routes/printer.remote.ts',
 	account: 'src/routes/account/account.remote.ts',
 	integrations: 'src/routes/account/integrations.remote.ts',
 	access: 'src/routes/access.remote.ts',

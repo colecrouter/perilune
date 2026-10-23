@@ -8,15 +8,16 @@
 		fresh = true,
 		simulator = false,
 		activeLabel = 'Active',
-		showProfiles = true
+		showProfiles = true,
+		selected = $bindable('active')
 	}: {
 		meshState: BedMeshState;
 		fresh?: boolean;
 		simulator?: boolean;
 		activeLabel?: string;
 		showProfiles?: boolean;
+		selected?: string;
 	} = $props();
-	let selected = $state('active');
 	let view = $state<'top' | 'surface'>('top');
 	let comparison = $state('none');
 	let row = $state(0);
@@ -26,14 +27,14 @@
 			? [
 					{
 						id: 'active',
-						label: `${activeLabel} · ${meshState.active.name || 'unnamed'}`,
+						label: `${activeLabel} · ${meshState.active.name === 'default' ? 'Usual mesh' : meshState.active.name || 'unnamed'}`,
 						mesh: meshState.active
 					}
 				]
 			: []),
 		...meshState.profiles.map((profile) => ({
 			id: `profile:${profile.name}`,
-			label: profile.name,
+			label: profile.name === 'default' ? 'Usual mesh' : profile.name,
 			mesh: profile
 		}))
 	]);

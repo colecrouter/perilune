@@ -143,3 +143,28 @@ test('ownership, forced owner cancellation, expiry and restart discard unsaved r
 	).toBe('interrupted');
 	expect(restartMeshProbe(state.meshProbe).session?.result).toBeNull();
 });
+test('acceptance replaces the target and saves only explicit unique named copies', () => {
+	const state = completed();
+	state.meshProbe.session!.usual = true;
+	state.meshProbe.session!.target = 'warm-bed';
+	const command = {
+		type: 'meshProbeFinish' as const,
+		probeId: state.meshProbe.session!.id,
+		outcome: 'save' as const,
+		name: 'spare'
+	};
+	const next = applyCommand(state, command, undefined, owner);
+	expect(next.bedMesh.active?.name).toBe('warm-bed');
+	expect(next.bedMesh.profiles.find((p) => p.name === 'warm-bed')?.points).toEqual(
+		state.meshProbe.session!.result!.points
+	);
+	expect(next.bedMesh.profiles.find((p) => p.name === 'spare')?.points).toEqual(
+		state.meshProbe.session!.result!.points
+	);
+	expect(() => applyCommand(state, { ...command, name: 'cold-bed' }, undefined, owner)).toThrow(
+		/already exists/
+	);
+	expect(() => applyCommand(state, { ...command, name: 'warm-bed' }, undefined, owner)).toThrow(
+		/already exists/
+	);
+});
