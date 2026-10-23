@@ -157,10 +157,10 @@ try {
 	await viewerPage.getByLabel('Email', { exact: true }).fill('viewer@example.test');
 	await viewerPage.getByLabel('Password', { exact: true }).fill('fixture-viewer-password');
 	await viewerPage.getByRole('button', { name: 'Sign in', exact: true }).click();
-	await viewerPage.getByRole('button', { name: 'Pause print', exact: true }).waitFor();
+	await viewerPage.getByRole('region', { name: 'Print status', exact: true }).waitFor();
 	assert.equal(
-		await viewerPage.getByRole('button', { name: 'Pause print', exact: true }).isDisabled(),
-		true
+		await viewerPage.getByRole('button', { name: 'Pause print', exact: true }).count(),
+		0
 	);
 	const replay = await appRequest(viewer.request, 'POST', command.url(), {
 		headers: { Origin: base, 'Content-Type': command.headers()['content-type'] },

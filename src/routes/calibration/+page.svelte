@@ -16,6 +16,7 @@
 	import { allAxesHomed } from '#lib/domain/motion.js';
 	import { heaterTargetsOff } from '#lib/domain/temperature.js';
 	import type { PrinterCommand } from '#lib/domain/printer.js';
+	import { submitTrackedPrintAction } from '#lib/client/submit-print-action.js';
 	import { getPrinter, submitAction } from '../printer.remote.js';
 	let { data } = $props();
 	const dashboard = getPrinter();
@@ -106,7 +107,11 @@
 		submitting = true;
 		failure = '';
 		try {
-			const result = await submitAction({ id: crypto.randomUUID(), command });
+			const result = await submitTrackedPrintAction(
+				data.user?.id ?? '',
+				{ id: crypto.randomUUID(), command },
+				submitAction
+			);
 			lastAction = result.id;
 		} catch (cause) {
 			failure = isHttpError(cause)

@@ -33,6 +33,7 @@
 		padding: 1rem;
 		overflow-wrap: anywhere;
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
 		gap: 1rem;
@@ -42,12 +43,16 @@
 	}
 	.content {
 		min-width: 0;
-		flex: 1;
+		flex: 1 1 18rem;
 	}
 	.actions {
-		flex-shrink: 0;
+		flex: 0 1 auto;
+		max-width: 100%;
 	}
 	@media (max-width: 600px) {
+		.content {
+			flex: 0 1 auto;
+		}
 		.workflow-notice {
 			align-items: stretch;
 			flex-direction: column;

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { submitTrackedPrintAction } from '#lib/client/submit-print-action.js';
+	import { printActionJournal } from '#lib/client/print-action-journal.svelte.js';
 	import { removeJob } from '../../routes/jobs/jobs.remote.js';
 	import { onMount, untrack } from 'svelte';
 	import { goto, invalidate } from '$app/navigation';
@@ -16,7 +18,6 @@
 	import { resolve } from '$app/paths';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import Icon from '#lib/components/Icon.svelte';
-	import CancelDialog from '#lib/components/CancelDialog.svelte';
 	import { durationLabel, startReason, MAX_GCODE_BYTES, type JobFile } from '#lib/domain/jobs.js';
 	import type { PrinterCommand } from '#lib/domain/printer.js';
 	import { getPrinter, submitAction } from '../../routes/printer.remote.js';
@@ -29,7 +30,7 @@
 			selected: JobFile | null;
 			missingFile: boolean;
 			inspectionError: string | null;
-			user: { role: string } | null;
+			user: { id?: string; role: string } | null;
 		};
 	} = $props();
 	const dashboard = getPrinter();
@@ -41,6 +42,7 @@
 	const library = { refresh: () => invalidate('perilune:jobs') };
 	const snapshot = $derived(dashboard.current ?? initial);
 	const catalog = $derived(data.catalog);
+	const account = $derived(data.user?.id ?? page.data.user?.id ?? '');
 	const canOperate = $derived(data.user?.role === 'owner' || data.user?.role === 'operator');
 	const live = $derived(snapshot.mode === 'moonraker');
 	const pending = $derived(
@@ -49,9 +51,13 @@
 	const reason = $derived(
 		!canOperate
 			? 'An operator account is required.'
-			: !updates.available
-				? 'Reconnecting to Perilune. Your selection is retained.'
-				: startReason(snapshot)
+			: printActionJournal.account === account && printActionJournal.error
+				? printActionJournal.error
+				: printActionJournal.account === account && printActionJournal.entries.length
+					? 'Review the pending print receipt before starting another print.'
+					: !updates.available
+						? 'Reconnecting to Perilune. Your selection is retained.'
+						: startReason(snapshot)
 	);
 	let search = $state(untrack(() => data.catalog.query.q));
 	let material = $state(untrack(() => data.catalog.query.material));
@@ -83,8 +89,6 @@
 		startOpen = false;
 		removeOpen = false;
 	});
-	let cancelOpen = $state(false);
-	let stopJob = $state<{ filename: string; runId: string | null } | undefined>();
 	let uploadProgress = $state<number | null>(null);
 	let uploading = $state(false);
 	let uploadRequest: XMLHttpRequest | undefined;
@@ -191,7 +195,11 @@
 		submitting = true;
 		failure = '';
 		try {
-			const receipt = await submitAction({ id: crypto.randomUUID(), command });
+			const receipt = await submitTrackedPrintAction(
+				account,
+				{ id: crypto.randomUUID(), command },
+				submitAction
+			);
 			if (command.type === 'start') {
 				startReceipt = receipt;
 				startedFileId = command.fileId;
@@ -269,10 +277,7 @@
 			{snapshot}
 			available={updates.available}
 			operator={canOperate}
-			onStop={() => {
-				stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
-				cancelOpen = true;
-			}}
+			controls={false}
 		/>
 		<div
 			class="library-grid"
@@ -570,16 +575,6 @@
 		></Dialog.Portal
 	></Dialog.Root
 >
-<CancelDialog
-	available={updates.available &&
-		snapshot.connection === 'connected' &&
-		snapshot.klippy === 'ready'}
-	bind:open={cancelOpen}
-	bedTarget={snapshot.heaters.bed.target}
-	nozzleTarget={snapshot.heaters.nozzle.target}
-	onConfirm={(coolBed, coolNozzle) =>
-		command({ type: 'cancel', coolBed, coolNozzle, expectedJob: stopJob })}
-/>
 
 <style>
 	header {

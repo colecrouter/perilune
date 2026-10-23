@@ -261,15 +261,93 @@ try {
 	);
 	await first.getByRole('button', { name: 'Pause print', exact: true }).click();
 	await second.getByRole('button', { name: 'Resume print', exact: true }).waitFor();
+	await second.goto(base + '/account');
+	await second
+		.getByRole('region', { name: 'Print status', exact: true })
+		.getByRole('button', { name: 'Resume print', exact: true })
+		.click();
+	await first.getByRole('button', { name: 'Pause print', exact: true }).waitFor();
+	await second.getByRole('button', { name: 'Pause print', exact: true }).click();
+	await first.getByRole('button', { name: 'Resume print', exact: true }).waitFor();
 	await first.waitForFunction(
 		(before) => document.querySelector('link[rel="icon"]')?.href !== before,
 		printingIcon
 	);
+	// A response lost before admission must survive a full document navigation.
+	let lostPrintRequest;
+	await second.route('**/actions', async (route) => {
+		if (route.request().method() === 'POST') {
+			lostPrintRequest = route.request();
+			await route.abort('failed');
+		} else await route.continue();
+	});
+	await second.getByRole('button', { name: 'Resume print', exact: true }).click();
+	await second.getByRole('link', { name: 'Review print submission →', exact: true }).waitFor();
+	assert.ok(lostPrintRequest);
+	const lostId = new URLSearchParams(lostPrintRequest.postData()).get('id');
+	await second.unroute('**/actions');
+	await second.goto(base + '/console');
+	await second.getByRole('link', { name: 'Review print submission →', exact: true }).waitFor();
+	assert.equal(
+		await second.getByRole('button', { name: 'Resume print', exact: true }).isDisabled(),
+		true
+	);
+	await second
+		.getByRole('link', { name: 'View print receipt', exact: true })
+		.getAttribute('href')
+		.then((href) => assert.equal(href, '/actions/' + lostId));
+	await second.getByRole('button', { name: 'Check receipt', exact: true }).click();
+	await second.waitForFunction(() =>
+		[...document.querySelectorAll('button')].some(
+			(b) => b.textContent?.trim() === 'Resume print' && !b.disabled
+		)
+	);
+	const late = await context.request.post(base + '/actions', {
+		headers: {
+			Origin: base,
+			'Content-Type': 'application/x-www-form-urlencoded',
+			'x-sveltekit-action': 'true'
+		},
+		data: lostPrintRequest.postData()
+	});
+	assert.equal((await late.json()).type, 'failure', 'Closed request IDs cannot be admitted later');
+	const stopHref = await first
+		.getByRole('button', { name: 'Stop print', exact: true })
+		.getAttribute('href');
+	await second.goto(base + stopHref);
+	await second.getByRole('checkbox', { name: 'Stop the displayed print' }).check();
+	let lostConfirmation;
+	await second.route('**/actions', async (route) => {
+		if (route.request().method() === 'POST') {
+			lostConfirmation = route.request();
+			await route.abort('failed');
+		} else await route.continue();
+	});
+	await second.getByRole('button', { name: 'Stop print', exact: true }).click();
+	await second.getByRole('link', { name: 'Review print submission →', exact: true }).waitFor();
+	const confirmationId = new URLSearchParams(lostConfirmation.postData()).get('id');
+	await second.unroute('**/actions');
+	await second.goto(base + '/account');
+	await second
+		.getByRole('link', { name: 'View print receipt', exact: true })
+		.getAttribute('href')
+		.then((href) => assert.equal(href, '/actions/' + confirmationId));
+	await second.getByRole('button', { name: 'Check receipt', exact: true }).click();
+	await second.waitForFunction(() =>
+		[...document.querySelectorAll('button')].some(
+			(b) => b.textContent?.trim() === 'Resume print' && !b.disabled
+		)
+	);
+
 	await first.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await first.getByRole('dialog').waitFor();
 	await first.getByRole('checkbox', { name: 'Cool down bed', exact: true }).uncheck();
 	await first.screenshot({ path: 'test-results/stop-print.png', fullPage: true });
 	await first.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
+	await second
+		.getByRole('region', { name: 'Print status', exact: true })
+		.waitFor({ state: 'detached' });
+	await second.goto(base);
 	await second.getByRole('heading', { name: 'Print stopped', exact: true }).waitFor();
 	await first.waitForFunction(
 		() => !document.querySelector('link[rel="icon"]')?.href.startsWith('data:')

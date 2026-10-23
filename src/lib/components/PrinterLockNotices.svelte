@@ -3,11 +3,17 @@
 	import WorkflowProgress from './WorkflowProgress.svelte';
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
 	import { printerLockNotices, canReviewPrinterLock } from '#lib/domain/printer-locks.js';
-	let { snapshot, role }: { snapshot?: PrinterSnapshot; role?: string } = $props();
+	let {
+		snapshot,
+		role,
+		suppressFilamentChange = false
+	}: { snapshot?: PrinterSnapshot; role?: string; suppressFilamentChange?: boolean } = $props();
 	const notices = $derived(
 		snapshot && !snapshot.safety?.halted && !snapshot.liveRecovery
 			? printerLockNotices(snapshot).filter(
-					(notice) => notice.id !== 'configuration' || role !== 'owner'
+					(notice) =>
+						(notice.id !== 'configuration' || role !== 'owner') &&
+						!(suppressFilamentChange && notice.id === 'filamentChange')
 				)
 			: []
 	);

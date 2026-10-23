@@ -36,3 +36,11 @@ test('finished jobs replace active progress with a review link, never an automat
 	await screen.rerender({ snapshot: { ...snapshot, job: { ...snapshot.job, state: 'standby' } } });
 	await expect.element(screen.getByRole('link', { name: 'Choose a file' })).toBeVisible();
 });
+
+test('overview details omit the shared action group when controls are supplied globally', async () => {
+	const snapshot = initialSnapshot();
+	const screen = await render(CurrentJob, { snapshot, controls: false });
+	await expect.element(screen.getByRole('progressbar')).toBeVisible();
+	await expect.element(screen.getByRole('button', { name: 'Pause print' })).not.toBeInTheDocument();
+	await expect.element(screen.getByRole('button', { name: 'Stop print' })).not.toBeInTheDocument();
+});

@@ -6,13 +6,17 @@
 		available = true,
 		bedTarget,
 		nozzleTarget,
-		onConfirm
+		onConfirm,
+		jobName,
+		unavailableReason
 	}: {
 		open?: boolean;
 		available?: boolean;
 		bedTarget: number | null;
 		nozzleTarget: number | null;
 		onConfirm: (coolBed: boolean, coolNozzle: boolean) => Promise<void>;
+		jobName?: string;
+		unavailableReason?: string;
 	} = $props();
 	let coolBed = $state(true);
 	let coolNozzle = $state(true);
@@ -45,6 +49,8 @@
 				>Choose what happens to the heaters after stopping. Keeping them heated can help while
 				troubleshooting.</Dialog.Description
 			>
+			{#if jobName}<p class="reviewed-job">{jobName}</p>{/if}
+			{#if !available && unavailableReason}<p role="status">{unavailableReason}</p>{/if}
 			<div class="cooldown-options">
 				<label
 					><input
@@ -89,3 +95,9 @@
 		</Dialog.Content>
 	</Dialog.Portal>
 </Dialog.Root>
+
+<style>
+	.reviewed-job {
+		overflow-wrap: anywhere;
+	}
+</style>

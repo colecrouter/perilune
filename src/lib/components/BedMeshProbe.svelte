@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { submitTrackedPrintAction } from '#lib/client/submit-print-action.js';
 	import { Dialog } from 'bits-ui';
 	import { isHttpError } from '@sveltejs/kit';
 	import CancelDialog from './CancelDialog.svelte';
@@ -25,7 +26,7 @@
 		connected: boolean;
 		userId: string;
 		role: string;
-		onSubmit: (command: PrinterCommand) => Promise<string>;
+		onSubmit: (command: PrinterCommand, id?: string) => Promise<string>;
 		target?: string;
 		showTrigger?: boolean;
 	} = $props();
@@ -121,7 +122,14 @@
 		submitting = true;
 		failure = '';
 		try {
-			lastAction = await onSubmit(command);
+			lastAction =
+				command.type === 'cancel'
+					? await submitTrackedPrintAction(
+							userId,
+							{ id: crypto.randomUUID(), command },
+							(request) => onSubmit(request.command, request.id)
+						)
+					: await onSubmit(command);
 		} catch (cause) {
 			failure = isHttpError(cause)
 				? cause.body.message

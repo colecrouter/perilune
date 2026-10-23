@@ -1,3 +1,4 @@
+import { reconcilePrintSubmission } from '#lib/server/print-action-reconciliation.js';
 import { LiveActionService } from '#lib/server/live-action-service.js';
 import { error } from '@sveltejs/kit';
 import { submitPrinterAction } from '#lib/server/printer-actions.js';
@@ -133,5 +134,23 @@ export const recoverLiveAction = command(
 			}).pipe(Effect.result)
 		);
 		if (result._tag === 'Failure') error(409, result.failure.message);
+	}
+);
+
+/** Explicit receipt reconciliation closes an unaccepted ID without replaying an action. */
+export const reconcilePrintAction = command(
+	Schema.toStandardSchemaV1(
+		Schema.Struct({
+			id: Schema.String.check(Schema.isUUID()),
+			accountId: Schema.String.check(Schema.isMaxLength(256))
+		})
+	),
+	async ({ id, accountId }) => {
+		const identity = requireIdentity(getRequestEvent(), 'operator');
+		if (accountId !== identity.user.id)
+			error(403, 'The signed-in account changed. Review this receipt in its original account.');
+		const receipt = await runtime.runPromise(reconcilePrintSubmission(id, identity.user.id));
+		if (!receipt) error(404, 'Receipt not found.');
+		return receipt;
 	}
 );

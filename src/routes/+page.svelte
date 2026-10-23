@@ -29,7 +29,6 @@
 		temperatureReason
 	} from '#lib/domain/temperature.js';
 	import HeaterControl from '#lib/components/HeaterControl.svelte';
-	import CancelDialog from '#lib/components/CancelDialog.svelte';
 	import CurrentJob from '#lib/components/CurrentJob.svelte';
 	import CameraPanel from '#lib/components/CameraPanel.svelte';
 	import type { PrinterCommand } from '#lib/domain/printer.js';
@@ -81,8 +80,6 @@
 		return () => clearInterval(timer);
 	});
 
-	let cancelOpen = $state(false);
-	let stopJob = $state<{ filename: string; runId: string | null } | undefined>();
 	let submitting = $state(false);
 	let errorMessage = $state('');
 	const pending = $derived(
@@ -262,10 +259,7 @@
 				{snapshot}
 				available={transportConnected}
 				operator={data.user?.role !== 'viewer'}
-				onStop={() => {
-					stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
-					cancelOpen = true;
-				}}
+				controls={false}
 			/>
 		</div>
 		<div
@@ -412,14 +406,6 @@
 		</div>
 		<footer class="page-footer">Development preview <a href="/roadmap">What’s next</a></footer>
 	</div>
-	<CancelDialog
-		available={thermalReady}
-		bind:open={cancelOpen}
-		bedTarget={snapshot.heaters.bed.target}
-		nozzleTarget={snapshot.heaters.nozzle.target}
-		onConfirm={(coolBed, coolNozzle) =>
-			send({ type: 'cancel', coolBed, coolNozzle, expectedJob: stopJob })}
-	/>
 </AppShell>
 
 <style>
