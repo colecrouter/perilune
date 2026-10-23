@@ -60,7 +60,8 @@ export function liveMeshReason(state: PrinterSnapshot, allowReservation = false)
 	if (safety) return safety;
 	if (state.liveRecovery) return state.liveRecovery.message;
 	if (state.configurationBusy) return 'Configuration recovery owns the printer.';
-	if (!state.liveMesh.enabled) return 'Live bed mesh commands are disabled on this server.';
+	if (state.mode === 'moonraker' && !state.liveMesh.enabled)
+		return 'Live bed mesh commands are disabled on this server.';
 	if (state.connection !== 'connected' || state.klippy !== 'ready' || !state.telemetryReady)
 		return 'Wait for fresh, ready printer telemetry.';
 	if (state.storage !== 'healthy') return 'Action storage is unavailable.';
@@ -110,6 +111,7 @@ export function sameMesh(a: BedMesh | null, b: BedMesh | null): boolean {
 	return Boolean(
 		a &&
 		b &&
+		JSON.stringify(a.parameters ?? null) === JSON.stringify(b.parameters ?? null) &&
 		a.min.every((v, i) => Math.abs(v - b.min[i]) <= 1e-6) &&
 		a.max.every((v, i) => Math.abs(v - b.max[i]) <= 1e-6) &&
 		a.points.length === b.points.length &&
@@ -119,4 +121,28 @@ export function sameMesh(a: BedMesh | null, b: BedMesh | null): boolean {
 				row.every((v, x) => Math.abs(v - b.points[y][x]) <= 1e-6)
 		)
 	);
+}
+
+/** Profile selection changes compensation, but does not probe or require a cold bed. */
+export function meshProfileReason(state: PrinterSnapshot, allowReservation = false): string | null {
+	const safety = safetyReason(state.safety);
+	if (safety) return safety;
+	if (state.liveRecovery) return state.liveRecovery.message;
+	if (state.configurationBusy) return 'Configuration recovery owns the printer.';
+	if (state.mode === 'moonraker' && !state.liveMesh.enabled)
+		return 'Live bed mesh commands are disabled on this server.';
+	if (state.connection !== 'connected' || state.klippy !== 'ready' || !state.telemetryReady)
+		return 'Wait for fresh ready printer telemetry.';
+	if (state.storage !== 'healthy') return 'Action storage is unavailable.';
+	if (
+		!['standby', 'complete', 'cancelled'].includes(state.job.state) ||
+		state.motion.busy !== false
+	)
+		return 'The printer must be idle with no running or paused print.';
+	if (filamentChangeActive(state.filamentChange) || (!allowReservation && state.motion.calibration))
+		return 'Finish the current calibration or filament workflow.';
+	if (state.bedMesh.omittedProfiles > 0) return 'The full saved mesh list must be available.';
+	if (state.actions.some((a) => ['queued', 'sending'].includes(a.status)))
+		return 'Another action is pending.';
+	return null;
 }

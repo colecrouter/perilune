@@ -13,13 +13,15 @@
 		connected,
 		userId,
 		role,
-		onSubmit
+		onSubmit,
+		target = $bindable('default')
 	}: {
 		snapshot: PrinterSnapshot;
 		connected: boolean;
 		userId: string;
 		role: string;
 		onSubmit: (command: PrinterCommand) => Promise<string>;
+		target?: string;
 	} = $props();
 	const live = $derived(snapshot.mode === 'moonraker');
 	const plan = $derived(snapshot.meshProbe.session?.plan ?? snapshot.liveMesh.plan);
@@ -34,12 +36,29 @@
 	let submitting = $state(false);
 	let failure = $state('');
 	let name = $state('');
+	let keepCopy = $state(false);
+	let expectedTarget = $state('null');
+
+	function prepare() {
+		expectedTarget = JSON.stringify(
+			snapshot.bedMesh.profiles.find((p) => p.name === target) ?? null
+		);
+		open = true;
+	}
 	let lastAction = $state('');
 	const receipt = $derived(snapshot.actions.find((action) => action.id === lastAction));
 	let reviewed = $state<{ id: string; owner: string; outcome: 'apply' | 'save'; force: boolean }>();
 	let stopJob = $state<{ filename: string; runId: string | null }>();
 	const session = $derived(snapshot.meshProbe.session);
+
 	const active = $derived(meshProbeActive(snapshot.meshProbe));
+	const targetLabel = $derived(
+		(active ? (session?.target ?? target) : target) === 'default'
+			? 'usual mesh'
+			: active
+				? (session?.target ?? target)
+				: target
+	);
 	const owns = $derived(session?.ownerId === userId);
 	const canOperate = $derived(['owner', 'operator'].includes(role));
 	const ready = $derived(
@@ -102,7 +121,10 @@
 			await send({
 				type: 'meshProbeBegin',
 				probeId: crypto.randomUUID(),
-				confirmed: clean && clear && understand
+				confirmed: clean && clear && understand,
+				usual: role === 'owner',
+				target: role === 'owner' ? target : undefined,
+				expectedTarget: role === 'owner' ? expectedTarget : undefined
 			});
 			open = false;
 		} catch {
@@ -119,6 +141,8 @@
 	function review(outcome: 'apply' | 'save') {
 		if (!session) return;
 		reviewed = { id: session.id, owner: session.ownerName, outcome, force: false };
+		keepCopy = false;
+		name = '';
 		finishOpen = true;
 	}
 	function cancel() {
@@ -128,7 +152,15 @@
 	}
 </script>
 
-<section class="probe-workflow" aria-label="Guided bed mesh probing">
+<section id="mesh-calibration" class="probe-workflow" aria-label="Guided bed mesh probing">
+	{#if !active && role === 'owner'}<label class="replacement-target"
+			>Calibration replaces<select bind:value={target}
+				><option value="default">Usual mesh</option
+				>{#each snapshot.bedMesh.profiles.filter((p) => p.name !== 'default' && !p.name.startsWith('perilune_') && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}$/.test(p.name)) as p}<option
+						value={p.name}>{p.name}</option
+					>{/each}</select
+			></label
+		>{/if}
 	{#if live && !snapshot.liveMesh.enabled}<div class="probe-entry">
 			<button
 				class="button primary"
@@ -143,7 +175,7 @@
 			<button
 				class="button primary"
 				disabled={!canOperate || pending || !connected}
-				onclick={() => (open = true)}>Probe bed…</button
+				onclick={prepare}>Probe bed…</button
 			>
 			<p class="fine-hint">
 				{live
@@ -198,7 +230,9 @@
 				{:else if stats}<p>
 						The result below contains {total}
 						{live ? 'measured' : 'synthetic'} samples with a {stats.range.toFixed(3)} mm range. {live
-							? 'Klipper has already activated this mesh. Your default profile has not been overwritten.'
+							? session.usual
+								? 'Klipper has activated the result. The previously saved mesh remains on disk until you accept.'
+								: 'Klipper has already activated this mesh. Your usual saved mesh has not been overwritten.'
 							: 'Your active mesh and saved profiles have not changed.'}
 					</p>
 					{#if live && !liveIdle}<p class="notice" role="status">
@@ -206,42 +240,54 @@
 							mesh.
 						</p>{/if}
 					<div class="review-actions">
-						<button
-							class="button primary"
-							disabled={!owns || !canOperate || !ready || pending || !liveIdle}
-							onclick={() => review('apply')}>Use temporarily…</button
-						><button
+						{#if !session.usual}<button
+								class="button primary"
+								disabled={!owns || !canOperate || !ready || pending || !liveIdle}
+								onclick={() => review('apply')}>Use temporarily…</button
+							>{/if}<button
 							class="button secondary"
 							disabled={!owns || !canOperate || !ready || pending || !liveIdle}
-							onclick={() => review('save')}>Save profile…</button
+							onclick={() => review('save')}
+							>{session.usual ? 'Use & save…' : 'Save profile…'}</button
 						>
 					</div>
 					<p class="fine-hint">
 						{live
-							? 'Keeping this mesh is temporary. Saving writes all pending Klipper configuration and restarts it. Your start macro must load the saved profile to use it for prints.'
+							? session.usual
+								? `Accepting replaces ${targetLabel}. Saving or discarding restarts Klipper; unrelated pending changes block either operation.`
+								: 'Keeping this mesh is temporary. Saving writes all pending Klipper configuration and restarts it. Your start macro must load the saved profile to use it for prints.'
 							: 'Temporary use ends on restart. Saving creates a new simulator profile without activating it. Unsaved review expires after ten minutes from the start.'}
 					</p>{/if}
 				{#if !owns}<p class="notice">
 						{session.ownerName} owns this workflow. You can follow progress; an account owner can cancel
 						an abandoned run.
 					</p>{/if}
-				<div class="cancel-area">
-					<button
+				{#if session.stage === 'uncertain' && role === 'owner'}<button
 						class="button secondary"
-						disabled={!canOperate ||
-							(!owns && role !== 'owner') ||
-							!ready ||
-							pending ||
-							!liveIdle ||
-							(live && ['probing', 'saving'].includes(session.stage))}
-						onclick={cancel}
-						>{live
-							? 'Restore previous mesh…'
-							: owns
-								? 'Cancel and discard…'
-								: 'Cancel abandoned workflow…'}</button
-					>
-				</div>
+						disabled={!ready || pending}
+						onclick={() =>
+							basic({ type: 'meshProbeReconcile', probeId: session.id, confirmed: true })}
+						>Check saved outcome</button
+					>{/if}
+				{#if !session.operation}<div class="cancel-area">
+						<button
+							class="button secondary"
+							disabled={!canOperate ||
+								(!owns && role !== 'owner') ||
+								!ready ||
+								pending ||
+								!liveIdle ||
+								(live && ['probing', 'saving'].includes(session.stage))}
+							onclick={cancel}
+							>{live
+								? session.usual
+									? 'Discard calibration…'
+									: 'Restore previous mesh…'
+								: owns
+									? 'Cancel and discard…'
+									: 'Cancel abandoned workflow…'}</button
+						>
+					</div>{/if}
 			</div>{:else if session.message}<p class="notice" role="status">{session.message}</p>{/if}
 	{/if}
 </section>
@@ -254,6 +300,10 @@
 					? `Cold probing: ${total} points across X ${plan.min[0]}–${plan.max[0]} and Y ${plan.min[1]}–${plan.max[1]} mm, with ${plan.samples} readings per point. The printer will home if needed, then probe and activate the result. Heater targets remain off.`
 					: 'A cold simulator exercise: 25 synthetic samples across X 20–200 and Y 20–200 mm. No movement, heating, actual probing or printer configuration write occurs.'}</Dialog.Description
 			>
+			{#if role === 'owner'}<p class="notice">
+					This run replaces {targetLabel} only when accepted. Both Save and Discard restart Klipper. Resolve
+					existing pending configuration before starting.
+				</p>{/if}
 			<div class="automatic-checks" aria-label="Automatic probing checks">
 				<label><input type="checkbox" checked={ready} disabled />Printer connected and ready</label
 				><label><input type="checkbox" checked={idle} disabled />No running or paused job</label
@@ -340,19 +390,28 @@
 			><Dialog.Title class="dialog-title"
 				>{reviewed?.outcome === 'save'
 					? live
-						? 'Write configuration and restart?'
+						? session?.usual
+							? `Save ${targetLabel} and restart?`
+							: 'Write configuration and restart?'
 						: 'Save a simulator profile?'
 					: 'Use this mesh temporarily?'}</Dialog.Title
 			><Dialog.Description class="muted"
 				>{reviewed?.outcome === 'save'
 					? live
-						? 'Save a new mesh profile, write ALL pending Klipper configuration changes, and restart Klipper. Existing profiles are never overwritten. Your start macro must load this name to use it for prints.'
-						: 'Create a new saved profile from the reviewed result. This survives restart and does not change the active mesh.'
+						? session?.usual
+							? `Replace ${targetLabel} with this result and restart Klipper. Your existing print-start setup is unchanged. A startup procedure that loads this mesh will use the replacement.`
+							: 'Save a new mesh profile, write ALL pending Klipper configuration changes, and restart Klipper. Existing profiles are never overwritten. Your start macro must load this name to use it for prints.'
+						: session?.usual
+							? `Replace ${targetLabel} and activate it in the simulator. The optional named copy is saved separately. No real printer settings are changed.`
+							: 'Create a new saved profile from the reviewed result. This survives restart and does not change the active mesh.'
 					: live
 						? 'Keep the already active mesh until Klipper restarts or another mesh is loaded. The start macro may load a different mesh.'
 						: 'Use the reviewed result as the active mesh for this simulator process. Restarting clears temporary application.'}</Dialog.Description
 			>
-			{#if reviewed?.outcome === 'save'}<label class="profile-name"
+			{#if reviewed?.outcome === 'save' && session?.usual}<label class="copy-choice"
+					><input type="checkbox" bind:checked={keepCopy} /> Also save a named copy</label
+				>{/if}
+			{#if reviewed?.outcome === 'save' && (!session?.usual || keepCopy)}<label class="profile-name"
 					>Profile name<input
 						bind:value={name}
 						maxlength="40"
@@ -375,7 +434,7 @@
 						!liveIdle ||
 						pending ||
 						!reviewed ||
-						(reviewed.outcome === 'save' && !name.trim())}
+						(reviewed.outcome === 'save' && (!session?.usual || keepCopy) && !name.trim())}
 					onclick={async () => {
 						if (!reviewed) return;
 						try {
@@ -383,7 +442,8 @@
 								type: 'meshProbeFinish',
 								probeId: reviewed.id,
 								outcome: reviewed.outcome,
-								name: reviewed.outcome === 'save' ? name : undefined
+								name:
+									reviewed.outcome === 'save' && (!session?.usual || keepCopy) ? name : undefined
 							});
 							finishOpen = false;
 						} catch {
@@ -406,7 +466,9 @@
 			><Dialog.Title class="dialog-title">Cancel this bed mesh workflow?</Dialog.Title
 			><Dialog.Description class="muted"
 				>{live
-					? 'Confirm the printer has stopped. Restore the previously active saved profile (or clear compensation if none was active) and remove this temporary profile. This does not undo configuration that was already written.'
+					? session?.usual
+						? 'Restart Klipper WITHOUT saving this calibration, then restore the previously active saved mesh. This discards the pending replacement of the usual mesh. Unrelated pending settings block the restart.'
+						: 'Confirm the printer has stopped. Restore the previously active saved profile (or clear compensation if none was active) and remove this temporary profile. This does not undo configuration that was already written.'
 					: `Discard the unfinished run or unsaved result belonging to ${reviewed?.owner}. The previous active mesh and saved profiles are retained.`}</Dialog.Description
 			>{#if failure}<p class="error-text" role="alert">{failure}</p>{/if}
 			<div class="dialog-actions">
@@ -427,7 +489,12 @@
 						} catch {
 							/* retained in dialog */
 						}
-					}}>{live ? 'Restore previous mesh' : 'Cancel and discard'}</button
+					}}
+					>{live
+						? session?.usual
+							? 'Discard and restart'
+							: 'Restore previous mesh'
+						: 'Cancel and discard'}</button
 				>
 			</div></Dialog.Content
 		></Dialog.Portal
@@ -435,6 +502,33 @@
 >
 
 <style>
+	.replacement-target select {
+		font: inherit;
+		min-height: 2.75rem;
+		padding: 0.65rem 0.8rem;
+		border: 1px solid var(--border);
+		border-radius: 0.65rem;
+		background: var(--surface);
+		color: var(--text);
+		width: 100%;
+	}
+
+	.replacement-target {
+		display: grid;
+		gap: 0.4rem;
+		max-width: 25rem;
+		margin-bottom: 1rem;
+	}
+	.copy-choice {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		margin: 1rem 0;
+	}
+	.copy-choice input {
+		width: 1.2rem;
+		height: 1.2rem;
+	}
 	.probe-entry {
 		display: flex;
 		gap: 1rem;

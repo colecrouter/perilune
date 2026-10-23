@@ -171,3 +171,35 @@ for (const afterCommit of [false, true])
 		expect((await app.snapshot()).meshProbe.session?.stage).toBe('interrupted');
 		expect(calls).toBe(1);
 	});
+it('does not resurrect deleted simulator compensation after backend restart', async () => {
+	const directory = await mkdtemp(join(tmpdir(), 'mesh-deletion-restart-'));
+	cleanup.push(() => rm(directory, { recursive: true, force: true }));
+	const filename = join(directory, 'state.sqlite');
+	const app = await create(filename);
+	await app.ready();
+	const active = (await app.snapshot()).bedMesh.active!;
+	await app.submit({
+		type: 'meshProbeProfile',
+		probeId: randomUUID(),
+		operation: 'clear',
+		expected: JSON.stringify(active),
+		confirmed: true
+	});
+	await app.submit(
+		{
+			type: 'meshProbeProfile',
+			probeId: randomUUID(),
+			operation: 'delete',
+			name: active.name,
+			expected: JSON.stringify(active),
+			confirmed: true
+		},
+		{ id: 'owner', name: 'Owner', role: 'owner' }
+	);
+	await app.runtime.dispose();
+	const restarted = await create(filename);
+	expect((await restarted.snapshot()).bedMesh.profiles.some((p) => p.name === active.name)).toBe(
+		false
+	);
+	expect((await restarted.snapshot()).bedMesh.active).toBeNull();
+});

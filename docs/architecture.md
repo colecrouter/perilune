@@ -1614,3 +1614,47 @@ Dense mesh connections are batched into at most 33 SVG paths above 512 edges.
 Every measured endpoint and edge is retained; only connection colors are grouped
 into 33 height bands. This avoids thousands of reactive SVG line elements while
 preserving the existing full sample grid. Small meshes retain individual colors.
+
+### Bed mesh saving and profile management
+
+The usual-mesh path calibrates directly into Klipper's `default` profile, retaining
+that identifier for existing print-start compatibility. Owners can instead choose
+a named saved mesh to replace. Acceptance replaces the target; an optional named
+copy is explicit and must be unique. Repeated calibration does not create a new
+permanent run profile. The legacy temporary-profile path remains available to
+operators, who cannot perform the new owner configuration-persistence flow.
+
+The process-owned mesh queue journals the reservation, selected target, previous
+active mesh, candidate, and intended optional copy. Private configuration evidence
+is retained separately in a bounded SQLite table, never included in dashboard
+snapshots. Replacement requires no existing pending settings and a durably saved
+previous active mesh. Saving verifies the owned pending manifest and source
+fingerprints, calls SAVE_CONFIG once, and verifies saved bytes and a Klipper ready
+notification. A websocket reconnection alone does not establish a restart.
+Discard checks the same evidence, restarts without saving, and restores previous
+compensation under a separate bounded continuation deadline. Unrelated pending
+changes block either operation. Unknown outcomes retain evidence and expose a
+read-only reconciliation action; physical commands are never automatically replayed.
+
+The Saved meshes list separates inspection from activation. Load/clear are idle
+queued actions with stale-target protection. Deletion requires an owner, an unused
+mesh, reviewed external start-code references, and a verified save/restart. Known
+literal macro references and profiles defined in editable configuration block
+deletion. Runtime selection does not configure print startup. The UI explicitly
+marks startup behavior as unverified and links to the configuration editor;
+dynamic macros and slicer start G-code are not inferred or rewritten.
+
+Release validation and attended physical acceptance for this workflow are pending
+under #137. Development uses synthetic fixtures only.
+
+Klipper cannot persist removal of its final autosave section using SAVE_CONFIG.
+That deletion case uses the journaled exact main source without the removed
+suffix, one multipart upload, verified readback and owned pending removal, followed
+by one RESTART. Included files and the editable source remain unchanged. A lost
+upload acknowledgement is reconciled through reads before the next stage;
+unverified bytes prevent restart. The same stored bytes and loaded-removal evidence
+are required for later reconciliation.
+Fallback eligibility inspects all raw generated sections, including overridden
+ones omitted from the effective source index. Unreviewable mixed sections are
+refused before staging removal; an effective-value comparison cannot authorize
+dropping unrelated raw configuration.

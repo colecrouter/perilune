@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -8,8 +9,69 @@ import { WebSocketServer } from 'ws';
 import { authenticate } from './smoke-auth-helper.mjs';
 // Stateful loopback protocol fixture: this test never connects to a real printer.
 const directory = await mkdtemp(join(tmpdir(), 'perilune-live-mesh-smoke-'));
-const protocol = new WebSocketServer({ port: 0, host: '127.0.0.1' });
-await new Promise((r) => protocol.once('listening', r));
+const http = createServer(async (req, res) => {
+	try {
+		const url = new URL(req.url, 'http://fixture');
+		const json = (value) => {
+			res.setHeader('Content-Type', 'application/json');
+			res.end(JSON.stringify({ result: value }));
+		};
+		if (req.method === 'POST' && url.pathname === '/server/files/upload') {
+			const form = await new Request('http://fixture/upload', {
+				method: 'POST',
+				headers: req.headers,
+				body: req,
+				duplex: 'half'
+			}).formData();
+			assert.equal(form.get('root'), 'config');
+			assert.equal(form.get('file').name, 'printer.cfg');
+			savedText = await form.get('file').text();
+			uploaded = true;
+			uploadCount++;
+			return json({});
+		}
+		if (req.method === 'POST') {
+			let body = '';
+			for await (const part of req) body += part;
+			const script = body ? JSON.parse(body).script : null;
+			if (url.pathname === '/printer/restart') {
+				restart(false);
+				json('ok');
+				return;
+			}
+			if (script === 'SAVE_CONFIG') {
+				scripts.push(script);
+				restart(true);
+				json('ok');
+				return;
+			}
+		}
+		if (url.pathname === '/printer/info')
+			return json({ config_file: '/fixture/config/printer.cfg', state: klippy });
+		if (url.pathname === '/server/files/roots')
+			return json([{ name: 'config', path: '/fixture/config' }]);
+		if (url.pathname === '/server/files/list')
+			return json([
+				{ path: 'printer.cfg', permissions: 'rw', modified: 1, size: Buffer.byteLength(savedText) }
+			]);
+		if (url.pathname === '/server/files/config/printer.cfg') {
+			res.setHeader('Content-Type', 'text/plain');
+			res.end(savedText);
+			return;
+		}
+		if (url.pathname === '/printer/objects/query')
+			return json({
+				status: { ...status, heaters: { available_heaters: ['heater_bed', 'extruder'] } }
+			});
+		res.statusCode = 404;
+		res.end();
+	} catch (e) {
+		res.statusCode = 500;
+		res.end(String(e));
+	}
+});
+const protocol = new WebSocketServer({ server: http });
+await new Promise((r) => http.listen(0, '127.0.0.1', r));
 const address = protocol.address();
 assert.ok(address && typeof address !== 'string');
 const base = 'http://127.0.0.1:4188';
@@ -43,7 +105,8 @@ const status = {
 			probe: { samples: '2' },
 			'gcode_macro PRIVATE': { gcode: 'PRIVATE_FIXTURE_CONFIG' }
 		},
-		save_config_pending: false
+		save_config_pending: false,
+		save_config_pending_items: {}
 	},
 	bed_mesh: {
 		profile_name: 'default',
@@ -53,6 +116,66 @@ const status = {
 		profiles: { default: profile(points) }
 	}
 };
+const options = (matrix) => ({
+	min_x: '20',
+	min_y: '20',
+	max_x: '200',
+	max_y: '200',
+	points: matrix.map((r) => r.join(',')).join('\n')
+});
+const editable =
+	'[bed_mesh]\nmesh_min: 20,20\nmesh_max: 200,200\nprobe_count: 3,3\n\n[probe]\nsamples: 2\n\n[gcode_macro PRIVATE]\ngcode:\n    PRIVATE_FIXTURE_CONFIG';
+const renderSaved = () =>
+	editable +
+	'\n\n#*# <---------------------- SAVE_CONFIG ---------------------->\n#*# DO NOT EDIT THIS BLOCK OR BELOW. The contents are auto-generated.\n#*#\n' +
+	Object.entries(status.configfile.config)
+		.filter(([name]) => name.startsWith('bed_mesh '))
+		.map(
+			([name, values]) =>
+				'[' +
+				name +
+				']\n' +
+				Object.entries(values)
+					.map(([k, v]) => k + ' = ' + String(v).replace(/\n/g, '\n\t'))
+					.join('\n')
+		)
+		.join('\n\n')
+		.split('\n')
+		.map((line) => ('#*# ' + line).trim())
+		.join('\n') +
+	'\n';
+status.configfile.config['bed_mesh default'] = options(points);
+let savedProfiles = structuredClone(status.bed_mesh.profiles),
+	savedText = renderSaved(),
+	uploaded = false,
+	uploadCount = 0;
+function restart(save) {
+	if (save) {
+		for (const [section, value] of Object.entries(status.configfile.save_config_pending_items)) {
+			if (value === null) delete status.configfile.config[section];
+			else status.configfile.config[section] = value;
+		}
+		savedProfiles = structuredClone(status.bed_mesh.profiles);
+		savedText = renderSaved();
+	} else if (uploaded) {
+		for (const [section, value] of Object.entries(status.configfile.save_config_pending_items))
+			if (value === null) delete status.configfile.config[section];
+		savedProfiles = structuredClone(status.bed_mesh.profiles);
+		uploaded = false;
+	} else status.bed_mesh.profiles = structuredClone(savedProfiles);
+	status.configfile.save_config_pending = false;
+	status.configfile.save_config_pending_items = {};
+	klippy = 'startup';
+	notify('notify_klippy_shutdown');
+	later(() => {
+		klippy = 'ready';
+		status.toolhead.homed_axes = '';
+		status.bed_mesh.profile_name = '';
+		status.bed_mesh.probed_matrix = [[]];
+		notify('notify_klippy_ready');
+		update();
+	}, 400);
+}
 const scripts = [],
 	timers = new Set();
 const later = (fn, delay) => {
@@ -115,6 +238,7 @@ protocol.on('connection', (socket) => {
 							status.bed_mesh.probed_matrix = measured;
 							status.bed_mesh.profiles[name] = profile(measured);
 							status.configfile.save_config_pending = true;
+							status.configfile.save_config_pending_items['bed_mesh ' + name] = options(measured);
 							update();
 							reply('ok');
 							later(() => {
@@ -135,11 +259,18 @@ protocol.on('connection', (socket) => {
 				const name = line.split('=')[1];
 				status.bed_mesh.profile_name = name;
 				status.bed_mesh.probed_matrix = status.bed_mesh.profiles[name].points;
-			} else if (line.startsWith('BED_MESH_PROFILE SAVE='))
-				status.bed_mesh.profiles[line.split('=')[1]] = profile(status.bed_mesh.probed_matrix);
-			else if (line.startsWith('BED_MESH_PROFILE REMOVE='))
-				delete status.bed_mesh.profiles[line.split('=')[1]];
-			else if (line === 'SAVE_CONFIG') {
+			} else if (line.startsWith('BED_MESH_PROFILE SAVE=')) {
+				const name = line.split('=')[1];
+				status.bed_mesh.profiles[name] = profile(status.bed_mesh.probed_matrix);
+				status.configfile.save_config_pending_items['bed_mesh ' + name] = options(
+					status.bed_mesh.probed_matrix
+				);
+			} else if (line.startsWith('BED_MESH_PROFILE REMOVE=')) {
+				const name = line.split('=')[1];
+				delete status.bed_mesh.profiles[name];
+				status.configfile.save_config_pending_items['bed_mesh ' + name] = null;
+				status.configfile.save_config_pending = true;
+			} else if (line === 'SAVE_CONFIG') {
 				status.configfile.save_config_pending = false;
 				klippy = 'startup';
 				notify('notify_klippy_shutdown');
@@ -227,22 +358,24 @@ try {
 	);
 	await page.goto(base + '/calibration/mesh');
 	await page
-		.getByRole('button', { name: 'Save profile…', exact: true })
+		.getByRole('button', { name: 'Use & save…', exact: true })
 		.waitFor({ state: 'visible' });
 	await page.waitForFunction(() =>
 		[...document.querySelectorAll('button')].some(
-			(b) => b.textContent === 'Save profile…' && !b.disabled
+			(b) => b.textContent === 'Use & save…' && !b.disabled
 		)
 	);
 	assert.equal(await page.locator('.candidate-inspection').getByRole('combobox').count(), 0);
-	assert.ok(
-		(await page.locator('body').innerText()).includes('Klipper has already activated this mesh')
-	);
-	await page.getByRole('button', { name: 'Save profile…', exact: true }).click();
+	assert.ok((await page.locator('body').innerText()).includes('Klipper has activated the result'));
+	await page.getByRole('button', { name: 'Use & save…', exact: true }).click();
+	await page.getByRole('checkbox', { name: 'Also save a named copy' }).check();
 	await page.getByRole('textbox', { name: 'Profile name' }).fill('reviewed-bed');
 	await page.getByRole('button', { name: 'Write and restart', exact: true }).click();
-	await page.getByText(/Saved reviewed-bed and verified it after Klipper restarted/).waitFor();
-	assert.deepEqual(status.bed_mesh.profiles.default.points, points);
+	await page.getByText(/Usual mesh saved and verified after restart/).waitFor();
+	assert.deepEqual(
+		status.bed_mesh.profiles.default.points,
+		points.map((r) => r.map((v) => v + 0.1))
+	);
 	assert.ok(status.bed_mesh.profiles['reviewed-bed']);
 	assert.equal(status.configfile.save_config_pending, false);
 	await observer
@@ -263,19 +396,41 @@ try {
 	await page.getByText('Review your mesh', { exact: true }).waitFor();
 	await page.waitForFunction(() =>
 		[...document.querySelectorAll('button')].some(
-			(b) => b.textContent === 'Restore previous mesh…' && !b.disabled
+			(b) => b.textContent === 'Discard calibration…' && !b.disabled
 		)
 	);
-	await page.getByRole('button', { name: 'Restore previous mesh…', exact: true }).click();
-	await page.getByRole('button', { name: 'Restore previous mesh', exact: true }).click();
+	await page.getByRole('button', { name: 'Discard calibration…', exact: true }).click();
+	await page.getByRole('button', { name: 'Discard and restart', exact: true }).click();
 	await page
-		.getByText('The previous mesh was restored. No configuration was written.', { exact: true })
+		.getByText(
+			'Calibration discarded. Saved configuration is unchanged; the previous active mesh was restored after restart.',
+			{ exact: true }
+		)
 		.waitFor();
 	assert.equal(status.bed_mesh.profile_name, '');
 	assert.equal(
 		Object.keys(status.bed_mesh.profiles).filter((n) => n.startsWith('perilune_')).length,
 		0
 	);
+	const remove = async (name) => {
+		const row = page
+			.locator('.saved-meshes li')
+			.filter({ has: page.getByText(name, { exact: true }) });
+		await row.getByRole('button', { name: 'Delete…', exact: true }).click();
+		await page.getByRole('checkbox', { name: /I checked my print-start/ }).check();
+		await page.getByRole('button', { name: 'Delete and restart', exact: true }).click();
+		await page.getByRole('dialog').waitFor({ state: 'hidden' });
+		await page
+			.locator('.saved-meshes [role="status"]')
+			.filter({ hasText: 'Delete saved mesh and restart: completed.' })
+			.waitFor();
+	};
+	await remove('reviewed-bed');
+	await remove('Usual mesh');
+	assert.deepEqual(Object.keys(status.bed_mesh.profiles), []);
+	assert.equal(uploadCount, 1);
+	assert.ok(!savedText.includes('#*#'));
+	assert.equal(scripts.filter((s) => s === 'SAVE_CONFIG').length, 2);
 	assert.equal(connections, 1, 'one process-owned printer socket');
 	await page.setViewportSize({ width: 320, height: 800 });
 	await prepare();
@@ -284,8 +439,20 @@ try {
 	assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
 	assert.deepEqual(errors, []);
 	console.log(
-		'Live mesh production smoke passed: shared progress through navigation, homing, immediate activation, named save/restart verification, restoration, one socket, private-config filtering and 320px preparation.'
+		'Live mesh production smoke passed: shared progress through navigation, homing, immediate activation, usual replacement, optional copy, verified discard, deletion including final autosave section, one socket, private-config filtering and 320px preparation.'
 	);
+} catch (error) {
+	const debug = browser?.contexts()[0]?.pages()[0];
+	if (debug) {
+		await debug.goto(base + '/calibration/mesh');
+		console.error(
+			await debug
+				.locator('.probe-workflow')
+				.innerText()
+				.catch(() => '')
+		);
+	}
+	throw error;
 } finally {
 	await browser?.close();
 	for (const timer of timers) clearTimeout(timer);
@@ -297,5 +464,7 @@ try {
 	if (app.exitCode === null) app.kill('SIGKILL');
 	for (const socket of protocol.clients) socket.terminate();
 	await new Promise((r) => protocol.close(r));
+	http.closeAllConnections();
+	await new Promise((r) => http.close(r));
 	await rm(directory, { recursive: true, force: true });
 }

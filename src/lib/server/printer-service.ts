@@ -122,9 +122,20 @@ export const makePrinterService = (
 				mode === 'simulator'
 					? {
 							...initialSnapshot().bedMesh,
-							profiles: [...initialSnapshot().bedMesh.profiles, ...meshProbe.savedProfiles]
+							profiles: [
+								...initialSnapshot().bedMesh.profiles.filter(
+									(p) =>
+										!meshProbe.savedProfiles.some((s) => s.name === p.name) &&
+										!meshProbe.removedProfiles?.includes(p.name)
+								),
+								...meshProbe.savedProfiles
+							]
 						}
 					: initialLiveSnapshot().bedMesh;
+			if (mode === 'simulator' && bedMesh.active) {
+				bedMesh.active = bedMesh.profiles.find((p) => p.name === bedMesh.active!.name) ?? null;
+				bedMesh.status = bedMesh.active ? 'ready' : 'empty';
+			}
 			const state = yield* SubscriptionRef.make<PrinterSnapshot>({
 				...(mode === 'moonraker' ? initialLiveSnapshot() : initialSnapshot()),
 				pid,

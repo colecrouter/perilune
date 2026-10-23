@@ -46,10 +46,13 @@ export const pendingFingerprint = (manifest: PendingManifest) =>
 export function pendingConfigurationText(
 	before: string,
 	sources: ConfigSources,
-	pending: PendingManifest
+	pending: PendingManifest,
+	removed: string[] = []
 ) {
 	const values = new Map<string, Map<string, string>>();
-	for (const origin of sources.definitions.filter((d) => d.generated)) {
+	for (const origin of sources.definitions.filter(
+		(d) => d.generated && !removed.includes(d.section)
+	)) {
 		if (!values.has(origin.section)) values.set(origin.section, new Map());
 		values.get(origin.section)!.set(origin.option, origin.value);
 	}

@@ -30,6 +30,7 @@ export class MoonrakerConfig extends Context.Service<MoonrakerConfig, MoonrakerS
 ) {}
 export type KlippyState = 'unknown' | 'ready' | 'startup' | 'shutdown' | 'error' | 'disconnected';
 export interface MoonrakerSnapshot {
+	restartSerial?: number;
 	/** Parser coordinates before mesh transforms, private to physical workflow verification. */
 	gcodePosition?: { x: number; y: number; z: number; e: number } | null;
 	/** Owner/operator-only discovery; never copied to the public dashboard. */
@@ -78,7 +79,10 @@ export type MeshOperation =
 	| { type: 'probe'; name: string }
 	| { type: 'restore'; name: string | null; remove: string }
 	| { type: 'keep'; remove: string }
-	| { type: 'save'; name: string; remove: string };
+	| { type: 'save'; name: string; remove: string }
+	| { type: 'copy'; name: string }
+	| { type: 'remove'; name: string }
+	| { type: 'load'; name: string | null };
 export function meshScript(operation: MeshOperation): string {
 	for (const name of [
 		'name' in operation ? operation.name : null,
@@ -87,6 +91,12 @@ export function meshScript(operation: MeshOperation): string {
 		if (name !== null && !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(name))
 			throw new Error('Invalid mesh profile identifier');
 	switch (operation.type) {
+		case 'remove':
+			return `BED_MESH_PROFILE REMOVE=${operation.name}`;
+		case 'copy':
+			return `BED_MESH_PROFILE SAVE=${operation.name}`;
+		case 'load':
+			return operation.name ? `BED_MESH_PROFILE LOAD=${operation.name}` : 'BED_MESH_CLEAR';
 		case 'home':
 			return 'G28';
 		case 'probe':
@@ -535,7 +545,11 @@ export const MoonrakerServiceLive = Layer.effect(
 							wake?.();
 						} else if (message.method === 'notify_klippy_ready') {
 							readinessVersion++;
-							current = { ...current, generation: current.generation + 1 };
+							current = {
+								...current,
+								generation: current.generation + 1,
+								restartSerial: (current.restartSerial ?? 0) + 1
+							};
 							subscribed = false;
 							void publish({ ...current, telemetryReady: false });
 							wake?.();
@@ -544,7 +558,11 @@ export const MoonrakerServiceLive = Layer.effect(
 							message.method === 'notify_klippy_disconnected'
 						) {
 							readinessVersion++;
-							current = { ...current, generation: current.generation + 1 };
+							current = {
+								...current,
+								generation: current.generation + 1,
+								restartSerial: (current.restartSerial ?? 0) + 1
+							};
 							subscribed = false;
 							void publish({
 								...current,
