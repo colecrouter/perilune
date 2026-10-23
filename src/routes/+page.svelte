@@ -209,7 +209,7 @@
 					</p>
 				</div>
 			</section>{/if}
-		{#if !updates.available || !connected || snapshot.klippy !== 'ready'}<div
+		{#if !['printing', 'paused'].includes(snapshot.job.state) && (!updates.available || !connected || snapshot.klippy !== 'ready')}<div
 				class="reconnect-banner"
 				role="status"
 			>

@@ -172,14 +172,14 @@
 							>{/if}
 					</div>{/if}
 				{#if !fresh}<p class="muted">
-						Reconnecting or waiting for fresh printer status · last known progress.
+						{jobControlReason(snapshot, available, true)}
 					</p>{/if}
 				{#if filament}<p>
 						{snapshot.filamentChange?.stage === 'review'
 							? 'Check the printer and review filament-change guidance before continuing.'
 							: 'Continue filament-change guidance before resuming.'}
 					</p>{/if}
-				{#if reason && operator}<p class="muted">{reason}</p>{/if}
+				{#if fresh && reason && operator}<p class="muted">{reason}</p>{/if}
 				{#if receipt && operator}<ActionFeedback {receipt} />{/if}
 				{#if checkFailure && operator}<p role="alert">{checkFailure}</p>{/if}
 				{#if printActionJournal.error && operator}<p role="alert">
