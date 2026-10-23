@@ -220,7 +220,12 @@ try {
 	temperature = 41;
 	klippy = 'ready';
 	for (const socket of protocol.clients) socket.terminate();
-	await first.getByText('Reconnecting to Moonraker', { exact: true }).waitFor();
+	await first
+		.getByRole('region', { name: 'Print status', exact: true })
+		.getByText('Waiting for the printer connection. Last known progress is retained.', {
+			exact: true
+		})
+		.waitFor();
 	assert.equal(await first.getByRole('spinbutton', { name: 'Bed target' }).inputValue(), '85');
 	await first.waitForFunction(() =>
 		Array.from(document.querySelectorAll('.heater')).at(-1)?.textContent?.includes('41')
