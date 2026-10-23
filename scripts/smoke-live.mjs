@@ -139,8 +139,14 @@ try {
 	assert.equal(connections, 1, 'Browsers share one printer connection');
 	klippy = 'ready';
 	notify('notify_klippy_ready');
-	await second.getByText('fixture.gcode', { exact: true }).waitFor();
-	await first.getByText('20%', { exact: true }).waitFor();
+	await second
+		.getByRole('region', { name: 'Print status', exact: true })
+		.getByText('fixture.gcode', { exact: true })
+		.waitFor();
+	await first
+		.getByRole('region', { name: 'Print status', exact: true })
+		.getByText('20%', { exact: true })
+		.waitFor();
 	assert.equal(await first.getByRole('spinbutton', { name: 'Bed target' }).inputValue(), '85');
 	assert.equal(
 		await first.getByRole('button', { name: 'Pause print', exact: true }).isDisabled(),
