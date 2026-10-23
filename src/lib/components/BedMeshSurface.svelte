@@ -1,19 +1,38 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import {
 		Chart,
 		Layer,
 		Frame,
 		Grid,
 		Axis,
-		Spline,
+		Line,
 		Circle,
 		isometric,
 		type ChartState
 	} from 'layerchart';
-	import { curveLinear } from 'd3-shape';
+	import { meshSegments } from '#lib/domain/mesh-visualization.js';
 	import { meshPoint, type BedMesh } from '#lib/domain/bed-mesh.js';
-	let { mesh, scale, color }: { mesh: BedMesh; scale: number; color: (value: number) => string } =
-		$props();
+	let {
+		mesh,
+		scale,
+		color,
+		selectedRow = 0,
+		selectedColumn = 0
+	}: {
+		mesh: BedMesh;
+		scale: number;
+		color: (value: number) => string;
+		selectedRow?: number;
+		selectedColumn?: number;
+	} = $props();
+	const segments = $derived(meshSegments(mesh));
+	let contrastStroke = $state(false);
+	onMount(() => {
+		contrastStroke = CSS.supports('color', 'color-mix(in srgb, white, black)');
+	});
+	const lineColor = (height: number) =>
+		contrastStroke ? `color-mix(in srgb, ${color(height)}, var(--text) 45%)` : color(height);
 	let context = $state<ChartState>();
 	let amplification = $state(100);
 	const points = $derived(
@@ -84,36 +103,36 @@
 					ticks={[-scale, scale]}
 					tickLabelProps={{ viewport: true, fill: 'var(--muted)' }}
 				/>
-				<Spline
-					g="row"
-					curve={curveLinear}
-					stroke="var(--accent)"
-					strokeWidth={1.5}
-					motion="none"
-				/>
-				<Spline
-					data={[...points].sort((a, b) => a.row - b.row)}
-					g="column"
-					curve={curveLinear}
-					stroke="var(--accent)"
-					strokeWidth={1.5}
+				<Line
+					class="mesh-segment"
+					data={segments}
+					x1="x1"
+					y1="y1"
+					z1="z1"
+					x2="x2"
+					y2="y2"
+					z2="z2"
+					stroke={(segment: (typeof segments)[number]) => lineColor(segment.height)}
+					strokeWidth={2}
 					motion="none"
 				/>
 				<Circle
+					class={(point: (typeof points)[number]) =>
+						point.row === selectedRow && point.column === selectedColumn
+							? 'mesh-sample selected-sample'
+							: 'mesh-sample'}
 					cx="x"
 					cy="y"
 					r={2.5}
 					fill={(point: (typeof points)[number]) => color(point.z)}
 					stroke="var(--text)"
-					strokeWidth={0.5}
+					strokeWidth={(point: (typeof points)[number]) =>
+						point.row === selectedRow && point.column === selectedColumn ? 3 : 0.5}
 					viewport
 				/>
 			</Layer>
 		</Chart>
 	</div>
-	<p class="surface-note">
-		Lines connect reported samples; they are not Klipper’s compensation surface.
-	</p>
 	<div class="surface-controls">
 		<label
 			>Rotation<input
@@ -158,10 +177,19 @@
 			}}>Reset view</button
 		>
 	</div>
-	<p class="fine-hint">
-		Drag to rotate and tilt, or use the sliders. Scroll outside the chart to move down the page.
-		Select exact samples with the row and column fields or the top-down map.
-	</p>
+	<details class="surface-help">
+		<summary>View controls &amp; height scale</summary>
+		<p>
+			Drag to rotate and tilt, or use the Rotation and Tilt sliders with your keyboard. Height scale
+			exaggerates the shape; numeric values stay in millimetres. Reset view restores the initial
+			angle and ×100 scale.
+		</p>
+		<p>
+			Lines connect adjacent reported samples and use their average height for color. They are not
+			Klipper’s compensation surface. The outlined larger point is the selected sample; use the
+			top-down map or row and column fields to choose another.
+		</p>
+	</details>
 </div>
 
 <style>
@@ -196,10 +224,19 @@
 		width: 100%;
 		accent-color: var(--accent);
 	}
-	.surface-note {
+	.surface-help {
 		font-size: 0.85rem;
 		color: var(--muted);
 		line-height: 1.5;
+		margin-top: 0.75rem;
+	}
+	.surface-help summary {
+		cursor: pointer;
+		padding-block: 0.5rem;
+		font-weight: 550;
+	}
+	.surface-controls {
+		margin-top: 0.8rem;
 	}
 	:global(.surface-chart .lc-axis-label) {
 		fill: var(--text);
