@@ -117,8 +117,7 @@ try {
 		}
 	});
 	await page.getByRole('button', { name: 'Add a passkey', exact: true }).click();
-	await page.getByRole('status').waitFor();
-	assert.match(await page.getByRole('status').innerText(), /Passkey added/);
+	await page.getByRole('status').filter({ hasText: 'Passkey added' }).waitFor();
 	await page.emulateMedia({ colorScheme: 'dark' });
 	await mkdir('test-results', { recursive: true });
 	await page.screenshot({ path: 'test-results/auth-account-dark.png', fullPage: true });
