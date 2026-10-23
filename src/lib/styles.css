@@ -87,11 +87,19 @@ small {
 }
 .app-shell {
 	display: grid;
-	grid-template-columns: 242px minmax(0, 1fr);
+	--sidebar-width: 242px;
+	grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
 	min-height: 100vh;
 }
+.app-shell > main {
+	grid-column: 2;
+}
 .sidebar {
-	position: relative;
+	position: fixed;
+	inset: 0 auto 0 0;
+	width: var(--sidebar-width);
+	height: 100dvh;
+	overflow-y: auto;
 	isolation: isolate;
 	background: var(--rail);
 	color: var(--rail-text);
@@ -684,7 +692,7 @@ progress::-moz-progress-bar {
 }
 @media (max-width: 1200px) {
 	.app-shell {
-		grid-template-columns: 216px minmax(0, 1fr);
+		--sidebar-width: 216px;
 	}
 	.dashboard {
 		padding: 24px;
@@ -736,6 +744,11 @@ progress::-moz-progress-bar {
 		display: block;
 	}
 	.sidebar {
+		position: relative;
+		inset: auto;
+		width: auto;
+		height: auto;
+		overflow-y: visible;
 		padding: 14px 16px 0;
 		border-right: 0;
 		border-bottom: 1px solid var(--border);
