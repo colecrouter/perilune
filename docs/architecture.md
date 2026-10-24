@@ -1763,3 +1763,8 @@ and loaded baseline with no pending settings. Explicit Discard then journals the
 activation obligation and restores previous compensation without restarting.
 Reconciliation retains unresolved recovery until that compensation is verified.
 Emergency recovery may independently close after automatic readiness checks.
+
+Failure notice acknowledgements (unreleased) persist a bounded set of receipt IDs
+in account-scoped sessionStorage so document navigation does not resurrect old
+failures. Restricted storage falls back to in-memory dismissal. Receipts and
+workflow recovery remain unchanged.

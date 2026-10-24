@@ -28,3 +28,10 @@ are preserved.
 Live physical execution of these basic actions is still disabled. This milestone
 establishes the shared submission adapter and progressive forms; physical-operation
 coordination and printer testing are tracked in #10.
+
+Failure notice dismissal (unreleased): closing a failure notice acknowledges the
+currently displayed failures for this browser tab and account, including across
+full page navigation and reloads. New failures still appear. Activity retains the
+original receipts; dismissal does not clear recovery locks or change printer
+state. If browser tab storage is unavailable, dismissal lasts until the document
+is replaced.

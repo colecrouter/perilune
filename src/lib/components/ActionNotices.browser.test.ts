@@ -33,3 +33,33 @@ test('a failure after acceptance is visible globally and dismissal survives navi
 	await expect.element(next.getByRole('alert')).toBeVisible();
 	actionNotices.dismissed = [];
 });
+
+test('dismissal survives a fresh document state and stays scoped to its account', async () => {
+	const snapshot = initialSnapshot();
+	snapshot.actions = [
+		{
+			id: crypto.randomUUID(),
+			label: 'Restore mesh',
+			status: 'failed',
+			message: 'Old failure',
+			createdAt: Date.now()
+		}
+	];
+	const userId = crypto.randomUUID();
+	const first = await render(ActionNotices, { snapshot, userId });
+	await first.getByRole('button', { name: 'Dismiss failure notice' }).click();
+	await expect.element(first.getByRole('alert')).not.toBeInTheDocument();
+	await first.unmount();
+	// A full navigation starts a new module instance, losing its in-memory state.
+	actionNotices.user = null;
+	actionNotices.dismissed = [];
+	const next = await render(ActionNotices, { snapshot, userId });
+	await expect.element(next.getByRole('alert')).not.toBeInTheDocument();
+	await next.rerender({ userId: crypto.randomUUID() });
+	await expect.element(next.getByRole('alert')).toBeVisible();
+	await next.rerender({ userId });
+	await expect.element(next.getByRole('alert')).not.toBeInTheDocument();
+	sessionStorage.removeItem(`perilune:failure-dismissals:${userId}`);
+	actionNotices.user = null;
+	actionNotices.dismissed = [];
+});

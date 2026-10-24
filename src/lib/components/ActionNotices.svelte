@@ -1,12 +1,13 @@
 <script lang="ts">
-	import { actionNotices } from '#lib/client/action-notices.svelte.js';
+	import {
+		actionNotices,
+		loadFailureDismissals,
+		dismissFailures
+	} from '#lib/client/action-notices.svelte.js';
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
 	let { snapshot, userId }: { snapshot?: PrinterSnapshot; userId?: string } = $props();
 	$effect(() => {
-		if (actionNotices.user !== (userId ?? null)) {
-			actionNotices.user = userId ?? null;
-			actionNotices.dismissed = [];
-		}
+		loadFailureDismissals(userId ?? null);
 	});
 	const failures = $derived(
 		[
@@ -19,8 +20,9 @@
 			.sort((a, b) => b.createdAt - a.createdAt)
 	);
 	function dismiss() {
-		actionNotices.dismissed = [...actionNotices.dismissed, ...failures.map((a) => a.id)].slice(
-			-100
+		dismissFailures(
+			userId ?? null,
+			failures.map((a) => a.id)
 		);
 	}
 </script>
