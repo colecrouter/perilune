@@ -14,6 +14,7 @@ export async function testPairing(owner, base, directory, filename) {
 	const integration = await keyResponse.json();
 	let device = await chromium.launchPersistentContext(join(directory, 'paired-browser'), {
 		headless: true,
+		serviceWorkers: 'block',
 		viewport: { width: 320, height: 844 }
 	});
 	try {
@@ -76,7 +77,8 @@ export async function testPairing(owner, base, directory, filename) {
 		assert.ok(cookie.expires > Date.now() / 1000 + 89 * 86400);
 		await device.close();
 		device = await chromium.launchPersistentContext(join(directory, 'paired-browser'), {
-			headless: true
+			headless: true,
+			serviceWorkers: 'block'
 		});
 		page = await device.newPage();
 		await page.goto(base);
@@ -144,7 +146,8 @@ export async function testPairing(owner, base, directory, filename) {
 		// that page must not race the API-only redemption and revocation assertions.
 		await device.close();
 		device = await chromium.launchPersistentContext(join(directory, 'paired-browser'), {
-			headless: true
+			headless: true,
+			serviceWorkers: 'block'
 		});
 		const secondGrant = await (
 			await appRequest(device.request, 'POST', `${base}/api/pairing/start`, {

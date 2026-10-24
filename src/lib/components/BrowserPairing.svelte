@@ -112,6 +112,7 @@
 				>
 					<label
 						>Pairing code<input
+							disabled={!hydrated || pending}
 							bind:value={code}
 							autocomplete="off"
 							maxlength="11"
@@ -129,6 +130,7 @@
 						{#if integrations.length}<label
 								>Link to an integration<select
 									aria-label="Link to an integration"
+									disabled={!hydrated || pending}
 									bind:value={integrationId}
 									><option value="">Standalone browser</option
 									>{#each integrations as integration}<option value={integration.id}
@@ -202,7 +204,14 @@
 					void action('start');
 				}}
 			>
-				<label>Browser name<input bind:value={name} maxlength="80" required /></label>
+				<label
+					>Browser name<input
+						disabled={!hydrated || pending}
+						bind:value={name}
+						maxlength="80"
+						required
+					/></label
+				>
 				<button class="button primary" disabled={!hydrated || pending}
 					>{pending ? 'Getting code…' : 'Get pairing code'}</button
 				>
