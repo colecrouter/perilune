@@ -156,3 +156,16 @@ default-off pending coordinated testing.
 Z-offset and bed-mesh saves remain in their dedicated Klipper workflows; this
 handoff does not rewrite generated calibration blocks or synthesize mesh data.
 Print-based flow/pressure-advance tuning remains a separate milestone.
+
+### Interrupted mesh recovery (unreleased)
+
+An emergency firmware restart can finish emergency recovery automatically after
+fresh ready, idle, and heater-off checks pass; the emergency menu then closes.
+The mesh workflow has its own recovery state and may still need attention.
+
+If probing stopped before a completed result was recorded, Discard can verify
+that saved sources and loaded configuration match the captured baseline and that
+no pending settings remain. It then explicitly restores the previous saved
+compensation without sending another restart. Changed configuration or pending
+settings block this path for manual review. Read-only reconciliation does not
+close recovery while the previous compensation still needs restoration.

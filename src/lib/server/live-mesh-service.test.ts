@@ -806,3 +806,66 @@ it('lost discard activation stays unresolved until explicit restoration, without
 	expect((await f.snapshot()).bedMesh.active?.name).toBe('default');
 	expect(f.operations.filter((op) => op.type === 'load')).toHaveLength(2);
 });
+
+it.each([false, true])(
+	'restores an interrupted candidate-less probe after an external restart (new=%s)',
+	async (newProfile) => {
+		const f = await fixture(async (op) => {
+			if (op.type === 'probe') throw new MoonrakerCommandError({ sent: true });
+		});
+		const base = f.begin();
+		await f.submit({
+			...base,
+			command: {
+				...base.command,
+				usual: true,
+				newProfile,
+				...(newProfile
+					? {}
+					: { expectedTarget: JSON.stringify((await f.snapshot()).bedMesh.profiles[0]) })
+			}
+		});
+		await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('uncertain');
+		expect((await f.snapshot()).meshProbe.session?.result).toBeFalsy();
+		f.checks.resolution = 'discarded';
+		await Effect.runPromise(
+			SubscriptionRef.update(f.state, (s) => ({
+				...s,
+				generation: s.generation + 1,
+				restartSerial: (s.restartSerial ?? 0) + 1,
+				bedMesh: { ...s.bedMesh, active: null }
+			}))
+		);
+		await f.submit({
+			id: crypto.randomUUID(),
+			command: { type: 'meshProbeReconcile', probeId: base.id, confirmed: true }
+		});
+		await expect.poll(async () => (await f.snapshot()).actions[0]?.status).toBe('failed');
+		expect((await f.snapshot()).meshProbe.session?.stage).toBe('uncertain');
+		await f.submit({
+			id: crypto.randomUUID(),
+			command: { type: 'meshProbeCancel', probeId: base.id, confirmed: true }
+		});
+		await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('cancelled');
+		expect(f.checks.finishes).toBe(0);
+		expect(f.operations.filter((op) => op.type === 'load')).toEqual([
+			{ type: 'load', name: 'default' }
+		]);
+	}
+);
+
+it('does not restore a candidate-less probe when the baseline cannot be verified', async () => {
+	const f = await fixture(async (op) => {
+		if (op.type === 'probe') throw new MoonrakerCommandError({ sent: true });
+	});
+	const base = f.begin();
+	await f.submit({ ...base, command: { ...base.command, usual: true, newProfile: true } });
+	await expect.poll(async () => (await f.snapshot()).meshProbe.session?.stage).toBe('uncertain');
+	await f.submit({
+		id: crypto.randomUUID(),
+		command: { type: 'meshProbeCancel', probeId: base.id, confirmed: true }
+	});
+	await expect.poll(async () => (await f.snapshot()).actions[0]?.status).toBe('failed');
+	expect(f.checks.finishes).toBe(0);
+	expect(f.operations.map((op) => op.type)).toEqual(['home', 'probe']);
+});

@@ -1756,3 +1756,10 @@ Versioned install/upgrade guides and the docs index cover this distribution pass
 Full illustrated feature docs and final site/wiki presentation remain under #149;
 release automation is tracked in #150. Registry visibility is separately verified
 through anonymous access before publishing an installable release.
+
+Interrupted mesh recovery (unreleased): candidate-less interrupted runs can use
+read-only persistence reconciliation to prove restoration of the pre-run saved
+and loaded baseline with no pending settings. Explicit Discard then journals the
+activation obligation and restores previous compensation without restarting.
+Reconciliation retains unresolved recovery until that compensation is verified.
+Emergency recovery may independently close after automatic readiness checks.

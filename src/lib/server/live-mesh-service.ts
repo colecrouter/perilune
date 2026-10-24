@@ -219,8 +219,8 @@ export const LiveMeshServiceLive = Layer.effect(
 								.reconcile(session.id, configActor(actor))
 								.pipe(Effect.mapError(evidenceError));
 							if (
-								session.newProfile &&
-								session.discardStarted &&
+								session.usual &&
+								(session.discardStarted || !session.result) &&
 								resolution === 'discarded' &&
 								(session.previousMesh
 									? !sameMesh(fresh.bedMesh.active, session.previousMesh)
@@ -460,18 +460,21 @@ export const LiveMeshServiceLive = Layer.effect(
 					}
 					if (command.type === 'meshProbeCancel') {
 						if (session.usual) {
-							if (!persistence || !session.result)
-								return yield* fail(
-									'Recovery needs the recorded candidate. Review pending configuration manually; no restart was sent.'
-								);
+							if (!persistence) return yield* fail('Mesh persistence verification is unavailable.');
 							let restoreOnly = false;
-							if (session.newProfile) {
+							// An interrupted probe may never produce a candidate. An external firmware
+							// restart can still restore the captured baseline; verify it without writes.
+							if (session.newProfile || !session.result) {
 								const resolution = yield* persistence
 									.reconcile(session.id, configActor(actor))
 									.pipe(Effect.result);
 								restoreOnly = resolution._tag === 'Success' && resolution.success === 'discarded';
 							}
 							if (!restoreOnly) {
+								if (!session.result)
+									return yield* fail(
+										'No completed candidate was recorded, and the saved baseline could not be verified. Review pending configuration manually; no restart was sent.'
+									);
 								yield* persistence
 									.check(
 										session.id,
@@ -502,6 +505,14 @@ export const LiveMeshServiceLive = Layer.effect(
 											Date.now() - action.createdAt < 30000
 									)
 									.pipe(Effect.mapError(evidenceError));
+							}
+							if (restoreOnly) {
+								const discarding = {
+									...snapshot.meshProbe,
+									session: { ...session, discardStarted: true }
+								};
+								yield* write(discarding);
+								yield* update((s) => ({ ...s, meshProbe: discarding }));
 							}
 							const restorationDeadline = Date.now() + 30000;
 							const resumed = yield* SubscriptionRef.get(transport.state);
