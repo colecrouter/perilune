@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test';
-import { localCameraCandidates, localCameraEndpoint } from './camera-local.js';
+import { localCameraCandidates, localCameraEndpoint, localCameraCapture } from './camera-local.js';
 import { cameraCandidateSummary } from './camera-input.js';
 const profile = 'v4l2:device?video=/dev/video0&input_format=mjpeg&video_size=640x480&framerate=30';
 it('imports only bounded detected profiles with opaque public identifiers', () => {
@@ -37,4 +37,25 @@ it.each([
 	profile.replace('framerate=30', 'framerate=NaN')
 ])('rejects unsafe or unsupported local profile %s', (value) => {
 	expect(() => localCameraEndpoint(value)).toThrow();
+});
+
+it.each(['yuyv422', 'nv12'])('uses one format-aware FFmpeg capture for %s', (format) => {
+	const endpoint = profile.replace('mjpeg', format);
+	expect(decodeURIComponent(localCameraCapture(endpoint))).toBe(
+		`ffmpeg:${endpoint.slice(5)}#video=h264`
+	);
+	expect(localCameraCandidates({ sources: [{ url: endpoint }] })).toHaveLength(1);
+	expect(() => localCameraCapture(endpoint + '#raw=exec')).toThrow();
+});
+it.each([
+	profile.replace('mjpeg', 'yuyv422').replace('640x480', '641x480'),
+	profile.replace('mjpeg', 'nv12').replace('640x480', '640x481'),
+	profile.replace('mjpeg', 'yuyv422').replace('640x480', '640x481'),
+	profile.replace('mjpeg', 'nv12').replace('640x480', '3840x2160'),
+	profile
+		.replace('mjpeg', 'yuyv422')
+		.replace('640x480', '1920x1080')
+		.replace('framerate=30', 'framerate=60')
+])('refuses raw alignment/resource overflow: %s', (endpoint) => {
+	expect(() => localCameraCapture(endpoint)).toThrow();
 });

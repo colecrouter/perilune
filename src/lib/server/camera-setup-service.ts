@@ -287,6 +287,10 @@ export const CameraSetupServiceLive = Layer.effect(
 							return { token, name: input.name, ...details, revision: startingRevision };
 						} catch (cause) {
 							await client.remove(profiles).catch(() => {});
+							if (input.kind === 'local' && !signal?.aborted)
+								throw setupError(
+									'USB camera test failed. Close other camera capture applications, check the device mapping and permissions, then try another detected profile. Raw YUYV/NV12 capture requires software encoding.'
+								);
 							throw cause;
 						}
 					}).pipe(

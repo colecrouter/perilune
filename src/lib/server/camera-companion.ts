@@ -1,24 +1,10 @@
-import { localCameraCandidates } from './camera-local.js';
+import { localCameraCandidates, localCameraCapture } from './camera-local.js';
 import { mp4VideoSize } from './camera-mp4.js';
 import { cameraInput, type CameraInput } from './camera-input.js';
 
 export type CameraQuality = 'original' | 'balanced' | 'data-saver';
-export interface CameraProfiles {
-	original: string;
-	compatible: string;
-	balanced: string;
-	'data-saver': string;
-}
-
-export function cameraProfiles(id: string): CameraProfiles {
-	if (!/^perilune_[a-f0-9]{32}$/.test(id)) throw new Error('Invalid camera generation.');
-	return {
-		original: id,
-		compatible: `${id}_compatible`,
-		balanced: `${id}_balanced`,
-		'data-saver': `${id}_data_saver`
-	};
-}
+import { cameraProfiles, cameraDefinitions, type CameraProfiles } from './camera-profiles.js';
+export { cameraProfiles, type CameraProfiles } from './camera-profiles.js';
 
 /** Owned by a process-scoped service, never by a browser or finite request scope. */
 export class CameraCompanion {
@@ -114,25 +100,8 @@ export class CameraCompanion {
 		if (!/^perilune_[a-f0-9]{32}$/.test(id)) throw new Error('Invalid camera generation.');
 		const input = cameraInput(value);
 		const profiles = cameraProfiles(id);
-		if (httpRemux && !new URL(input.streamUrl).protocol.startsWith('http'))
-			throw new Error('HTTP remux needs an HTTP(S) input.');
-		// URI-encode quote/template characters before go2rtc builds its argument list.
-		const endpoint = input.streamUrl.replace(
-			/["'`{}\\]/g,
-			(char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
-		);
-		// Native V4L2 JPEG tracks cannot be relayed to FFmpeg over RTSP.
-		// Read the one shared capture through the companion's private HTTP API.
-		const format =
-			input.kind === 'local' ? new URL(input.streamUrl).searchParams.get('input_format') : null;
-		const conversionSource =
-			format === 'mjpeg' ? `http://127.0.0.1:1984/api/stream.mjpeg?src=${id}` : id;
-		const definitions = [
-			[id, httpRemux ? `ffmpeg:${endpoint}#video=copy` : input.streamUrl],
-			[profiles.compatible, `ffmpeg:${conversionSource}#video=h264`],
-			[profiles.balanced, `ffmpeg:${conversionSource}#video=h264#width=640`],
-			[profiles['data-saver'], `ffmpeg:${conversionSource}#video=h264#width=320`]
-		];
+		const capture = input.kind === 'local' ? localCameraCapture(input.streamUrl) : input.streamUrl;
+		const definitions = cameraDefinitions(id, input, capture, httpRemux);
 		for (const [name, src] of definitions) {
 			const { response, release } = await this.request(
 				'api/streams',

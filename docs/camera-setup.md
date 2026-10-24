@@ -126,7 +126,16 @@ MJPEG and raw formats may require conversion. Close another capture process befo
 opening its device. Discovery offers each supported format's default profile;
 custom resolution/frame-rate selection is not implemented yet. The managed companion
 uses its private HTTP MJPEG stream for MJPEG USB conversion, with a single shared
-V4L2 capture; its internal API must listen on port 1984 as in the supplied config. Raw-only profiles still need pixel-layout conversion and physical acceptance. Unsupported driver
+V4L2 capture; its internal API must listen on port 1984 as in the supplied config.
+Raw YUYV/NV12 profiles use a single FFmpeg device capture that converts their
+native packed/semiplanar pixels into H.264 before sharing it between viewers and
+quality variants (unreleased). The original quality preserves source dimensions,
+but raw sources necessarily require encoding. Both raw formats require even
+width and height for H.264 output. Software raw capture is limited to
+1080p30-equivalent
+pixel throughput; oversized profiles are omitted. This is a resource ceiling,
+not a performance guarantee on a low-power server. Raw driver/hardware acceptance
+is still separate from the synthetic decoded-color checks. Unsupported driver
 formats are omitted. Physical Logitech C270 acceptance covers discovery, MJPEG conversion, browser
 playback, shared viewers, snapshots, and a driver detach/reattach emulation.
 A physical cable unplug remains a separate acceptance check.
@@ -161,3 +170,23 @@ deployment environment. These variables no longer select a camera.
 
 Saved managed camera settings survive the update. Moonraker entries are import
 candidates and cannot silently replace the saved camera when they change.
+
+### Local capture troubleshooting (unreleased)
+
+- No profiles: verify the selected device is mapped into the companion and its
+  Linux permissions allow access. Discovery omits unsupported formats and raw
+  profiles above the software conversion limit.
+- Listed but test fails: close other capture applications (including another
+  camera server using the same device), check the device mapping/permissions,
+  and try another detected format. Detection does not prove a device can open.
+- Prefer H.264 passthrough, then MJPEG, when available on a small server. Raw
+  YUYV/NV12 needs software encoding even at original quality.
+- A failed test does not replace the saved camera. Device recovery retains the
+  saved configuration; an actual changed Linux device mapping may still require
+  recreating only the companion as described above.
+
+`node scripts/probe-camera-raw.mjs` uses the pinned companion and actual FFmpeg
+conversion with generated YUYV/NV12 color bars. Only the V4L2 device read is
+substituted with a raw fixture. It verifies decoded colors, mixed-quality shared
+capture, idle teardown, unavailable-input recovery and reopening. It opens no
+host camera and does not establish real driver, USB cable or Safari acceptance.
