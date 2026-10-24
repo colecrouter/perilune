@@ -1,5 +1,10 @@
 # Basic printer actions
 
+> Release status: alpha.2 changes are **unreleased until** the matching
+> `v0.1.0-alpha.2` release is published. Use the alpha.1 guides for alpha.1 installs.
+
+Available since **0.1.0-alpha.1**. This guide describes **0.1.0-alpha.2**.
+
 Basic controls render with the server-observed printer state. Live browser updates
 start separately; a page waiting for its first subscription does not report the
 printer as disconnected. If live updates cannot connect within ten seconds, or an
@@ -25,11 +30,12 @@ currently active print. Cancel review explicitly chooses whether each heater
 cools down. Inputs edited before hydration or during a pending heater request
 are preserved.
 
-Live physical execution of these basic actions is still disabled. This milestone
-establishes the shared submission adapter and progressive forms; physical-operation
-coordination and printer testing are tracked in #10.
+Live physical execution is available behind `PERILUNE_LIVE_CONTROLS=true`; it is
+read-only by default. Motion, heaters and print actions use process-owned
+coordination, execution-time checks and unknown-outcome recovery. Enable and
+accept those actions only with the printer owner; see [live controls](live-controls.md).
 
-Failure notices (unreleased): failed receipts remain in Activity as history.
+Failure notices (added in **0.1.0-alpha.2**): failed receipts remain in Activity as history.
 Successful mesh save, discard, or verified reconciliation resolves earlier failure
 alerts belonging to that same mesh workflow. A different workflow's failures
 remain visible. Only failures belonging to the signed-in account appear as alerts.

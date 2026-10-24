@@ -1,114 +1,35 @@
 # Calibration workshop
 
-Open **Calibration** to rehearse Z-offset adjustments in the simulator. Stop the
-simulated job, turn off heater targets, and home all axes if needed. Printer readiness, job state, homing and heater-target checkboxes update
-automatically. Homing and cooldown buttons explain when their conditions are
-already satisfied. Review cleanliness, physical clearance and the simulator
-acknowledgement manually, then begin. A real paper test requires a clean nozzle/bed
-at room temperature; the simulator does not verify those physical conditions.
+Available since **0.1.0-alpha.1**. This guide describes **0.1.0-alpha.2**.
 
-Use the segmented increment selector and **Z + · farther** / **Z − · closer**.
-Positive relative adjustment increases clearance; negative reduces it. The
-candidate is limited to −2..+2 mm and remains a candidate until finishing.
-The schematic is not a measurement of nozzle height or a Klipper probe offset.
+Choose the workflow from **Calibration**. The simulator rehearses interactions;
+physical workflows require independent host opt-ins and attended acceptance.
 
-The next step explains high, even and low first-layer examples. It does not print
-or inspect a layer. Choose the even/joined example to continue to the finish step.
+- [Bed mesh](bed-mesh.md): inspect samples, create a new calibration, replace a
+  saved target, load compensation or delete a saved profile.
+- [PID heater tuning](pid-calibration.md): attended heater measurement and staged
+  gains with explicit save/discard.
+- [Filament changes](filament-changes.md): review printer macro compatibility or
+  use attended assisted handling.
+- Filament/extrusion distance: bounded feed/retract and measured calibration below.
 
-- **Apply until restart** changes only this simulator process. Restart restores
-  the saved default.
-- **Save simulator default…** confirms a database save that survives restarts.
-  It never writes the printer configuration.
-- **Cancel calibration…** confirms discarding the candidate and retaining the
-  previous applied offset. Heater targets and saved defaults are unchanged.
+## Z calibration
 
-The initiating operator owns the session; other users can observe. Conflicting
-motion, heating and printing controls are disabled. Cooldown remains available.
-The account owner can confirm ending another operator's abandoned session.
-Sessions expire after 10 minutes without a step change/adjustment. Reopening the
-page or reconnecting the browser retains the same session, while a simulator
-printer disconnect or backend restart interrupts it and discards unsaved work.
-A storage failure reports an unknown outcome; check the saved default once storage
-recovers. Perilune does not automatically replay the failed command.
+The simulator provides a guided paper-test rehearsal and first-layer examples;
+these do not measure a real nozzle height or print a test layer. A live manual Z
+workflow requires `PERILUNE_LIVE_CONTROLS=true` and
+`PERILUNE_LIVE_Z_CALIBRATION=true`. Follow the preparation checks, inspect physical
+clearance and use the deliberately separated closer/farther controls.
 
-Live Z-offset calibration remains disabled. The opt-in live bed mesh workflow is described below. Probe
-reference calibration and first-layer print tuning are separate workflows.
+Live paper-test steps belong to a persistent backend session. Navigation and
+incoming telemetry retain the workflow; they do not reissue a movement. Accepting
+a result is distinct from saving printer configuration. Review staged settings in
+[Configuration](configuration.md#reviewed-application-and-recovery-opt-in).
+If acknowledgement is lost, inspect the receipt and use the explicit recovery
+flow rather than repeating a command.
 
 References: [Klipper paper test](https://www.klipper3d.org/Bed_Level.html#the-paper-test),
-[Klipper probe calibration](https://www.klipper3d.org/Probe_Calibrate.html).
-
-## Bed mesh inspection
-
-Open **Calibration → Bed mesh** to inspect the current reported sample grid or a
-saved profile. Selecting a profile changes the view only; it does not load it.
-Tap a sample, use arrow keys from a focused sample, or choose row/column numbers.
-The numeric table provides every reported value. Maximum Y is at the top and
-minimum X at the left. Zero is the mesh reference, not necessarily its minimum.
-
-Comparisons show **selected − reference** on identical coordinates. Different
-grids are explained and displayed without subtraction. Changing thermal/probing
-conditions or mesh references can affect differences. No measurement time or
-bed temperature is inferred. The reported grid can contain substituted or
-extrapolated values; it is distinct from Klipper's interpolated compensation grid.
-See [Klipper Bed Mesh](https://www.klipper3d.org/Bed_Mesh.html) and
-[status fields](https://www.klipper3d.org/Status_Reference.html#bed_mesh).
-
-Live inspection is read-only; no probing, heating, motion or config write occurs.
-
-Choose **Isometric** for LayerChart's rotatable wireframe. Drag to turn/tilt, use
-the sliders, or reset the view. The height-scale control makes small variation
-visible and clearly labels amplification; ×1 uses actual proportions. Numeric
-heights and comparison values stay unchanged. Lines connect grid samples and
-are not the interpolated compensation surface. **Top-down** remains available
-for cell selection; row/column fields and the table work in both views.
-
-## Guided bed mesh simulator run
-
-Choose **Probe bed…** and review the fixed X/Y 20–200 mm, 5×5 plan. Automatic checks
-follow connection/readiness, job state, homing and heater targets. Manual checks
-acknowledge cleanliness, area clearance and synthetic samples. Preparation offers
-homing/cooldown and the existing stop-job prompt where needed. Heater targets off
-is not a claim that surfaces are cool. Real thermal/probing requirements must be
-reviewed for the actual printer before enabling live runs.
-
-The backend advances 25 synthetic samples; leaving the page doesn't stop it.
-The initiating operator owns the workflow. Other accounts can observe; account
-owners may cancel an abandoned run. Cancel/discard leaves the previous active mesh
-and saved profiles intact. A run or unsaved review expires ten minutes after start.
-Printer loss, access revocation and backend restart interrupt it without replay.
-
-Review displays the actual candidate separately from earlier inspection choices.
-**Use temporarily…** activates it until process restart. **Save profile…** creates
-a new named simulator profile without activation; it survives restart. Existing
-profiles are never overwritten. Interrupted/unknown actions are explained and not
-retried automatically; storage recovery may reveal a profile whose commit succeeded
-before its acknowledgement was lost. No live probing or printer config write occurs.
-
-## Live cold bed mesh probing
-
-Set `PERILUNE_LIVE_MESH=true` alongside the backend Moonraker connection to enable
-this workflow. Other live commands remain disabled. Review the printer-derived
-rectangular probing bounds and readings per point, clear the bed, and check the
-probe/nozzle. Heater targets must be off and both temperatures at most 40°C.
-**Home and probe bed** homes automatically if needed, then measures the mesh.
-Leaving the page does not stop it. Normal queued commands cannot interrupt probing;
-use the printer's emergency stop if movement must stop immediately.
-
-Klipper activates the result immediately. **Use temporarily…** keeps that active
-compensation until Klipper restarts or another profile is loaded. **Restore previous
-mesh…** restores the previously active saved profile (or clears compensation if
-there was none). It is available only after probing, with fresh idle printer state.
-
-**Save profile…** explicitly confirms writing ALL pending Klipper configuration
-and restarting it. Choose a new identifier; default and internal names are reserved
-and existing names cannot be overwritten. Completion is verified from the profile
-reported after restart. Perilune does not edit your start macro: it must load the
-saved profile if you want prints to use it. An uncertain outcome is never retried;
-verify the printer is stopped before restoring/clearing the workflow.
-
-The initial live workflow supports cold rectangular meshes with discrete probes.
-Warm-bed preparation, standalone profile management and live probe-reference /
-Z-offset calibration remain separate milestones.
+[probe calibration](https://www.klipper3d.org/Probe_Calibrate.html).
 
 ## Filament and extrusion distance
 
@@ -124,9 +45,13 @@ For a real measurement, mark the filament about 70 mm from a fixed point at the
 extruder intake and measure precisely. Enter the current `rotation_distance`,
 including any runtime override; do not substitute slicer flow or change
 `gear_ratio`. After feeding 50 mm slowly, measure from that same point to the mark.
-The live page calculates from an externally performed test, even while offline;
-it does not heat or extrude through Perilune yet. The simulator uses entered
-example measurements, not physical observations.
+With live filament controls disabled, the live page is a manual calculator for an
+externally performed test, even while offline; it does not heat or extrude in that
+mode. With `PERILUNE_LIVE_CONTROLS=true` and `PERILUNE_LIVE_FILAMENT=true`,
+Perilune can send the bounded feed/retract or measured run after fresh extrusion
+permission, settled temperature and ownership checks. Use the heater controls only
+with owner-coordinated preparation. The simulator uses entered example
+measurements, not physical observations.
 
 The calculation is `old rotation_distance × (initial − remaining) / 50`, rounded
 to three decimal places. Repeat with a fresh mark to confirm; discrepancies over
@@ -157,15 +82,4 @@ Z-offset and bed-mesh saves remain in their dedicated Klipper workflows; this
 handoff does not rewrite generated calibration blocks or synthesize mesh data.
 Print-based flow/pressure-advance tuning remains a separate milestone.
 
-### Interrupted mesh recovery (unreleased)
-
-An emergency firmware restart can finish emergency recovery automatically after
-fresh ready, idle, and heater-off checks pass; the emergency menu then closes.
-The mesh workflow has its own recovery state and may still need attention.
-
-If probing stopped before a completed result was recorded, Discard can verify
-that saved sources and loaded configuration match the captured baseline and that
-no pending settings remain. It then explicitly restores the previous saved
-compensation without sending another restart. Changed configuration or pending
-settings block this path for manual review. Read-only reconciliation does not
-close recovery while the previous compensation still needs restoration.
+For interrupted operations, see [recovery](recovery.md).

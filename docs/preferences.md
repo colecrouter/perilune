@@ -1,6 +1,8 @@
 # Personal display preferences
 
-Account → Make yourself at home contains typography, default file page size and
+Available since **0.1.0-alpha.1**. This guide describes **0.1.0-alpha.2**.
+
+Account → Display contains typography, default file page size and
 temperature-history window choices. Console filters, internal-macro visibility,
 response grouping, explicit Follow latest choices and file-table columns also
 save when changed in their workspace. The overview no longer carries the

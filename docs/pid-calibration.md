@@ -1,5 +1,7 @@
 # PID heater calibration
 
+Available since **0.1.0-alpha.1**. This guide describes **0.1.0-alpha.2**.
+
 Open Calibration → PID heater calibration. The simulator returns fixed, clearly
 labelled example gains without heating; never copy those gains to a real printer.
 
@@ -49,9 +51,11 @@ acknowledgements remain unknown and are never automatically replayed.
 If pending gains change or disappear, the result says so; disappearance alone
 does not prove the proposed values were saved. Inspect active configuration.
 
-## Owner-coordinated physical acceptance (still outstanding)
+## Owner-coordinated physical acceptance
 
-Automated tests use synthetic Moonraker fixtures only. Before enabling live PID:
+Preliminary attended nozzle/bed runs and discard were verified with the owner.
+Representative-temperature save and interruption/reconnect cases remain open in
+[#100](https://github.com/colecrouter/perilune/issues/100). Automated tests use synthetic fixtures; before a new live PID session:
 
 - Confirm the printer is idle, the correct heater and safe target are selected,
   both targets are zero, and the owner is attending the hardware.

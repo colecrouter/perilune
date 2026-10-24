@@ -1,5 +1,7 @@
 # Live printer controls
 
+Available since **0.1.0-alpha.1**. This guide describes **0.1.0-alpha.2**.
+
 Set `PERILUNE_MOONRAKER_URL` and explicitly enable `PERILUNE_LIVE_CONTROLS=true`
 on the backend. Restart the process after changing connection settings. The default
 remains read-only; this flag is independent of live mesh and configuration flags.
@@ -8,7 +10,7 @@ Keep private endpoints and API keys in installation settings, outside Git.
 Enabled actions are homing, bounded manual movement, releasing all motors, primary
 bed/nozzle targets, cooldown, and starting/pausing/resuming/stopping jobs already in
 the live file library, bounded primary-extruder feed/retract and measured extrusion.
-Live file upload/deletion also use this flag. Arbitrary console/macros remain disabled; Z-offset workflows require their separate opt-in. Filament additionally requires `PERILUNE_LIVE_FILAMENT=true` (default disabled)
+Live file upload/deletion also use this flag. Console/macros require `PERILUNE_LIVE_CONSOLE=true`; Z-offset workflows require their separate opt-in. Filament additionally requires `PERILUNE_LIVE_FILAMENT=true` (default disabled)
 and settled temperature and the
 printer’s extrusion permission. Actual filament measurement remains manual.
 

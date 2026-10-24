@@ -1,5 +1,7 @@
 # Camera setup
 
+Available since **0.1.0-alpha.1**. This guide describes **0.1.0-alpha.2**.
+
 Perilune can connect a camera without Frigate or an existing NVR. Its optional
 private companion packages go2rtc and FFmpeg; camera capture still happens where
 the camera is physically connected.
