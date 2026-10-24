@@ -366,7 +366,12 @@ for (const fault of [
 ]) {
 	test(`backend faults remain visible during stream loss: ${JSON.stringify(fault)}`, async () => {
 		const snapshot = { ...printing(), ...fault };
-		const screen = await render(PrintNotice, { snapshot, role: 'owner', userId: 'owner' });
+		const screen = await render(PrintNotice, {
+			snapshot,
+			role: 'owner',
+			userId: 'owner',
+			submitStop: vi.fn()
+		});
 		const before = document.body.textContent;
 		expect(before).toMatch(/shutdown|storage is recovering|configuration or calibration workflow/);
 		await screen.rerender({ available: false });
