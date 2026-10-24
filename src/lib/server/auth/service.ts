@@ -3,7 +3,7 @@ import { createHash, randomBytes, createCipheriv, createDecipheriv } from 'node:
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { AuthSqliteDialect } from './sqlite-dialect.js';
+import { AuthSqliteDialect, type TransactionReservation } from './sqlite-dialect.js';
 import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { makeSignature } from 'better-auth/crypto';
@@ -85,12 +85,23 @@ export function createAuthService(
 		throw new Error('Authentication secret must contain at least 32 characters.');
 	const enrollment = new AsyncLocalStorage<{ role: Role }>();
 	const pairing = new AsyncLocalStorage<{ owner: string; epoch: number; loginVersion: number }>();
+	let transactionReservation: TransactionReservation | undefined;
+	const reserved = async <T>(operation: () => T): Promise<T> => {
+		const release = await transactionReservation?.();
+		try {
+			return operation();
+		} finally {
+			await release?.();
+		}
+	};
 	const auth = betterAuth({
 		appName: 'Perilune',
 		baseURL: origin,
 		secret,
 		database: {
-			dialect: new AuthSqliteDialect({ database: db }),
+			dialect: new AuthSqliteDialect({ database: db }, async () =>
+				transactionReservation ? transactionReservation() : async () => {}
+			),
 			type: 'sqlite',
 			transaction: true
 		},
@@ -346,6 +357,9 @@ export function createAuthService(
 		return { token, hash, email: String(user.email) };
 	};
 	return {
+		setTransactionReservation: (reserve: TransactionReservation) => {
+			transactionReservation = reserve;
+		},
 		mailEnabled,
 		recoverMail() {
 			db.prepare("UPDATE account_mail SET status='unknown',sealed='' WHERE status='sending'").run();
@@ -897,11 +911,13 @@ export function createAuthService(
 			if (!body.token || body.token.length > 256)
 				throw new Error('This enrollment link is invalid or expired.');
 			// Reserve durably before asynchronous signup. A crashed reservation is deliberately fail-closed.
-			const claim = db
-				.prepare(
-					`UPDATE enrollment SET claimed=? WHERE hash=? AND claimed IS NULL AND expires>? AND NOT EXISTS(SELECT 1 FROM invitation_details d WHERE d.hash=enrollment.hash AND (d.revoked=1 OR (d.email IS NOT NULL AND d.email!=? COLLATE NOCASE))) AND (kind!='setup' OR (NOT EXISTS(SELECT 1 FROM user) AND NOT EXISTS(SELECT 1 FROM enrollment WHERE kind='setup' AND claimed IS NOT NULL))) RETURNING role`
-				)
-				.get(Date.now(), digest(body.token), Date.now(), body.email);
+			const claim = await reserved(() =>
+				db
+					.prepare(
+						`UPDATE enrollment SET claimed=? WHERE hash=? AND claimed IS NULL AND expires>? AND NOT EXISTS(SELECT 1 FROM invitation_details d WHERE d.hash=enrollment.hash AND (d.revoked=1 OR (d.email IS NOT NULL AND d.email!=? COLLATE NOCASE))) AND (kind!='setup' OR (NOT EXISTS(SELECT 1 FROM user) AND NOT EXISTS(SELECT 1 FROM enrollment WHERE kind='setup' AND claimed IS NOT NULL))) RETURNING role`
+					)
+					.get(Date.now(), digest(body.token), Date.now(), body.email)
+			);
 			if (!claim) throw new Error('This enrollment link is invalid, expired, or already used.');
 			try {
 				await enrollment.run({ role: claim.role as Role }, () =>
@@ -909,10 +925,10 @@ export function createAuthService(
 						body: { name: body.name, email: body.email, password: body.password }
 					})
 				);
-				audit(null, 'account.enrolled', body.email);
+				await reserved(() => audit(null, 'account.enrolled', body.email));
 			} catch (cause) {
 				// Never reopen a token after an ambiguous account-creation outcome.
-				audit(null, 'enrollment.failed', null);
+				await reserved(() => audit(null, 'enrollment.failed', null));
 				throw cause;
 			}
 		},

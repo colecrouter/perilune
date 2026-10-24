@@ -1726,7 +1726,11 @@ path does not safely normalize packed/semiplanar pixel layouts. This assumes the
 1984, independent of host port mappings. Physical acceptance is tracked in #147.
 
 Authentication uses the pinned Better Auth SQLite dialect with `BEGIN IMMEDIATE`
-for its transactions. Reserving the writer before reads avoids a stale WAL read
+for its transactions. Before taking that lock, authentication asynchronously
+reserves the same Effect SQL connection used by the process services. This queues
+background SQL without blocking the event loop. Enrollment claim/audit statements
+use that reservation too, releasing it before entering the auth adapter mutex.
+Reserving the writer before reads avoids a stale WAL read
 snapshot when the process-scoped printer services write through their separate
 connection. Transactions retain commit/rollback semantics; enrollment is never
 replayed and a claimed invitation is never reopened after an ambiguous failure.
