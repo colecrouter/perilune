@@ -114,7 +114,7 @@ try {
 
 	await page.getByRole('combobox', { name: 'Camera source', exact: true }).selectOption('local');
 	await page.getByRole('button', { name: 'Find local cameras', exact: true }).click();
-	await page.getByText('No supported local cameras found.', { exact: false }).waitFor();
+	await page.getByText('No supported local capture profiles found.', { exact: false }).waitFor();
 	assert.equal(
 		await page.getByRole('button', { name: 'Test connection', exact: true }).isDisabled(),
 		true

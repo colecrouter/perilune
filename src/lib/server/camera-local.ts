@@ -30,6 +30,12 @@ export function localCameraEndpoint(value: unknown): string {
 		rate > 120
 	)
 		throw Error('Invalid local camera profile.');
+	const format = url.searchParams.get('input_format');
+	// Raw software capture is bounded to 1080p30-equivalent pixel throughput.
+	if (format === 'yuyv422' || format === 'nv12') {
+		if (+size[1] % 2 || +size[2] % 2 || +size[1] * +size[2] * rate > 1920 * 1080 * 30)
+			throw Error('Unsupported raw camera dimensions or frame rate.');
+	}
 	return `v4l2:device?${keys.map((key) => `${key}=${encodeURIComponent(url.searchParams.get(key)!)}`).join('&')}`;
 }
 
@@ -61,4 +67,13 @@ export function localCameraCandidates(value: unknown): CameraCandidate[] {
 		}
 	}
 	return result;
+}
+
+/** FFmpeg understands packed YUYV and semiplanar NV12; never label them planar Y4M. */
+export function localCameraCapture(value: string): string {
+	const endpoint = localCameraEndpoint(value);
+	const format = new URL(endpoint).searchParams.get('input_format');
+	return format === 'yuyv422' || format === 'nv12'
+		? `ffmpeg:${endpoint.slice('v4l2:'.length)}#video=h264`
+		: endpoint;
 }

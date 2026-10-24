@@ -16,7 +16,7 @@ const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
 	for (const close of cleanup.splice(0).reverse()) await close();
 });
-async function fixture(filename = ':memory:', discoveryDelay = 0) {
+async function fixture(filename = ':memory:', discoveryDelay = 0, mediaUnavailable = false) {
 	const streams = new Map<string, string>();
 	const server = createServer((request, response) => {
 		const url = new URL(request.url!, 'http://fixture.invalid');
@@ -55,7 +55,7 @@ async function fixture(filename = ':memory:', discoveryDelay = 0) {
 			response.end('{}');
 			return;
 		}
-		if (!streams.has(src) || !src.endsWith('_compatible')) {
+		if (mediaUnavailable || !streams.has(src) || !src.endsWith('_compatible')) {
 			response.writeHead(502);
 			response.end();
 			return;
@@ -268,4 +268,13 @@ it('bounds discovery and releases its slot after cancellation', async () => {
 	controller.abort();
 	await expect(first).rejects.toThrow();
 	expect(await f.runtime.runPromise(f.service.devices())).toHaveLength(1);
+});
+
+it('explains local capture failure without leaking private engine errors and cleans its profiles', async () => {
+	const f = await fixture(':memory:', 0, true);
+	const [device] = await f.runtime.runPromise(f.service.devices());
+	await expect(f.runtime.runPromise(f.service.test('owner', device.input))).rejects.toThrow(
+		'Close other camera capture applications'
+	);
+	expect(f.streams.size).toBe(0);
 });

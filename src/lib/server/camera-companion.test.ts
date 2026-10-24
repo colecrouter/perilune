@@ -183,10 +183,13 @@ it.each([
 			flipHorizontal: false,
 			flipVertical: false
 		});
-		expect(decodeURIComponent(sources[0])).toBe(endpoint);
+		const raw = format === 'yuyv422' || format === 'nv12';
+		expect(decodeURIComponent(sources[0])).toBe(
+			raw ? `ffmpeg:${endpoint.slice(5)}#video=h264` : endpoint
+		);
 		const source = transport ? `http://127.0.0.1:1984/api/stream.${transport}?src=${id}` : id;
 		expect(sources.slice(1)).toEqual([
-			`ffmpeg:${source}#video=h264`,
+			`ffmpeg:${source}#video=${raw ? 'copy' : 'h264'}`,
 			`ffmpeg:${source}#video=h264#width=640`,
 			`ffmpeg:${source}#video=h264#width=320`
 		]);

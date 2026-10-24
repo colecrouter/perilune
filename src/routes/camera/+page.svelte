@@ -236,11 +236,17 @@
 									before testing a device.
 								</p>
 							{:else if scanned}<p role="status">
-									No supported local cameras found. Attach a camera and map its video device into
-									the camera service, then check again.
+									No supported local capture profiles found. Attach a camera and map its video
+									device into the camera service, then check again.
 								</p>{/if}
 							<details>
 								<summary>Allow a local USB device</summary>
+								<p>
+									Supported inputs: H.264, H.265, MJPEG, YUYV and NV12. Raw capture uses software
+									encoding and is limited to 1080p at 30 fps-equivalent throughput. Unsupported
+									formats and oversized raw profiles are omitted. An occupied device may be listed
+									but fail its connection test.
+								</p>
 								<p>
 									Linux installations can add <code>compose.camera-usb.yaml</code> alongside the
 									normal camera Compose files. Set <code>PERILUNE_CAMERA_DEVICE</code> to the host’s camera

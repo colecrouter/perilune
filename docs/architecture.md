@@ -1803,3 +1803,13 @@ source while live queries attach/reconnect. Browser stream availability gates
 commands separately from printer readiness; it no longer creates reconnect
 notices or marks otherwise valid retained mesh data stale. Backend faults,
 unknown command receipts and camera playback retain their own feedback.
+
+Raw USB camera conversion (unreleased): validated YUYV/NV12 profiles use one
+on-demand FFmpeg V4L2 capture with the explicit native input format and H.264
+output. Other quality producers consume that named encoded stream; they never
+open the device independently. Alignment and pixel-throughput bounds reject
+unsupported raw profiles. Local test failures give bounded, credential-free
+capture/mapping guidance. A pinned-companion synthetic raw probe checks decoded
+colors, shared mixed-quality capture, idle teardown and unavailable-input recovery.
+Actual raw drivers, Safari/native HLS and low-power throughput remain coordinated
+hardware/platform acceptance; no claim of universal camera compatibility is made.
