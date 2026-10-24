@@ -4,13 +4,19 @@
 	let {
 		receipt,
 		receiptBase = '/actions',
-		showCompleted = false
-	}: { receipt: ActionRecord; receiptBase?: string; showCompleted?: boolean } = $props();
+		showCompleted = false,
+		showProgress = false
+	}: {
+		receipt: ActionRecord;
+		receiptBase?: string;
+		showProgress?: boolean;
+		showCompleted?: boolean;
+	} = $props();
 	const attention = $derived(receipt.status === 'unknown' || receipt.status === 'failed');
 	const statusLabel = $derived(actionStatusLabel[receipt.status]);
 </script>
 
-{#if receipt.status !== 'completed' || showCompleted}
+{#if attention || (receipt.status === 'completed' ? showCompleted : showProgress)}
 	<div class="action-feedback" class:attention role={attention ? 'alert' : 'status'}>
 		<strong>{receipt.label}: {statusLabel}</strong>
 		{#if attention}

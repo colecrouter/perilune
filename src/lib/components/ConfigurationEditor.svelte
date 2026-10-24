@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FeedbackRegion from './FeedbackRegion.svelte';
 	import { configFileIndex, configMacros, configRevision } from '#lib/domain/config-browser.js';
 	import type { ConfigSources } from '#lib/domain/config-sources.js';
 	import { untrack, onMount } from 'svelte';
@@ -533,12 +534,14 @@
 						Live file edits remain local drafts. Export for review; printer writes are disabled on
 						this server.
 					</p>{/if}
-				{#if failure}<p class="notice error" role="alert">{failure}</p>{/if}{#if notice}<p
-						class="notice"
-						role="status"
-					>
-						{notice}
-					</p>{/if}
+				<FeedbackRegion active={!!failure || !!notice} label="Configuration feedback">
+					{#if failure}<p class="notice error" role="alert">{failure}</p>{/if}{#if notice}<p
+							class="notice"
+							role="status"
+						>
+							{notice}
+						</p>{/if}</FeedbackRegion
+				>
 				{#if conflict}<section class="conflict">
 						<h3>A newer saved file exists</h3>
 						<p>

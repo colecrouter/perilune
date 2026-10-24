@@ -113,13 +113,7 @@
 								uncertain ||
 								(enhanced && unchanged)}
 						>
-							{readOnly
-								? 'Read-only'
-								: submitting
-									? 'Submitting…'
-									: pending
-										? 'Pending…'
-										: 'Set'}</button
+							{readOnly ? 'Read-only' : 'Set'}</button
 						>
 					</div>
 				{/snippet}</ActionForm
@@ -144,11 +138,13 @@
 						>Cool down {title.toLowerCase()}</button
 					>{/snippet}</ActionForm
 			>
-			{#if unchanged && !alreadyOff}<small class="target-hint"
-					>Target already set to {target}°C.</small
-				>{/if}{#if alreadyOff}<small class="target-hint"
-					>Target is already off; the {title.toLowerCase()} may still be cooling.</small
-				>{/if}
+			<div class="target-hint-space">
+				{#if unchanged && !alreadyOff}<small class="target-hint"
+						>Target already set to {target}°C.</small
+					>{/if}{#if alreadyOff}<small class="target-hint"
+						>Target is already off; the {title.toLowerCase()} may still be cooling.</small
+					>{/if}
+			</div>
 		</div>
 	{:else}
 		<form onsubmit={submit}>
@@ -168,7 +164,7 @@
 					class="button primary"
 					disabled={pending || readOnly || !available || submitting || unchanged}
 					title={unchanged ? `Target already set to ${target}°C.` : undefined}
-					type="submit">{readOnly ? 'Read-only' : pending ? 'Pending…' : 'Set'}</button
+					type="submit">{readOnly ? 'Read-only' : 'Set'}</button
 				>
 			</div>
 			<button
@@ -191,12 +187,14 @@
 					}
 				}}>Cool down {title.toLowerCase()}</button
 			>
-			{#if unchanged && !alreadyOff}<small class="target-hint"
-					>Target already set to {target}°C.</small
-				>{/if}
-			{#if alreadyOff}<small class="target-hint"
-					>Target is already off; the {title.toLowerCase()} may still be cooling.</small
-				>{/if}
+			<div class="target-hint-space">
+				{#if unchanged && !alreadyOff}<small class="target-hint"
+						>Target already set to {target}°C.</small
+					>{/if}
+				{#if alreadyOff}<small class="target-hint"
+						>Target is already off; the {title.toLowerCase()} may still be cooling.</small
+					>{/if}
+			</div>
 		</form>{/if}
 </div>
 {#if error}<p class="error-text" role="alert">{error}</p>{/if}
@@ -238,7 +236,17 @@
 		font-size: 0.75rem;
 		margin-top: 0.5rem;
 	}
+	.target-hint-space {
+		block-size: 5rem;
+		overflow-y: auto;
+		scrollbar-gutter: stable;
+	}
+	.heater-reading strong {
+		font-variant-numeric: tabular-nums;
+		min-inline-size: 5ch;
+	}
 	.thermal-state {
+		min-block-size: 2.4em;
 		display: block;
 		color: var(--accent);
 		font-weight: 600;

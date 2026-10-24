@@ -18,7 +18,8 @@
 	class:attention={kind === 'attention'}
 	role={kind === 'attention' ? 'alert' : 'status'}
 >
-	<div class="content">
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users must be able to scroll retained feedback.) -->
+	<div class="content" tabindex="0" role="region" aria-label="Workflow details">
 		<strong>{@render title()}</strong>{#if children}{@render children()}{/if}
 	</div>
 	{#if actions}<div class="actions">{@render actions()}</div>{/if}
@@ -32,10 +33,12 @@
 		border-radius: 0.65rem;
 		padding: 1rem;
 		overflow-wrap: anywhere;
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 40%);
+		grid-template-rows: minmax(0, 1fr);
+		block-size: 9rem;
+		box-sizing: border-box;
+		align-items: stretch;
 		gap: 1rem;
 	}
 	.attention {
@@ -43,19 +46,24 @@
 	}
 	.content {
 		min-width: 0;
-		flex: 1 1 18rem;
+		min-block-size: 0;
+		overflow-y: auto;
+		scrollbar-gutter: stable;
 	}
 	.actions {
-		flex: 0 1 auto;
+		align-self: center;
 		max-width: 100%;
+		max-block-size: 7.5rem;
+		overflow-y: auto;
 	}
-	@media (max-width: 600px) {
+	@media (max-width: 900px) {
 		.content {
-			flex: 0 1 auto;
+			align-self: stretch;
 		}
 		.workflow-notice {
-			align-items: stretch;
-			flex-direction: column;
+			grid-template-columns: minmax(0, 1fr);
+			grid-template-rows: minmax(0, 1fr) auto;
+			block-size: 14rem;
 		}
 	}
 </style>

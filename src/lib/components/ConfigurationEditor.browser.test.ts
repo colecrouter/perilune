@@ -311,3 +311,18 @@ test('filtering explained settings preserves edits and reviews the complete draf
 		.toHaveTextContent('max_velocity: 180');
 	expect(calls.onSave).not.toHaveBeenCalled();
 });
+
+test('failed version checks do not move edited settings or replace their draft', async () => {
+	const doc = file();
+	const calls = callbacks(doc);
+	calls.onRead.mockRejectedValue(new Error('Saved version unavailable. '.repeat(20)));
+	const screen = await render(ConfigurationEditor, { document: doc, files: [doc], ...calls });
+	const input = screen.getByRole('spinbutton', { name: 'Maximum velocity', exact: true });
+	await input.fill('180');
+	const top = () => input.element().getBoundingClientRect().top + window.scrollY;
+	const initialTop = top();
+	await screen.getByRole('button', { name: 'Check saved version' }).click();
+	await expect.element(screen.getByRole('alert')).toBeVisible();
+	expect(top()).toBe(initialTop);
+	await expect.element(input).toHaveValue(180);
+});

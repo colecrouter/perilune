@@ -1788,3 +1788,12 @@ and closes/navigates only for that operation's matching verified-ready outcome.
 Save additionally requires verified writes; discard requires verified discard
 mode. Historical ready cards are hidden from a fresh review while global readiness
 gating remains authoritative. Errors/unknown outcomes retain the dialog.
+
+Layout stability pass (unreleased, #159): shared fixed-size scrolling feedback and
+workflow frames absorb routine status changes without moving controls. Basic
+forms suppress routine progress/success receipt paragraphs, preserving failures,
+unknown outcomes and receipt links. Heater labels/hints and numeric readings stay
+stable; console/PID readiness and extrusion errors follow their controls.
+ReviewSkeleton is shared with the existing reserved pending-settings body.
+An owner-only development gallery provides synthetic state switches; production
+builds reject its route. See docs/layout-stability.md for scope and test cases.

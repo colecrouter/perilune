@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vite-plus/test';
+import { page } from 'vite-plus/test/browser';
+import '#lib/styles.css';
 import { render } from 'vitest-browser-svelte';
 import {
 	printActionJournal,
@@ -317,3 +319,42 @@ test('start submission retains its exact ID and prevents a new-ID retry after a 
 	).rejects.toThrow(/pending print action/);
 	expect(send).toHaveBeenCalledOnce();
 });
+
+test.each([320, 601, 700, 800])(
+	'paused live notice preserves readable details and reachable actions at %spx',
+	async (width) => {
+		await page.viewport(width, 900);
+		try {
+			const snapshot = printing();
+			snapshot.mode = 'moonraker';
+			snapshot.liveControls = true;
+			snapshot.job.state = 'paused';
+			const screen = await render(PrintNotice, {
+				snapshot,
+				userId: 'owner',
+				role: 'owner',
+				submitStop: vi.fn()
+			});
+			await expect
+				.element(screen.getByRole('button', { name: 'Resume print', exact: true }))
+				.toBeVisible();
+			await expect
+				.element(screen.getByRole('link', { name: 'Change filament…', exact: true }))
+				.toBeVisible();
+			const details = document.querySelector<HTMLElement>('.workflow-notice .content')!;
+			const notice = document.querySelector<HTMLElement>('.workflow-notice')!;
+			expect(details.getBoundingClientRect().width).toBeGreaterThan(
+				notice.getBoundingClientRect().width * 0.7
+			);
+			expect(details.getBoundingClientRect().height).toBeGreaterThan(30);
+			const stop = screen
+				.getByRole('button', { name: 'Stop print', exact: true })
+				.element()
+				.getBoundingClientRect();
+			expect(stop.bottom).toBeLessThanOrEqual(notice.getBoundingClientRect().bottom);
+			expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(innerWidth);
+		} finally {
+			await page.viewport(1280, 720);
+		}
+	}
+);

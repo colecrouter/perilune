@@ -29,3 +29,10 @@ paths, private environment and rollback procedure.
 [Contribution guidelines](../CONTRIBUTING.md) describe validation, independent
 review, docs, privacy and attended printer testing. [Architecture](architecture.md)
 records implemented behavior and outstanding milestones.
+
+## Layout state fixtures
+
+The owner-only `/dev/layout-states` page on `pnpm dev` exercises synthetic loading,
+pending, success, error and reconnect states. It sends no physical/configuration
+commands and is unavailable in production. See [layout conventions](layout-stability.md)
+for the shared components and desktop/phone measurement checks.

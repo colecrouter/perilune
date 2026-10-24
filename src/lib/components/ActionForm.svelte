@@ -66,6 +66,7 @@
 </script>
 
 <form
+	aria-busy={pending || executing}
 	data-enhanced={enhanced}
 	method="POST"
 	{action}

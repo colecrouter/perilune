@@ -10,14 +10,11 @@ const receipt: ActionRecord = {
 	message: null
 };
 
-test('pending feedback follows execution and routine success is silent', async () => {
+test('routine pending and success feedback do not add page content', async () => {
 	const screen = await render(ActionFeedback, { receipt });
-	await expect
-		.element(screen.getByText('Pause print: Waiting to run', { exact: true }))
-		.toBeVisible();
-	await expect.element(screen.getByRole('link')).not.toBeInTheDocument();
+	await expect.element(screen.getByRole('status')).not.toBeInTheDocument();
 	await screen.rerender({ receipt: { ...receipt, status: 'sending' } });
-	await expect.element(screen.getByText('Pause print: In progress', { exact: true })).toBeVisible();
+	await expect.element(screen.getByRole('status')).not.toBeInTheDocument();
 	await screen.rerender({
 		receipt: { ...receipt, status: 'completed', message: 'The print is paused.' }
 	});

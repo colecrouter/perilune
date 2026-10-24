@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FeedbackRegion from './FeedbackRegion.svelte';
 	import { refreshPendingSettings } from '#lib/client/pending-settings.js';
 	import { tick } from 'svelte';
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
@@ -138,7 +139,6 @@
 					motors; ordinary queued commands may not stop a tune.
 				</p>{/if}
 		</details>
-		{#if reason}<p class="readiness" role="status">{reason}</p>{/if}
 		<ActionForm
 			fields={{ intent: 'pidCalibrate' }}
 			receipts={snapshot.actions}
@@ -179,14 +179,13 @@
 					for this temperature test.</label
 				>
 				<button class="button primary" disabled={!!reason || pending || uncertain || !attended}
-					>{pending
-						? 'Calibration pending…'
-						: live
-							? 'Start heater calibration'
-							: 'Run simulator calibration'}</button
+					>{live ? 'Start heater calibration' : 'Run simulator calibration'}</button
 				>
 			{/snippet}
 		</ActionForm>
+		<FeedbackRegion active={!!reason} label="PID readiness"
+			>{#if reason}<p class="readiness" role="status">{reason}</p>{/if}</FeedbackRegion
+		>
 		<p>
 			<a href="/">Printer status and cooldown controls →</a> ·
 			<a

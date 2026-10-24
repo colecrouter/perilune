@@ -29,16 +29,13 @@
 				receipts={snapshot.actions}
 				printAccount={userId}
 				fields={{ intent: job.state === 'paused' ? 'resume' : 'pause', ...identity }}
-				>{#snippet children({ pending, uncertain, executing, outcome })}<button
+				>{#snippet children({ pending, uncertain, outcome })}<button
 						class="button primary"
 						disabled={!!reason || pending || uncertain}
-						><Icon name={job.state === 'paused' ? 'play' : 'pause'} size={18} />{pending
-							? executing
-								? 'Waiting for printer…'
-								: 'Submitting…'
-							: job.state === 'paused'
-								? 'Resume print'
-								: 'Pause print'}</button
+						><Icon name={job.state === 'paused' ? 'play' : 'pause'} size={18} />{job.state ===
+						'paused'
+							? 'Resume print'
+							: 'Pause print'}</button
 					>{#if job.state === 'paused' && outcome?.status === 'completed' && outcome.label === 'Resume print' && outcome.message}<p
 							role="status"
 						>
@@ -72,17 +69,21 @@
 	.job-actions :global(.button) {
 		min-height: 2.75rem;
 	}
-	@media (max-width: 600px) {
+	@media (max-width: 900px) {
 		.job-actions {
+			display: grid;
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 			align-items: stretch;
 		}
 		.job-actions :global(form),
 		.job-actions > a {
-			flex: 1 1 auto;
+			min-width: 0;
 		}
-		.job-actions :global(form .button) {
+		.job-actions :global(.button) {
 			width: 100%;
 			justify-content: center;
+			white-space: normal;
+			min-height: 3rem;
 		}
 	}
 </style>

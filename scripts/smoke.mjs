@@ -74,6 +74,11 @@ try {
 	);
 	await publicContext.close();
 	await authenticate(context, base, join(directory, 'state.sqlite'));
+	assert.equal(
+		(await context.request.get(base + '/dev/layout-states')).status(),
+		404,
+		'Development gallery is not available in production'
+	);
 	const first = await context.newPage();
 	const heldStatusRequests = new Set();
 	// A full document replacement invalidates that document's network handles;
@@ -257,7 +262,7 @@ try {
 		await first
 			.locator('.heater')
 			.first()
-			.getByRole('button', { name: 'Pending…', exact: true })
+			.getByRole('button', { name: 'Set', exact: true })
 			.isDisabled(),
 		true
 	);
