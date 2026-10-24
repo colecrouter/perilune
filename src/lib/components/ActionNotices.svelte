@@ -1,29 +1,23 @@
 <script lang="ts">
-	import {
-		actionNotices,
-		loadFailureDismissals,
-		dismissFailures
-	} from '#lib/client/action-notices.svelte.js';
 	import type { PrinterSnapshot } from '#lib/domain/printer.js';
-	let { snapshot, userId }: { snapshot?: PrinterSnapshot; userId?: string } = $props();
-	$effect(() => {
-		loadFailureDismissals(userId ?? null);
-	});
-	const failures = $derived(
-		[
-			...(snapshot?.actions ?? []).map((action) => ({ ...action, path: '/actions' })),
-			...(snapshot?.safety?.actions ?? []).map((action) => ({ ...action, path: '/safety' }))
-		]
-			.filter(
-				(action) => action.status === 'failed' && !actionNotices.dismissed.includes(action.id)
-			)
-			.sort((a, b) => b.createdAt - a.createdAt)
-	);
-	function dismiss() {
-		dismissFailures(
-			userId ?? null,
-			failures.map((a) => a.id)
-		);
+	let {
+		snapshot,
+		dismissNotices
+	}: { snapshot?: PrinterSnapshot; dismissNotices: (ids: string[]) => Promise<void> } = $props();
+	let pending = $state(false),
+		failure = $state('');
+	const failures = $derived(snapshot?.failureNotices ?? []);
+	async function dismiss() {
+		if (pending) return;
+		pending = true;
+		failure = '';
+		try {
+			await dismissNotices(failures.map((a) => a.id));
+		} catch {
+			failure = 'Could not acknowledge this notice. Try again.';
+		} finally {
+			pending = false;
+		}
 	}
 </script>
 
@@ -39,7 +33,10 @@
 			{#if failures.length > 1}<a href="/activity">{failures.length} recent failures · Activity</a
 				>{/if}
 		</div>
-		<button type="button" aria-label="Dismiss failure notice" onclick={dismiss}>×</button>
+		{#if failure}<p role="status">{failure}</p>{/if}
+		<button type="button" aria-label="Dismiss failure notice" disabled={pending} onclick={dismiss}
+			>×</button
+		>
 	</aside>
 {/if}
 

@@ -1764,7 +1764,10 @@ activation obligation and restores previous compensation without restarting.
 Reconciliation retains unresolved recovery until that compensation is verified.
 Emergency recovery may independently close after automatic readiness checks.
 
-Failure notice acknowledgements (unreleased) persist a bounded set of receipt IDs
-in account-scoped sessionStorage so document navigation does not resurrect old
-failures. Restricted storage falls back to in-memory dismissal. Receipts and
-workflow recovery remain unchanged.
+Failure notices (unreleased) are an account-scoped server projection of receipt
+history. Completed mesh finish/cancel/reconciliation receipts resolve preceding
+failed attempts with the same probe ID; receipt statuses remain unchanged.
+SQLite acknowledgement records suppress manually acknowledged receipt IDs before
+SSR and live snapshots are serialized. A typed remote command acknowledges only
+currently visible owned failures, then wakes subscribers. No sessionStorage or
+hydration dismissal is used, and no acknowledgement changes printer recovery.

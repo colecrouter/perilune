@@ -1,3 +1,4 @@
+import { withFailureNotices, acknowledgeFailures } from '#lib/server/failure-notices.js';
 import { reconcilePrintSubmission } from '#lib/server/print-action-reconciliation.js';
 import { LiveActionService } from '#lib/server/live-action-service.js';
 import { error } from '@sveltejs/kit';
@@ -5,7 +6,7 @@ import { submitPrinterAction } from '#lib/server/printer-actions.js';
 import { command, getRequestEvent, query } from '$app/server';
 import { Effect, Schema, Stream, SubscriptionRef } from 'effect';
 import { authService, requireIdentity } from '#lib/server/auth/index.js';
-import { ActionRequest } from '#lib/domain/printer.js';
+import { ActionRequest, FailureNoticeAcknowledgement } from '#lib/domain/printer.js';
 import { CameraService } from '#lib/server/camera.js';
 import { PrinterService } from '#lib/server/printer-service.js';
 import { requestEffect, runtime, shutdownSignal } from '#lib/server/runtime.js';
@@ -29,7 +30,7 @@ export const getPrinter = query.live(async function* () {
 			while (!signal.aborted) {
 				const next = await iterator.next();
 				if (next.done || signal.aborted) break;
-				yield next.value;
+				yield await runtime.runPromise(withFailureNotices(next.value, identity.user.id));
 			}
 		} finally {
 			signal.removeEventListener('abort', abort);
@@ -69,7 +70,10 @@ export const getDashboard = query.live(async function* () {
 					})
 				);
 				if (signal.aborted) break;
-				yield value;
+				yield {
+					...value,
+					printer: await runtime.runPromise(withFailureNotices(value.printer, identity.user.id))
+				};
 			}
 		} finally {
 			signal.removeEventListener('abort', abort);
@@ -152,5 +156,27 @@ export const reconcilePrintAction = command(
 		const receipt = await runtime.runPromise(reconcilePrintSubmission(id, identity.user.id));
 		if (!receipt) error(404, 'Receipt not found.');
 		return receipt;
+	}
+);
+
+export const dismissFailureNotices = command(
+	Schema.toStandardSchemaV1(FailureNoticeAcknowledgement),
+	async (ids) => {
+		const identity = requireIdentity(getRequestEvent());
+		const service = await runtime.runPromise(PrinterService);
+		await runtime.runPromise(
+			Effect.gen(function* () {
+				const snapshot = yield* SubscriptionRef.get(service.state);
+				yield* acknowledgeFailures(snapshot, identity.user.id, ids);
+				// Wake existing live subscribers; no printer command or receipt is changed.
+				yield* SubscriptionRef.update(service.state, (s) => ({ ...s, revision: s.revision + 1 }));
+			})
+		);
+		return runtime.runPromise(
+			withFailureNotices(
+				await runtime.runPromise(SubscriptionRef.get(service.state)),
+				identity.user.id
+			)
+		);
 	}
 );
