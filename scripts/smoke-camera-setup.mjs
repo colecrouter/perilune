@@ -143,6 +143,9 @@ try {
 		'Testing does not replace the active camera'
 	);
 	await page.setViewportSize({ width: 390, height: 844 });
+	await page.waitForFunction(
+		() => innerWidth === 390 && document.documentElement.scrollWidth <= innerWidth
+	);
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
 	await mkdir('test-results', { recursive: true });
 	await page.screenshot({ path: 'test-results/camera-setup-mobile.png', fullPage: true });
@@ -315,6 +318,13 @@ try {
 				.evaluate(() =>
 					JSON.stringify({
 						title: document.title,
+						width: innerWidth,
+						scrollWidth: document.documentElement.scrollWidth,
+						font: getComputedStyle(document.body).fontFamily,
+						styles: [...document.querySelectorAll('link[rel=stylesheet]')].map((link) => ({
+							href: link.href,
+							loaded: Boolean(link.sheet)
+						})),
 						video: [...document.querySelectorAll('video')].map((v) => ({
 							width: v.videoWidth,
 							ready: v.readyState,
