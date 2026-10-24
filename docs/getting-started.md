@@ -19,7 +19,7 @@ and a copy of the documentation. No Git checkout, Node installation or local
 application build is required.
 
 ```sh
-perilune_release=v0.1.0-alpha.1
+perilune_release=v0.1.0-alpha.2
 curl -fLO "https://github.com/colecrouter/perilune/releases/download/$perilune_release/perilune-$perilune_release-install.tar.gz"
 curl -fLO "https://github.com/colecrouter/perilune/releases/download/$perilune_release/release.json"
 curl -fLO "https://github.com/colecrouter/perilune/releases/download/$perilune_release/SHA256SUMS"

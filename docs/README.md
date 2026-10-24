@@ -1,6 +1,6 @@
 # Perilune documentation
 
-These guides describe **0.1.0-alpha.1**. Use the copy inside an install bundle or
+These guides describe **0.1.0-alpha.2**. Use the copy inside an install bundle or
 the repository’s matching release tag when running an older version. `main` may
 describe unreleased changes. The first release includes the established workflows
 below; future guides record when capabilities change.
