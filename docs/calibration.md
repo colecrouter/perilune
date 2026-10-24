@@ -83,3 +83,26 @@ handoff does not rewrite generated calibration blocks or synthesize mesh data.
 Print-based flow/pressure-advance tuning remains a separate milestone.
 
 For interrupted operations, see [recovery](recovery.md).
+
+## Stable live paper-test controls (unreleased)
+
+Preparation includes **Home All**, using the same guarded action as printer
+controls after confirming bed clearance and attendance. Starting does not home or
+move automatically beyond the explicitly selected operation. Once the newly
+requested paper-test session is observed active, Perilune focuses and scrolls to
+its adjustment controls; observers are not redirected.
+
+During adjustment, routine submission/receipt messages do not insert text above
+the movement buttons. Pending buttons disable without changing their labels.
+Errors and blocked-state explanations appear below the controls. Fine/coarse
+selection keeps the control rows in place. The larger **Current Z coordinate**
+sits directly below Z + / Z − so it remains visible with those buttons on phones.
+It is the printer coordinate, not a measured nozzle-to-bed gap.
+
+The shared Z/PID save-or-discard dialog reserves a scrolling review area with
+loading skeletons, including during initial reads. Refreshing masks values while
+keeping their rows and controls in place; a failed refresh removes the stale
+review rather than allowing submission. The submit button is separated from the
+recovery card. Only verified completion of the operation submitted from that
+opening closes the dialog and returns to the workshop page. Pending, failed,
+unknown or unrelated earlier operations leave recovery accessible.

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { tick } from 'svelte';
+	import { allAxesHomed, motionReason } from '#lib/domain/motion.js';
 	import ZCalibrationResult from './ZCalibrationResult.svelte';
 	import type { LiveZCommand } from '#lib/domain/live-z.js';
 	import { Dialog } from 'bits-ui';
@@ -20,6 +22,10 @@
 		onSubmit: (command: PrinterCommand, id: string) => Promise<unknown>;
 	} = $props();
 	let uncertain = $state(false);
+	let startingRun = $state<string | null>(null);
+	let adjustmentArea = $state<HTMLElement>();
+	const homed = $derived(allAxesHomed(snapshot));
+	const homeReason = $derived(motionReason(snapshot, ['x', 'y', 'z'], true));
 	let clean = $state(false),
 		clear = $state(false),
 		paper = $state(false),
@@ -69,6 +75,17 @@
 	const active = $derived(session?.stage === 'active' && cap?.active),
 		abortable = $derived(!!session && cap?.active && (owns || role === 'owner'));
 	const receipt = $derived(snapshot.actions.find((a) => a.id === last));
+	$effect(() => {
+		if (startingRun && session?.id === startingRun && active && adjustmentArea) {
+			startingRun = null;
+			const target = adjustmentArea;
+			void tick().then(() => {
+				if (!target.isConnected) return;
+				target.focus({ preventScroll: true });
+				target.scrollIntoView({ block: 'start', behavior: 'instant' });
+			});
+		}
+	});
 	$effect(() => {
 		if (uncertain && receipt) {
 			uncertain = false;
@@ -136,16 +153,7 @@
 			>Klipper’s calibration guide ↗</a
 		>
 	</p>
-	{#if failure || receipt?.status === 'failed' || receipt?.status === 'unknown'}<p
-			class="notice"
-			role="alert"
-		>
-			{failure || receipt?.message}
-		</p>{/if}
-	{#if uncertain}<p role="alert">
-			<a href={`/actions/${last}`}>Check unconfirmed submission receipt</a>
-		</p>{/if}
-	{#if reason}<p role="status" class="notice">{reason}</p>{/if}
+
 	{#if session && ['staged', 'resolved'].includes(session.stage)}
 		{#key session.id}<ZCalibrationResult {session} capability={cap} {role} />{/key}
 	{/if}
@@ -155,8 +163,8 @@
 		{:else}
 			<div class="preparation">
 				<p>
-					1. Home all axes using <a href="/controls">printer controls</a>. Position the nozzle where
-					both it and the probe fit inside travel bounds.
+					1. Home all axes before starting. Position the nozzle where both it and the probe fit
+					inside travel bounds.
 				</p>
 				<p>
 					2. Turn off heater targets. Clean the nozzle and clear the bed. The heater may still be
@@ -171,17 +179,28 @@
 				><input type="checkbox" bind:checked={paper} /> I have paper ready and understand that adjustment
 				moves Z</label
 			>
+			<div class="preparation-actions">
+				<button
+					class="button secondary"
+					disabled={!operator || !connected || pending || !clear || homed || !!homeReason}
+					onclick={() => send({ type: 'home', axes: 'all' })}>Home All</button
+				>
+				<p class="muted">
+					Clear the bed and confirm attendance before homing. Homing can move all axes.
+				</p>
+				{#if homed}<p class="muted">All axes are homed.</p>{:else if homeReason}<p class="notice">
+						{homeReason}
+					</p>{/if}
+			</div>
 			<button
 				class="button primary"
-				disabled={!!reason ||
-					pending ||
-					!clean ||
-					!clear ||
-					!paper ||
-					!['x', 'y', 'z'].every((a) => snapshot.motion.homed.includes(a as 'x' | 'y' | 'z')) ||
-					cap?.pending}
-				onclick={() => send({ type: 'zProbeBegin', run: crypto.randomUUID(), confirmed: true })}
-				>Begin paper test</button
+				disabled={!!reason || pending || !clean || !clear || !paper || !homed || cap?.pending}
+				onclick={async () => {
+					const run = crypto.randomUUID();
+					startingRun = run;
+					if (!(await send({ type: 'zProbeBegin', run, confirmed: true })) && !uncertain)
+						startingRun = null;
+				}}>Begin paper test</button
 			>
 			{#if cap?.pending}<p class="notice">
 					There are pending calibration changes. Review/save them before starting a fresh test.
@@ -189,91 +208,98 @@
 		{/if}
 	{/if}
 	{#if cap?.active}
-		<p class="coordinate">Nozzle Z coordinate <strong>{cap.z?.toFixed(3) ?? '—'} mm</strong></p>
-		<p class="muted">
-			This is the printer’s coordinate, not the measured gap above the bed. Zero may differ from
-			contact; judge the final gap with paper.
-		</p>
-		{#if session}<p>{session.ownerName} owns this session. {session.message ?? ''}</p>{:else}<p>
+		{#if !session}<p class="notice">
 				A manual helper is active outside this session. Finish it using its original client before
 				beginning here.
-			</p>{/if}
+			</p>{:else if !owns}<p>{session.ownerName} owns this session.</p>{/if}
 		{#if active && owns}
-			<fieldset>
-				<legend>Adjustment mode</legend>
-				<div class="segments">
-					<label class:selected={adjustment === 'fine'}
-						><input type="radio" name="live-z-mode" bind:group={adjustment} value="fine" />Fine
-						tuning</label
-					>
-					<label class:selected={adjustment === 'approach'}
-						><input
-							type="radio"
-							name="live-z-mode"
-							bind:group={adjustment}
-							value="approach"
-						/>Coarse approach</label
-					>
-				</div>
-			</fieldset>
-			{#if adjustment === 'approach'}<p class="notice">
+			<div
+				id="z-adjustment"
+				class="adjustment-workspace"
+				bind:this={adjustmentArea}
+				tabindex="-1"
+				role="region"
+				aria-label="Paper-test adjustments"
+			>
+				<fieldset>
+					<legend>Adjustment mode</legend>
+					<div class="segments">
+						<label class:selected={adjustment === 'fine'}
+							><input type="radio" name="live-z-mode" bind:group={adjustment} value="fine" />Fine
+							tuning</label
+						>
+						<label class:selected={adjustment === 'approach'}
+							><input
+								type="radio"
+								name="live-z-mode"
+								bind:group={adjustment}
+								value="approach"
+							/>Coarse approach</label
+						>
+					</div>
+				</fieldset>
+				<p class="muted approach-guidance">
 					Use coarse steps only while the nozzle is visibly clear of the bed. Switch to fine tuning
-					before the paper starts to drag. Each click moves the full selected distance.
-				</p>{/if}
-			<fieldset>
-				<legend>{adjustment === 'fine' ? 'Fine adjustment (mm)' : 'Approach step (mm)'}</legend>
-				<div class="segments">
-					{#if adjustment === 'fine'}{#each calibrationSteps as value}<label
-								class:selected={step === value}
-								><input type="radio" name="live-z-step" bind:group={step} {value} />{value}</label
-							>{/each}{:else}{#each [0.5, 1] as value}<label class:selected={coarseStep === value}
-								><input
-									type="radio"
-									name="live-z-coarse-step"
-									bind:group={coarseStep}
-									{value}
-								/>{value}</label
-							>{/each}{/if}
+					before the paper starts to drag.
+				</p>
+				<fieldset>
+					<legend>{adjustment === 'fine' ? 'Fine adjustment (mm)' : 'Approach step (mm)'}</legend>
+					<div class="segments">
+						{#if adjustment === 'fine'}{#each calibrationSteps as value}<label
+									class:selected={step === value}
+									><input type="radio" name="live-z-step" bind:group={step} {value} />{value}</label
+								>{/each}{:else}{#each [0.5, 1] as value}<label class:selected={coarseStep === value}
+									><input
+										type="radio"
+										name="live-z-coarse-step"
+										bind:group={coarseStep}
+										{value}
+									/>{value}</label
+								>{/each}{/if}
+					</div>
+				</fieldset>
+				<div class="movement">
+					<button
+						class="button secondary"
+						disabled={!!reason || pending || !withinTravel(selectedStep)}
+						title={withinTravel(selectedStep)
+							? `Raise Z by ${selectedStep} mm`
+							: 'This step exceeds configured Z travel'}
+						onclick={() =>
+							send({
+								type: 'zProbeAdjust',
+								run: session!.id,
+								version: session!.version,
+								expectedZ: cap!.z!,
+								delta: selectedStep as Extract<LiveZCommand, { type: 'zProbeAdjust' }>['delta']
+							})}>Z +</button
+					><button
+						class="button secondary"
+						disabled={!!reason || pending || !withinTravel(-selectedStep)}
+						title={withinTravel(-selectedStep)
+							? `Lower Z by ${selectedStep} mm`
+							: 'This step exceeds configured Z travel'}
+						onclick={() =>
+							send({
+								type: 'zProbeAdjust',
+								run: session!.id,
+								version: session!.version,
+								expectedZ: cap!.z!,
+								delta: -selectedStep as Extract<LiveZCommand, { type: 'zProbeAdjust' }>['delta']
+							})}>Z −</button
+					>
 				</div>
-			</fieldset>
-			<div class="movement">
-				<button
-					class="button secondary"
-					disabled={!!reason || pending || !withinTravel(selectedStep)}
-					title={withinTravel(selectedStep)
-						? `Raise Z by ${selectedStep} mm`
-						: 'This step exceeds configured Z travel'}
-					onclick={() =>
-						send({
-							type: 'zProbeAdjust',
-							run: session!.id,
-							version: session!.version,
-							expectedZ: cap!.z!,
-							delta: selectedStep as Extract<LiveZCommand, { type: 'zProbeAdjust' }>['delta']
-						})}>Z +</button
-				><button
-					class="button secondary"
-					disabled={!!reason || pending || !withinTravel(-selectedStep)}
-					title={withinTravel(-selectedStep)
-						? `Lower Z by ${selectedStep} mm`
-						: 'This step exceeds configured Z travel'}
-					onclick={() =>
-						send({
-							type: 'zProbeAdjust',
-							run: session!.id,
-							version: session!.version,
-							expectedZ: cap!.z!,
-							delta: -selectedStep as Extract<LiveZCommand, { type: 'zProbeAdjust' }>['delta']
-						})}>Z −</button
-				>
+				<p class="coordinate" aria-live="off">
+					Current Z coordinate<strong>{cap.z?.toFixed(3) ?? '—'} <span>mm</span></strong>
+				</p>
+				<p class="muted">
+					This is the printer’s coordinate, not the measured gap. Judge the final gap with paper.
+				</p>
+				<p class="muted">
+					Z + raises the nozzle; Z − lowers it. Each command waits for acknowledgement and fresh
+					position before another step.
+				</p>
 			</div>
-			<p class="step-readout" role="status">
-				Each click: {selectedStep} mm · {adjustment === 'fine' ? 'Fine tuning' : 'Coarse approach'}
-			</p>
-			<p class="muted">
-				Z + raises the nozzle; Z − lowers it. Each command waits for acknowledgement and fresh
-				position before another step.
-			</p>
 			<div class="accept">
 				<label
 					><input type="checkbox" bind:checked={accepted} /> I checked the paper drag in person and want
@@ -323,7 +349,16 @@
 				></Dialog.Root
 			>{/if}
 	{/if}
-	{#if receipt}<p role="status">{receipt.label}: {receipt.status}</p>{/if}
+	{#if failure || receipt?.status === 'failed' || receipt?.status === 'unknown'}<p
+			class="notice"
+			role="alert"
+		>
+			{failure || receipt?.message}
+		</p>{/if}
+	{#if uncertain}<p role="alert">
+			<a href={`/actions/${last}`}>Check unconfirmed submission receipt</a>
+		</p>{/if}
+	{#if reason}<p role="status" class="notice">{reason}</p>{/if}
 	{#if session?.stage === 'aborted' || session?.stage === 'interrupted'}<p
 			role="status"
 			class="notice"
@@ -359,16 +394,32 @@
 		margin: 1rem 0;
 	}
 	.segments {
-		display: flex;
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
 		gap: 0.3rem;
-		flex-wrap: wrap;
+	}
+	fieldset:first-child .segments {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 	.segments label {
 		border: 1px solid var(--border);
 		border-radius: 0.5rem;
-		padding: 0.5rem 0.8rem;
+		padding: 0.5rem 0.35rem;
+		position: relative;
+		justify-content: center;
+		min-width: 0;
 		margin: 0;
 		cursor: pointer;
+	}
+	.segments input {
+		position: absolute;
+		opacity: 0;
+		width: 1px;
+		height: 1px;
+	}
+	.segments label:focus-within {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
 	}
 	.selected {
 		background: var(--accent-soft);
@@ -380,6 +431,28 @@
 	}
 	.movement button {
 		flex: 1;
+	}
+	.adjustment-workspace {
+		scroll-margin-top: 1rem;
+		outline: none;
+	}
+	.coordinate {
+		text-align: center;
+		margin: 0.75rem 0;
+		font-size: 0.85rem;
+	}
+	.coordinate strong {
+		display: block;
+		font-size: clamp(2rem, 8vw, 3rem);
+		line-height: 1.2;
+		font-variant-numeric: tabular-nums;
+	}
+	.coordinate span {
+		font-size: 1rem;
+		font-weight: normal;
+	}
+	.preparation-actions {
+		margin: 1rem 0;
 	}
 	.accept {
 		margin: 1.5rem 0;

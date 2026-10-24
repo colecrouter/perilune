@@ -212,3 +212,94 @@ test('coarse approach is explicit, bounded, and returns to fine tuning without l
 		.element(screen.getByRole('radio', { name: 'Fine tuning', exact: true }))
 		.toBeChecked();
 });
+
+test('adjustment buttons remain fixed through pending, telemetry, coarse mode and errors', async () => {
+	const snapshot = state();
+	let release!: () => void;
+	const onSubmit = vi.fn(
+		() =>
+			new Promise<void>((resolve) => {
+				release = resolve;
+			})
+	);
+	const screen = await render(LiveZCalibration, {
+		snapshot,
+		userId: 'owner',
+		role: 'owner',
+		connected: true,
+		onSubmit
+	});
+	const area = document.querySelector<HTMLElement>('#z-adjustment')!;
+	const movement = area.querySelector<HTMLElement>('.movement')!;
+	const top = movement.getBoundingClientRect().top;
+	const assertStable = () => expect(movement.getBoundingClientRect().top).toBe(top);
+	await screen.getByRole('button', { name: 'Z +', exact: true }).click();
+	await expect.element(screen.getByRole('button', { name: 'Z +', exact: true })).toBeDisabled();
+	assertStable();
+	release();
+	await screen.rerender({
+		snapshot: {
+			...snapshot,
+			motion: { ...snapshot.motion, busy: true },
+			liveZ: {
+				session: {
+					...snapshot.liveZ!.session!,
+					message:
+						'A long routine acknowledgement message that must never move the adjustment controls.'
+				}
+			}
+		}
+	});
+	assertStable();
+	await screen.rerender({
+		snapshot: {
+			...snapshot,
+			zProbe: { ...snapshot.zProbe!, z: 4.99 },
+			liveZ: { session: { ...snapshot.liveZ!.session!, version: 1, message: 'Acknowledged.' } }
+		}
+	});
+	assertStable();
+	await screen.getByRole('radio', { name: 'Coarse approach', exact: true }).click();
+	assertStable();
+	await screen.rerender({ connected: false });
+	assertStable();
+	expect(area.querySelector('.coordinate')!.getBoundingClientRect().top).toBeGreaterThan(
+		movement.getBoundingClientRect().bottom
+	);
+	await expect.element(screen.getByText('Acknowledged.', { exact: true })).not.toBeInTheDocument();
+});
+
+test('preparation offers guarded homing then focuses the observed newly started adjustment view', async () => {
+	const active = state();
+	const snapshot = {
+		...active,
+		liveZ: { session: null },
+		zProbe: { ...active.zProbe!, active: false },
+		motion: { ...active.motion, homed: [] }
+	};
+	const onSubmit = vi.fn().mockResolvedValue({});
+	const screen = await render(LiveZCalibration, {
+		snapshot,
+		userId: 'owner',
+		role: 'owner',
+		connected: true,
+		onSubmit
+	});
+	await expect
+		.element(screen.getByRole('button', { name: 'Home All', exact: true }))
+		.toBeDisabled();
+	await screen.getByRole('checkbox', { name: /The bed is clear/ }).click();
+	await screen.getByRole('button', { name: 'Home All', exact: true }).click();
+	expect(onSubmit).toHaveBeenCalledWith({ type: 'home', axes: 'all' }, expect.any(String));
+	await screen.rerender({ snapshot: { ...snapshot, motion: active.motion } });
+	await screen.getByRole('checkbox', { name: /The nozzle and bed are clean/ }).click();
+	await screen.getByRole('checkbox', { name: /I have paper ready/ }).click();
+	await screen.getByRole('button', { name: 'Begin paper test', exact: true }).click();
+	const command = onSubmit.mock.calls.at(-1)![0];
+	expect(command.type).toBe('zProbeBegin');
+	expect(document.querySelector('#z-adjustment')).toBeNull();
+	await screen.rerender({
+		snapshot: { ...active, liveZ: { session: { ...active.liveZ!.session!, id: command.run } } }
+	});
+	await expect.poll(() => document.activeElement?.id).toBe('z-adjustment');
+});

@@ -564,6 +564,8 @@ try {
 	assert.equal(status.toolhead.position[3], 150);
 	assert.equal(status.extruder.target, 0);
 
+	status.toolhead.homed_axes = '';
+	publish();
 	await page.goto(base + '/calibration');
 	await page.getByRole('checkbox', { name: 'The nozzle and bed are clean' }).check();
 	await page
@@ -572,12 +574,24 @@ try {
 	await page
 		.getByRole('checkbox', { name: 'I have paper ready and understand that adjustment moves Z' })
 		.check();
+	await page.getByRole('button', { name: 'Home All', exact: true }).click();
 	await page.getByRole('button', { name: 'Begin paper test', exact: true }).click();
 	await page.getByRole('button', { name: 'Z +', exact: true }).waitFor();
+	await page.waitForFunction(() => document.activeElement?.id === 'z-adjustment');
+	const zButton = page.getByRole('button', { name: 'Z +', exact: true });
+	const firstZButtonBox = await zButton.boundingBox();
 	await page.getByRole('button', { name: 'Z +', exact: true }).click();
 	await page.getByText('5.010 mm', { exact: true }).waitFor();
+	assert.ok(
+		Math.abs((await zButton.boundingBox()).y - firstZButtonBox.y) < 1,
+		'Z controls do not move after acknowledged adjustment'
+	);
 	await page.getByRole('radio', { name: 'Coarse approach', exact: true }).check();
 	await page.getByRole('radio', { name: '1', exact: true }).check();
+	assert.ok(
+		Math.abs((await zButton.boundingBox()).y - firstZButtonBox.y) < 1,
+		'Changing adjustment mode does not move Z controls'
+	);
 	await mkdir('test-results', { recursive: true });
 	await page.screenshot({ path: 'test-results/live-z-approach-desktop.png', fullPage: true });
 	await page.setViewportSize({ width: 320, height: 800 });
@@ -586,9 +600,23 @@ try {
 		false,
 		'Z approach fits 320px'
 	);
+	await page.locator('#z-adjustment').evaluate((node) => node.scrollIntoView({ block: 'start' }));
+	const mobileZButtonBox = await zButton.boundingBox();
+	assert.equal(
+		await page.locator('.coordinate').evaluate((node) => {
+			const box = node.getBoundingClientRect();
+			return box.top >= 0 && box.bottom <= innerHeight;
+		}),
+		true,
+		'Current Z coordinate stays visible with the movement controls on mobile'
+	);
 	await page.screenshot({ path: 'test-results/live-z-approach-mobile.png', fullPage: true });
 	await page.getByRole('button', { name: 'Z −', exact: true }).click();
 	await page.getByText('4.010 mm', { exact: true }).waitFor();
+	assert.ok(
+		Math.abs((await zButton.boundingBox()).y - mobileZButtonBox.y) < 1,
+		'Mobile Z controls stay fixed after movement'
+	);
 	await page.getByRole('radio', { name: 'Fine tuning', exact: true }).check();
 	assert.equal(await page.getByRole('radio', { name: '0.01', exact: true }).isChecked(), true);
 	await page.setViewportSize({ width: 1440, height: 1000 });
