@@ -125,8 +125,25 @@ opening its device. Discovery offers each supported format's default profile;
 custom resolution/frame-rate selection is not implemented yet. The managed companion
 uses its private HTTP MJPEG stream for MJPEG USB conversion, with a single shared
 V4L2 capture; its internal API must listen on port 1984 as in the supplied config. Raw-only profiles still need pixel-layout conversion and physical acceptance. Unsupported driver
-formats are omitted. Capture and unplug/replug behavior still need physical USB
-acceptance; the adapter and profile lifecycle are covered by synthetic tests.
+formats are omitted. Physical Logitech C270 acceptance covers discovery, MJPEG conversion, browser
+playback, shared viewers, snapshots, and a driver detach/reattach emulation.
+A physical cable unplug remains a separate acceptance check.
+
+After device loss, Perilune retains the camera configuration and retries. Linux
+may assign a new video-node number on reconnection. Docker’s existing device
+mapping can then point at the old node, even when the host path was a stable
+symlink. Recreate only the camera companion to resolve that symlink again:
+
+```sh
+# Set PERILUNE_CAMERA_DEVICE to your camera’s stable /dev/v4l/by-id/... path.
+docker compose -f compose.yaml -f compose.camera.yaml -f compose.camera-usb.yaml \
+  up -d --no-deps --force-recreate camera
+```
+
+Keep the same installer device selection/environment when running this command.
+The app restores its saved streams when the companion returns; no camera
+reselection or app restart is required. Automatic host-device remapping is not
+implemented. Closing the last viewer releases the capture and conversion worker.
 
 A CSI camera requiring libcamera/rpicam should continue through an appropriate
 capture service on its Pi. Mapping a USB node is not a universal CSI setup method.
