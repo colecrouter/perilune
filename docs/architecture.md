@@ -1780,3 +1780,11 @@ remain below. Current coordinate uses large tabular numerals next to the control
 Preparation reuses the existing guarded Home All command. A locally initiated
 start focuses/scrolls once only after its matching session is observed active;
 there is no automatic homing, command replay or observer navigation.
+
+Workshop dialog completion (unreleased): pending settings review has a bounded,
+scrolling body with a same-size loading skeleton and separated submit/recovery
+sections. The shared Z/PID dialog tracks the explicitly submitted application UUID
+and closes/navigates only for that operation's matching verified-ready outcome.
+Save additionally requires verified writes; discard requires verified discard
+mode. Historical ready cards are hidden from a fresh review while global readiness
+gating remains authoritative. Errors/unknown outcomes retain the dialog.

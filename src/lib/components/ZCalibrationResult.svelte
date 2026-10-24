@@ -206,7 +206,11 @@
 			An owner can review saving and snapshot recovery in Configuration.
 		</p>{/if}
 </section>
-{#if role === 'owner'}<PendingSettingsDialog bind:open={reviewOpen} mode={reviewMode} />{/if}
+{#if role === 'owner'}<PendingSettingsDialog
+		onComplete={() => window.location.assign('/calibration')}
+		bind:open={reviewOpen}
+		mode={reviewMode}
+	/>{/if}
 
 <style>
 	.result-actions {

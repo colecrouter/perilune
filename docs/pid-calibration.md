@@ -70,3 +70,9 @@ Representative-temperature save and interruption/reconnect cases remain open in
 References: [Klipper PID checks](https://www.klipper3d.org/Config_checks.html#calibrate-pid-settings),
 [Klipper implementation](https://github.com/Klipper3d/klipper/blob/master/klippy/extras/pid_calibrate.py),
 [Moonraker emergency stop](https://moonraker.readthedocs.io/en/latest/external_api/printer/).
+
+Dialog completion (unreleased): the shared settings review reserves loading space
+and returns to the PID workshop after its own save/discard operation reaches
+verified startup. An accepted submission alone is insufficient. Errors and unknown
+outcomes stay open for recovery; an older verified operation cannot dismiss a
+new review.

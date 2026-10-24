@@ -98,3 +98,11 @@ Errors and blocked-state explanations appear below the controls. Fine/coarse
 selection keeps the control rows in place. The larger **Current Z coordinate**
 sits directly below Z + / Z − so it remains visible with those buttons on phones.
 It is the printer coordinate, not a measured nozzle-to-bed gap.
+
+The shared Z/PID save-or-discard dialog reserves a scrolling review area with
+loading skeletons, including during initial reads. Refreshing masks values while
+keeping their rows and controls in place; a failed refresh removes the stale
+review rather than allowing submission. The submit button is separated from the
+recovery card. Only verified completion of the operation submitted from that
+opening closes the dialog and returns to the workshop page. Pending, failed,
+unknown or unrelated earlier operations leave recovery accessible.

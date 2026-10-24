@@ -9,11 +9,15 @@
 	let {
 		compact = false,
 		onEnabled,
-		onDiscardEnabled
+		onDiscardEnabled,
+		onRecovery,
+		applicationId
 	}: {
 		compact?: boolean;
 		onEnabled?: (value: boolean) => void;
 		onDiscardEnabled?: (value: boolean) => void;
+		onRecovery?: (value: ConfigRecovery | null) => void;
+		applicationId?: string | null;
 	} = $props();
 	let recovery = $state<ConfigRecovery | null>(null),
 		failure = $state(''),
@@ -22,7 +26,13 @@
 		confirmed = $state(false);
 	let controller: AbortController | undefined;
 	let active = false;
-	const application = $derived(recovery?.application);
+	const application = $derived(
+		applicationId === undefined
+			? recovery?.application
+			: recovery?.application?.id === applicationId
+				? recovery.application
+				: null
+	);
 	const pending = $derived(
 		application && ['queued', 'writing', 'restarting'].includes(application.phase)
 	);
@@ -35,6 +45,7 @@
 		}
 	})();
 	$effect(() => {
+		onRecovery?.(recovery);
 		onEnabled?.(
 			Boolean(
 				recovery?.enabled &&

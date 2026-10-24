@@ -115,6 +115,7 @@
 	</section>{/if}
 
 {#if live && role === 'owner'}<PendingSettingsDialog
+		onComplete={() => window.location.assign('/calibration/pid')}
 		bind:open={reviewOpen}
 		mode={reviewMode}
 	/>{/if}

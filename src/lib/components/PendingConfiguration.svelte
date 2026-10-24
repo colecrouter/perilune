@@ -8,12 +8,14 @@
 		autoInspect = false,
 		saveEnabled = true,
 		mode = 'save',
-		compact = false
+		compact = false,
+		onSubmitted
 	}: {
 		autoInspect?: boolean;
 		saveEnabled?: boolean;
 		mode?: 'save' | 'discard';
 		compact?: boolean;
+		onSubmitted?: (id: string) => void;
 	} = $props();
 	let controller: AbortController | undefined;
 
@@ -52,10 +54,10 @@
 		message = '';
 		empty = false;
 		confirmed = false;
-		review = null;
 		try {
 			review = (await request()) as PendingConfigurationReview;
 		} catch (cause) {
+			review = null;
 			if (cause instanceof Error && cause.message === 'There are no pending calibration changes.')
 				empty = true;
 			else message = cause instanceof Error ? cause.message : 'Could not review pending settings.';
@@ -68,6 +70,7 @@
 		busy = true;
 		submitted = true;
 		const id = crypto.randomUUID();
+		onSubmitted?.(id);
 		try {
 			await request({
 				action: mode === 'discard' ? 'discardPending' : 'savePending',
@@ -119,7 +122,7 @@
 			{mode === 'discard' ? 'The saved file stays unchanged:' : 'These settings will be saved to'}
 			<strong>{review.path}</strong>.
 		</p>
-		<dl>
+		<dl aria-busy={busy} class:loading={busy}>
 			{#each Object.entries(review.manifest) as [section, options]}{#each Object.entries(options) as [key, value]}<div
 					>
 						<dt>[{section}] {key}</dt>
@@ -154,7 +157,7 @@
 <style>
 	.pending-settings.compact {
 		padding: 0;
-		margin: 0;
+		margin: 0 0 1.25rem;
 		border: 0;
 		background: transparent;
 	}
@@ -179,6 +182,13 @@
 		gap: 1rem;
 		border-bottom: 1px solid var(--border);
 		padding: 0.6rem 0;
+	}
+	.loading code {
+		visibility: hidden;
+	}
+	.loading dd {
+		background: var(--border);
+		border-radius: 0.25rem;
 	}
 	dd {
 		margin: 0;
