@@ -108,6 +108,10 @@ export interface ActionRecord {
 	createdAt: number;
 	message: string | null;
 }
+/** 40 ordinary receipts plus 20 recent safety receipts. */
+export const FailureNoticeAcknowledgement = Schema.Array(
+	Schema.String.check(Schema.isUUID())
+).check(Schema.isMaxLength(60));
 export interface FailureNotice extends ActionRecord {
 	path: '/actions' | '/safety';
 }

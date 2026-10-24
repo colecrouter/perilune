@@ -6,7 +6,7 @@ import { submitPrinterAction } from '#lib/server/printer-actions.js';
 import { command, getRequestEvent, query } from '$app/server';
 import { Effect, Schema, Stream, SubscriptionRef } from 'effect';
 import { authService, requireIdentity } from '#lib/server/auth/index.js';
-import { ActionRequest } from '#lib/domain/printer.js';
+import { ActionRequest, FailureNoticeAcknowledgement } from '#lib/domain/printer.js';
 import { CameraService } from '#lib/server/camera.js';
 import { PrinterService } from '#lib/server/printer-service.js';
 import { requestEffect, runtime, shutdownSignal } from '#lib/server/runtime.js';
@@ -160,9 +160,7 @@ export const reconcilePrintAction = command(
 );
 
 export const dismissFailureNotices = command(
-	Schema.toStandardSchemaV1(
-		Schema.Array(Schema.String.check(Schema.isUUID())).check(Schema.isMaxLength(40))
-	),
+	Schema.toStandardSchemaV1(FailureNoticeAcknowledgement),
 	async (ids) => {
 		const identity = requireIdentity(getRequestEvent());
 		const service = await runtime.runPromise(PrinterService);
