@@ -3,7 +3,6 @@
 > Release status: alpha.2 changes are **unreleased until** the matching
 > `v0.1.0-alpha.2` release is published. Use the alpha.1 guides for alpha.1 installs.
 
-
 Available since **0.1.0-alpha.1**. Interrupted candidate-less recovery was corrected
 in **0.1.0-alpha.2**. The image below uses synthetic simulator measurements.
 

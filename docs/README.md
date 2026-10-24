@@ -3,7 +3,6 @@
 > Release status: alpha.2 changes are **unreleased until** the matching
 > `v0.1.0-alpha.2` release is published. Use the alpha.1 guides for alpha.1 installs.
 
-
 These guides describe **0.1.0-alpha.2**. Use the copy inside an install bundle or
 the repository’s matching release tag when running an older version. `main` may
 describe unreleased changes. Feature guides name their first public release. The [Wiki](https://github.com/colecrouter/perilune/wiki) is the primary reading location; these matching sources also ship in release bundles.

@@ -3,7 +3,6 @@
 > Release status: alpha.2 changes are **unreleased until** the matching
 > `v0.1.0-alpha.2` release is published. Use the alpha.1 guides for alpha.1 installs.
 
-
 Release target: **0.1.0-alpha.2**. This is an early alpha, not a claim that every
 printer, camera, browser or hardware workflow has been validated. Keep your current
 printer interface available while evaluating it.
