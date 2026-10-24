@@ -11,6 +11,7 @@
 	let grant = $state<{ code: string; token: string; expires: number; url: string } | null>(null);
 	let message = $state('');
 	let pending = $state(false);
+	let hydrated = $state(false);
 	let inspectedCode = $state('');
 	let integrationId = $state('');
 	const integrations = untrack(() => approve && signedIn) ? (await getIntegrations()).keys : [];
@@ -59,6 +60,7 @@
 		}
 	}
 	onMount(() => {
+		hydrated = true;
 		let polling = false;
 		const timer = setInterval(async () => {
 			if (!grant || polling || approve) return;
@@ -116,7 +118,7 @@
 							required
 						/></label
 					>
-					<button class="button primary" disabled={pending}
+					<button class="button primary" disabled={!hydrated || pending}
 						>{pending ? 'Checking…' : 'Check code'}</button
 					>
 				</form>
@@ -139,10 +141,14 @@
 							are supplied by the requester.
 						</p>
 						<div class="pair-actions">
-							<button class="button primary" disabled={pending} onclick={() => action('approve')}
-								>Approve browser</button
-							><button class="button secondary" disabled={pending} onclick={() => action('deny')}
-								>Deny</button
+							<button
+								class="button primary"
+								disabled={!hydrated || pending}
+								onclick={() => action('approve')}>Approve browser</button
+							><button
+								class="button secondary"
+								disabled={!hydrated || pending}
+								onclick={() => action('deny')}>Deny</button
 							>
 						</div>
 					</div>
@@ -197,7 +203,7 @@
 				}}
 			>
 				<label>Browser name<input bind:value={name} maxlength="80" required /></label>
-				<button class="button primary" disabled={pending}
+				<button class="button primary" disabled={!hydrated || pending}
 					>{pending ? 'Getting code…' : 'Get pairing code'}</button
 				>
 			</form>

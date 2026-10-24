@@ -19,8 +19,33 @@ export async function testPairing(owner, base, directory, filename) {
 	try {
 		let page = await device.newPage();
 		await page.goto(`${base}/login`);
-		await page.getByRole('link', { name: 'Sign in with another browser' }).click();
+		const entryScript = '**/_app/immutable/entry/start*.js';
+		const heldScripts = [];
+		let releaseScripts = false;
+		await page.route(entryScript, async (route) => {
+			if (!releaseScripts) await new Promise((resolve) => heldScripts.push(resolve));
+			await route.continue();
+		});
+		const pairingLink = page.getByRole('link', { name: 'Sign in with another browser' });
+		const destination = await pairingLink.getAttribute('href');
+		assert.equal(destination, '/pair/start');
+		await page.goto(new URL(destination, base).href, { waitUntil: 'commit' });
+		await page.getByRole('button', { name: 'Get pairing code' }).waitFor();
+		assert.equal(
+			await page.getByRole('button', { name: 'Get pairing code' }).isDisabled(),
+			true,
+			'Pairing cannot submit before its handler is hydrated'
+		);
+		releaseScripts = true;
+		for (const release of heldScripts) release();
+		await page.unroute(entryScript);
+		const pairingStarted = page.waitForResponse(
+			(response) =>
+				response.url().includes('/pairBrowser') && response.request().method() === 'POST'
+		);
 		await page.getByRole('button', { name: 'Get pairing code' }).click();
+		const pairingResult = await (await pairingStarted).json();
+		assert.equal(pairingResult.type, 'result', JSON.stringify(pairingResult));
 		const code = await page.locator('.code').innerText();
 		assert.match(code, /^[0-9A-F]{10}$/);
 		assert.equal(
