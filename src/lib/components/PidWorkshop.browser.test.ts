@@ -46,12 +46,14 @@ test('preserves target and attendance during reconnect and resets attendance whe
 	await screen.getByRole('spinbutton').fill('210');
 	await screen.getByRole('checkbox').click();
 	await expect.element(button).toBeEnabled();
+	const originalTop = button.element().getBoundingClientRect().top + window.scrollY;
 	await screen.rerender({
 		snapshot: { ...snapshot, connection: 'disconnected' },
 		connected: false,
 		role: 'owner'
 	});
 	await expect.element(button).toBeDisabled();
+	expect(button.element().getBoundingClientRect().top + window.scrollY).toBe(originalTop);
 	await expect.element(screen.getByRole('spinbutton')).toHaveValue(210);
 	await expect.element(screen.getByRole('checkbox')).toBeChecked();
 	await screen.rerender({ snapshot, connected: true, role: 'owner' });

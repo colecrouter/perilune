@@ -19,7 +19,7 @@ test('pending actions disable submission without locking the draft', async () =>
 	const screen = await render(HeaterControl, {
 		props: { heater: 'nozzle', current: 210, target: 210, pending: true, onSet: vi.fn() }
 	});
-	await expect.element(screen.getByRole('button', { name: 'Pending…' })).toBeDisabled();
+	await expect.element(screen.getByRole('button', { name: 'Set' })).toBeDisabled();
 	await screen.getByRole('spinbutton', { name: 'Nozzle target' }).fill('220');
 	await expect.element(screen.getByRole('spinbutton', { name: 'Nozzle target' })).toHaveValue(220);
 });

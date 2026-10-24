@@ -31,7 +31,14 @@ test('preserves input on reconnect and sends commands or macros only on explicit
 		onPin: vi.fn()
 	});
 	await screen.getByRole('textbox', { name: 'Command', exact: true }).fill('HELP');
+	const composerTop =
+		screen.getByRole('textbox', { name: 'Command', exact: true }).element().getBoundingClientRect()
+			.top + window.scrollY;
 	await screen.rerender({ connected: false });
+	expect(
+		screen.getByRole('textbox', { name: 'Command', exact: true }).element().getBoundingClientRect()
+			.top + window.scrollY
+	).toBe(composerTop);
 	await expect.element(screen.getByRole('button', { name: 'Send command' })).toBeDisabled();
 	await expect
 		.element(screen.getByRole('textbox', { name: 'Command', exact: true }))

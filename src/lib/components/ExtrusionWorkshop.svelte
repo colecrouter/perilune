@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FeedbackRegion from './FeedbackRegion.svelte';
 	import { temperatureReason } from '#lib/domain/temperature.js';
 	import { isHttpError } from '@sveltejs/kit';
 	import {
@@ -170,15 +171,6 @@
 			>
 		</svg>
 	</details>
-	{#if failure || receipt?.status === 'failed' || receipt?.status === 'unknown'}<p
-			class="notice error"
-			role="alert"
-		>
-			{failure || receipt?.message || 'The action outcome is unknown. It will not be retried.'}
-		</p>{/if}
-	{#if uncertain}<p role="alert">
-			<a href={`/actions/${lastAction}`}>Check unconfirmed submission receipt</a>
-		</p>{/if}
 	{#if !interactive}<p class="notice">
 			Live filament movement is not enabled yet. You can calculate a proposal from a manually
 			performed 50 mm test below. No heating, movement, or configuration changes are sent to your
@@ -252,7 +244,9 @@
 						>{/each}
 				</div>
 			</details>
-			{#if !active && reason}<p class="muted" role="status">{reason}</p>{/if}
+			<FeedbackRegion active={!active && !!reason} label="Filament readiness"
+				>{#if !active && reason}<p class="muted" role="status">{reason}</p>{/if}</FeedbackRegion
+			>
 		</section>
 	{/if}
 	<section class="panel">
@@ -375,15 +369,19 @@
 						(interactive && (Boolean(reason) || pending || !loaded || !clear))}
 					>{!interactive
 						? 'Calculate proposal'
-						: pending
-							? 'Submitting…'
-							: live
-								? 'Extrude 50 mm · live printer'
-								: 'Extrude 50 mm · simulator'}</button
+						: live
+							? 'Extrude 50 mm · live printer'
+							: 'Extrude 50 mm · simulator'}</button
 				>
 			</form>
 		{/if}
-		{#if interactive && session?.message}<p class="notice" role="status">{session.message}</p>{/if}
+		<FeedbackRegion
+			active={interactive && session?.stage === 'interrupted'}
+			label="Extrusion recovery"
+			>{#if interactive && session?.stage === 'interrupted'}<p class="notice" role="alert">
+					{session.message}
+				</p>{/if}</FeedbackRegion
+		>
 		{#if proposal}
 			<div class="result">
 				<p class="eyebrow">
@@ -454,6 +452,16 @@
 		>
 	</details>
 </div>
+
+{#if failure || receipt?.status === 'failed' || receipt?.status === 'unknown'}<p
+		class="notice error"
+		role="alert"
+	>
+		{failure || receipt?.message || 'The action outcome is unknown. It will not be retried.'}
+	</p>{/if}
+{#if uncertain}<p role="alert">
+		<a href={`/actions/${lastAction}`}>Check unconfirmed submission receipt</a>
+	</p>{/if}
 
 <style>
 	summary {

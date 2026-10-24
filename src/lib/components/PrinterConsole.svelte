@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FeedbackRegion from './FeedbackRegion.svelte';
 	import { canReviewPrinterLock } from '#lib/domain/printer-locks.js';
 	import { page } from '$app/state';
 	import { tick } from 'svelte';
@@ -313,12 +314,6 @@
 				>{connected && snapshot.connection === 'connected' ? 'Connected' : 'Reconnecting'}</span
 			>
 		</div>
-		{#if reason}<p class="notice" role="status">
-				{reason}
-				{#if connected && snapshot.guidance && canReviewPrinterLock(snapshot.guidance, page.data.user?.role)}<a
-						href={snapshot.guidance.href}>{snapshot.guidance.label} →</a
-					>{/if}
-			</p>{/if}
 		<details class="log-options">
 			<summary>History display</summary>
 			<div class="log-tools">
@@ -432,8 +427,16 @@
 		<button
 			class="button primary send-command"
 			disabled={!!reason || pending || !!uncertain || !draft.trim()}
-			onclick={() => void submit()}>{pending ? 'Submitting…' : 'Send command'}</button
+			onclick={() => void submit()}>Send command</button
 		>
+		<FeedbackRegion active={!!reason} roomy label="Console readiness">
+			{#if reason}<p class="notice" role="status">
+					{reason}
+					{#if connected && snapshot.guidance && canReviewPrinterLock(snapshot.guidance, page.data.user?.role)}<a
+							href={snapshot.guidance.href}>{snapshot.guidance.label} →</a
+						>{/if}
+				</p>{/if}
+		</FeedbackRegion>
 		<p id="console-history-hint" class="muted small keyboard-hint">
 			Physical keyboard: ↑ / ↓ at the first / last line recalls recent commands and restores your
 			draft.

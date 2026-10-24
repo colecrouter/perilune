@@ -245,7 +245,13 @@ try {
 		.filter({ has: feedbackPage.getByRole('spinbutton', { name: 'Bed target', exact: true }) });
 	await feedbackForm.locator('[name="target"]').fill('45');
 	await feedbackForm.getByRole('button', { name: 'Set', exact: true }).click();
-	await feedbackForm.locator('.action-feedback').waitFor();
+	await feedbackPage.waitForFunction(
+		() =>
+			document
+				.querySelector('input[aria-label="Bed target"]')
+				?.closest('form')
+				?.getAttribute('aria-busy') === 'true'
+	);
 	await feedbackForm.evaluate((form) => form.requestSubmit());
 	await idle();
 
@@ -254,7 +260,14 @@ try {
 		1,
 		'Implicit resubmission must not admit a second command while the first is queued/sending'
 	);
-	await feedbackForm.locator('.action-feedback').waitFor({ state: 'detached', timeout: 10_000 });
+	await feedbackPage.waitForFunction(
+		() =>
+			document
+				.querySelector('input[aria-label="Bed target"]')
+				?.closest('form')
+				?.getAttribute('aria-busy') === 'false'
+	);
+	assert.equal(await feedbackForm.locator('.action-feedback').count(), 0);
 	assert.equal(await feedbackForm.getByRole('link').count(), 0, 'Routine success stays quiet');
 	assert.equal(
 		await feedbackPage.getByRole('spinbutton', { name: 'Bed target', exact: true }).inputValue(),
