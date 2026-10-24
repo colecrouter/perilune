@@ -35,6 +35,13 @@ test('automatic preparation checks update without clearing manual acknowledgment
 		.element(screen.getByRole('checkbox', { name: 'Heater targets off', exact: true }))
 		.toBeChecked();
 	await expect.element(screen.getByRole('button', { name: 'Home all axes' })).toBeDisabled();
+	const beforeDisconnect = document.body.textContent;
+	await screen.rerender({ connected: false });
+	await expect
+		.element(screen.getByRole('button', { name: 'Begin simulator probing' }))
+		.toBeDisabled();
+	expect(document.body.textContent).toBe(beforeDisconnect);
+	await screen.rerender({ connected: true });
 	await screen.getByRole('button', { name: 'Begin simulator probing' }).click();
 	expect(onSubmit).toHaveBeenCalledWith(
 		expect.objectContaining({ type: 'meshProbeBegin', confirmed: true })

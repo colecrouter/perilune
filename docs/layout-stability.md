@@ -39,3 +39,10 @@ control positions in document coordinates, checking for horizontal overflow and
 verifying retained drafts. Real scrolling is not counted as a layout shift.
 Review the rendered cases as well as numeric tests: a stable bounding box alone
 cannot prove that text is readable or that recovery is understandable.
+
+Browser stream reconnection is silent (unreleased). Pages retain their server
+snapshot while live updates attach or reconnect; this transport state does not
+insert notices, replace printer status, or mark a retained bed mesh stale.
+Physical controls still disable when the browser cannot verify current state.
+Backend-reported printer faults and uncertain command outcomes remain actionable;
+camera playback retains its separate connection feedback.

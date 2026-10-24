@@ -4,6 +4,7 @@
 	let {
 		open = $bindable(false),
 		available = true,
+		targetsAvailable = true,
 		bedTarget,
 		nozzleTarget,
 		onConfirm,
@@ -12,6 +13,7 @@
 	}: {
 		open?: boolean;
 		available?: boolean;
+		targetsAvailable?: boolean;
 		bedTarget: number | null;
 		nozzleTarget: number | null;
 		onConfirm: (coolBed: boolean, coolNozzle: boolean) => Promise<void>;
@@ -60,7 +62,7 @@
 						disabled={submitting || !available || nozzleTarget === 0}
 					/><span
 						>Cool down nozzle<small
-							>{!available
+							>{!targetsAvailable
 								? 'Waiting for current heater targets.'
 								: nozzleTarget === 0
 									? 'Target already off; the nozzle may still be cooling.'
@@ -76,7 +78,7 @@
 						disabled={submitting || !available || bedTarget === 0}
 					/><span
 						>Cool down bed<small
-							>{!available
+							>{!targetsAvailable
 								? 'Waiting for current heater targets.'
 								: bedTarget === 0
 									? 'Target already off; the bed may still be cooling.'

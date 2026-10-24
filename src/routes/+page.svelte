@@ -94,14 +94,12 @@
 			data.user?.role === 'viewer'
 	);
 	const connectionLabel = $derived(
-		snapshot.connection.charAt(0).toUpperCase() + snapshot.connection.slice(1)
+		snapshot.connection === 'connected' ? 'Connected' : 'Printer unavailable'
 	);
 	const connected = $derived(snapshot.connection === 'connected');
 	const transportConnected = $derived(updates.available);
 	const sensors = $derived(temperatureSensors(snapshot));
-	const thermalReady = $derived(
-		snapshot.connection === 'connected' && snapshot.klippy === 'ready' && transportConnected
-	);
+	const thermalReady = $derived(snapshot.connection === 'connected' && snapshot.klippy === 'ready');
 	const alreadyOff = $derived(thermalReady && heaterTargetsOff(snapshot));
 	const controlLock = $derived(
 		thermalReady &&
@@ -113,13 +111,11 @@
 			: undefined
 	);
 	const thermalReason = $derived(
-		!transportConnected
-			? `${updates.label}. History and drafts are retained.`
-			: data.user?.role === 'viewer'
-				? 'An operator account is required to change temperatures.'
-				: readOnly && controlLock
-					? controlLock.message
-					: temperatureReason(snapshot)
+		data.user?.role === 'viewer'
+			? 'An operator account is required to change temperatures.'
+			: readOnly && controlLock
+				? controlLock.message
+				: temperatureReason(snapshot)
 	);
 	const busy = $derived(submitting || pending || snapshot.storage === 'degraded');
 	async function send(command: PrinterCommand) {
@@ -167,12 +163,7 @@
 			<div class="header-tools">
 				<OverviewCustomizer value={layout} onSave={saveLayout} />
 				<span class="connection-status"
-					><span class="status-dot" class:offline={!connected || !transportConnected}
-					></span>{!transportConnected
-						? updates.label
-						: connected
-							? 'Connected'
-							: connectionLabel}</span
+					><span class="status-dot" class:offline={!connected}></span>{connectionLabel}</span
 				>
 			</div>
 		</header>
@@ -209,23 +200,15 @@
 					</p>
 				</div>
 			</section>{/if}
-		{#if !['printing', 'paused'].includes(snapshot.job.state) && (!updates.available || !connected || snapshot.klippy !== 'ready')}<div
+		{#if !['printing', 'paused'].includes(snapshot.job.state) && (!connected || snapshot.klippy !== 'ready')}<div
 				class="reconnect-banner"
 				role="status"
 			>
 				<strong
-					>{!transportConnected
-						? updates.label
-						: snapshot.connection === 'connected'
-							? `Klipper ${snapshot.klippy}`
-							: live
-								? `${connectionLabel} to Moonraker`
-								: 'Printer disconnected'}</strong
-				><span>Last known values remain visible. Your inputs are preserved.</span
-				>{#if !transportConnected}<button
-						class="button secondary"
-						onclick={() => dashboard.reconnect()}>Retry connection</button
-					>{/if}
+					>{snapshot.connection === 'connected'
+						? `Klipper ${snapshot.klippy}`
+						: 'Printer unavailable'}</strong
+				><span>Last known values remain visible. Your inputs are preserved.</span>
 			</div>{/if}
 		{#if snapshot.storage === 'degraded'}<div class="reconnect-banner" role="status">
 				<strong>Action history storage is recovering</strong><span
@@ -287,7 +270,8 @@
 								<ActionForm receipts={snapshot.actions} fields={{ intent: 'cooldown' }}
 									>{#snippet children({ pending, uncertain })}<button
 											class="button secondary"
-											disabled={busy ||
+											disabled={!transportConnected ||
+												busy ||
 												readOnly ||
 												!!thermalReason ||
 												alreadyOff ||
@@ -364,7 +348,7 @@
 						<details class="panel connection-details">
 							<summary
 								>Connection details <span class="muted"
-									>{connected && transportConnected && snapshot.klippy === 'ready'
+									>{connected && snapshot.klippy === 'ready'
 										? 'All systems connected'
 										: 'Check connection'}</span
 								></summary
@@ -383,13 +367,6 @@
 											class="status-dot"
 											class:offline={!connected || snapshot.klippy !== 'ready'}
 										></span>{snapshot.klippy.charAt(0).toUpperCase() + snapshot.klippy.slice(1)}
-									</dd>
-								</div>
-								<div>
-									<dt>Updates</dt>
-									<dd>
-										<span class="status-dot" class:offline={!transportConnected}
-										></span>{updates.label}
 									</dd>
 								</div>
 							</dl>

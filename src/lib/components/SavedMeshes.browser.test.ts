@@ -98,3 +98,29 @@ test('replace blocks unsaveable targets without disabling supported load actions
 		.toBeDisabled();
 	expect(onReplace).not.toHaveBeenCalled();
 });
+
+test('browser stream loss retains saved meshes without adding status text or moving actions', async () => {
+	const snapshot = initialSnapshot();
+	snapshot.job.state = 'complete';
+	const screen = await render(SavedMeshes, {
+		snapshot,
+		connected: true,
+		role: 'owner',
+		onSubmit: vi.fn(),
+		onInspect: vi.fn(),
+		onReplace: vi.fn(),
+		onNew: vi.fn()
+	});
+	const button = screen.getByRole('button', { name: 'Use…', exact: true }).first();
+	const text = document.body.textContent;
+	const top = button.element().getBoundingClientRect().top + window.scrollY;
+	await screen.rerender({ connected: false });
+	await expect.element(button).toBeDisabled();
+	expect(document.body.textContent).toBe(text);
+	expect(button.element().getBoundingClientRect().top + window.scrollY).toBe(top);
+	await expect
+		.element(screen.getByRole('button', { name: 'Inspect', exact: true }).first())
+		.toBeEnabled();
+	await screen.rerender({ connected: true });
+	await expect.element(button).toBeEnabled();
+});

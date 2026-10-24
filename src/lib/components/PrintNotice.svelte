@@ -29,7 +29,7 @@
 	const job = $derived(snapshot.job);
 	const active = $derived(job.state === 'printing' || job.state === 'paused');
 	const operator = $derived(role === 'owner' || role === 'operator');
-	const reason = $derived(jobControlReason(snapshot, available, operator));
+	const reason = $derived(jobControlReason(snapshot, true, operator));
 	const filament = $derived(filamentChangeActive(snapshot.filamentChange));
 	const priority = $derived(Boolean(snapshot.safety?.halted || snapshot.liveRecovery));
 	const receipt = $derived(
@@ -43,10 +43,7 @@
 			.sort((a, b) => b.createdAt - a.createdAt)[0]
 	);
 	const fresh = $derived(
-		available &&
-			snapshot.connection === 'connected' &&
-			snapshot.telemetryReady &&
-			snapshot.klippy === 'ready'
+		snapshot.connection === 'connected' && snapshot.telemetryReady && snapshot.klippy === 'ready'
 	);
 	let open = $state(false);
 	let reviewed = $state<{ id: string; owner: string; filename: string; runId: string | null }>();
@@ -104,7 +101,7 @@
 	}
 
 	function stop() {
-		if (reason || unresolved || !journalReady) return;
+		if (!available || reason || unresolved || !journalReady) return;
 		reviewed = {
 			id: crypto.randomUUID(),
 			owner: userId,
@@ -114,7 +111,7 @@
 		open = true;
 	}
 	async function confirm(coolBed: boolean, coolNozzle: boolean) {
-		if (!reviewed || reason || !sameJob || unresolved || !journalReady)
+		if (!available || !reviewed || reason || !sameJob || unresolved || !journalReady)
 			throw Error('The print changed or controls are unavailable. Review its current state.');
 		const owner = userId;
 		const request: ActionRequest = {
@@ -171,10 +168,12 @@
 								>About {job.remainingMinutes} min remaining</span
 							>{/if}
 					</div>{/if}
-				{#if !fresh}<p class="muted">
-						{available && snapshot.connection === 'connected' && snapshot.klippy !== 'ready'
+				{#if snapshot.connection !== 'connected' || !snapshot.telemetryReady || snapshot.klippy !== 'ready'}<p
+						class="muted"
+					>
+						{snapshot.connection === 'connected' && snapshot.klippy !== 'ready'
 							? `Klipper is ${snapshot.klippy}. Print controls are unavailable.`
-							: jobControlReason(snapshot, available, true)}
+							: jobControlReason(snapshot, true, true)}
 					</p>{/if}
 				{#if filament}<p>
 						{snapshot.filamentChange?.stage === 'review'
@@ -225,7 +224,8 @@
 		? 'The displayed print changed or ended. Close this dialog and review the current job.'
 		: (reason ?? (unresolved ? 'Review the stop receipt before another submission.' : undefined))}
 	bind:open
-	available={fresh && !reason && sameJob && !unresolved && journalReady && active}
+	available={available && fresh && !reason && sameJob && !unresolved && journalReady && active}
+	targetsAvailable={fresh}
 	bedTarget={snapshot.heaters.bed.target}
 	nozzleTarget={snapshot.heaters.nozzle.target}
 	onConfirm={confirm}

@@ -24,7 +24,14 @@ test('cooldown choices survive off targets and concurrent heating', async () => 
 
 test('unavailable telemetry does not present retained zero targets as fulfilled', async () => {
 	const screen = await render(CancelDialog, {
-		props: { open: true, available: false, bedTarget: 0, nozzleTarget: 0, onConfirm: vi.fn() }
+		props: {
+			open: true,
+			available: false,
+			targetsAvailable: false,
+			bedTarget: 0,
+			nozzleTarget: 0,
+			onConfirm: vi.fn()
+		}
 	});
 	await expect
 		.element(screen.getByRole('button', { name: 'Stop print', exact: true }))
@@ -32,7 +39,7 @@ test('unavailable telemetry does not present retained zero targets as fulfilled'
 	await expect
 		.element(screen.getByText('Target already off; the nozzle may still be cooling.'))
 		.not.toBeInTheDocument();
-	await screen.rerender({ available: true });
+	await screen.rerender({ available: true, targetsAvailable: true });
 	await expect
 		.element(screen.getByText('Target already off; the nozzle may still be cooling.'))
 		.toBeVisible();
@@ -58,4 +65,26 @@ test('failed submission keeps choices and explains the failure', async () => {
 	await page.getByRole('button', { name: 'Stop print', exact: true }).click();
 	await expect.element(page.getByRole('alert')).toHaveTextContent('Connection lost');
 	await expect.element(page.getByRole('checkbox', { name: 'Cool down nozzle' })).not.toBeChecked();
+});
+
+test('stream loss disables open stop confirmation without replacing retained targets or choices', async () => {
+	const onConfirm = vi.fn();
+	const screen = await render(CancelDialog, {
+		open: true,
+		available: true,
+		targetsAvailable: true,
+		bedTarget: 60,
+		nozzleTarget: 210,
+		onConfirm
+	});
+	await screen.getByRole('checkbox', { name: 'Cool down bed' }).click();
+	const before = document.body.textContent;
+	const button = screen.getByRole('button', { name: 'Stop print', exact: true });
+	const top = button.element().getBoundingClientRect().top + scrollY;
+	await screen.rerender({ available: false });
+	await expect.element(button).toBeDisabled();
+	expect(document.body.textContent).toBe(before);
+	expect(button.element().getBoundingClientRect().top + scrollY).toBe(top);
+	await expect.element(screen.getByRole('checkbox', { name: 'Cool down bed' })).not.toBeChecked();
+	expect(onConfirm).not.toHaveBeenCalled();
 });

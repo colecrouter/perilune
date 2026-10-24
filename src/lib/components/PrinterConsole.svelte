@@ -92,9 +92,7 @@
 		draft = historyIndex < 0 ? historyDraft : historyEntries[historyIndex]!;
 	}
 	let log = $state<HTMLDivElement | null>(null);
-	const reason = $derived(
-		!connected ? 'Reconnecting to Perilune. Your input is kept.' : snapshot.reason
-	);
+	const reason = $derived(snapshot.reason);
 	const macros = $derived(
 		snapshot.macros
 			.filter(
@@ -174,7 +172,7 @@
 	}
 	async function submit(script = draft) {
 		message = '';
-		if (reason || pending || uncertain) return;
+		if (!connected || reason || pending || uncertain) return;
 		try {
 			request = { id: crypto.randomUUID(), script: consoleScript(script) };
 			await send();
@@ -183,7 +181,7 @@
 		}
 	}
 	async function send() {
-		if (!request || reason || pending || uncertain) return;
+		if (!request || !connected || reason || pending || uncertain) return;
 		const current = request;
 		pending = true;
 		message = '';
@@ -282,7 +280,7 @@
 				<button
 					class="macro-run"
 					aria-label={`Run ${macro.name}`}
-					disabled={!!reason || pending || !!uncertain}
+					disabled={!connected || !!reason || pending || !!uncertain}
 					onclick={() => {
 						void submit(macro.name);
 					}}>Run</button
@@ -311,7 +309,7 @@
 				</p>
 			</div>
 			<span class="connection"
-				>{connected && snapshot.connection === 'connected' ? 'Connected' : 'Reconnecting'}</span
+				>{snapshot.connection === 'connected' ? 'Connected' : 'Printer unavailable'}</span
 			>
 		</div>
 		<details class="log-options">
@@ -426,7 +424,7 @@
 			</p>{/if}
 		<button
 			class="button primary send-command"
-			disabled={!!reason || pending || !!uncertain || !draft.trim()}
+			disabled={!connected || !!reason || pending || !!uncertain || !draft.trim()}
 			onclick={() => void submit()}>Send command</button
 		>
 		<FeedbackRegion active={!!reason} roomy label="Console readiness">

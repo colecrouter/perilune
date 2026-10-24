@@ -145,6 +145,8 @@ try {
 		await route.continue();
 	});
 	await app.goto(base + '/', { waitUntil: 'commit' });
+	const serverConnectionStatus = await app.locator('.connection-status').textContent();
+	const serverConnectionSummary = await app.locator('.connection-details summary').textContent();
 	const input = app.getByRole('spinbutton', { name: 'Bed target', exact: true });
 	const enhancedHeater = app.locator('form').filter({ has: input });
 	async function delayed(button, edit, form) {
@@ -275,6 +277,112 @@ try {
 	);
 	await feedbackPage.close();
 
+	// Server-rendered mesh data remains the displayed data even if the browser stream never attaches.
+	const meshPage = await enhanced.newPage();
+	meshPage.on('pageerror', (error) => errors.push(error.message));
+	await meshPage.route('**/_app/remote/**/getPrinter', (route) => route.abort());
+	let releaseMeshScripts;
+	const meshScriptsReady = new Promise((resolve) => (releaseMeshScripts = resolve));
+	await meshPage.route('**/*.js', async (route) => {
+		await meshScriptsReady;
+		await route.continue();
+	});
+	await meshPage.goto(base + '/calibration/mesh', { waitUntil: 'commit' });
+	const savedMeshes = meshPage.locator('.saved-meshes');
+	await savedMeshes.getByRole('heading', { name: 'Saved meshes', exact: true }).waitFor();
+	await meshPage.evaluate(() => document.fonts.ready);
+	const serverMeshes = await savedMeshes.textContent();
+	const serverTop = await savedMeshes.evaluate(
+		(node) => node.getBoundingClientRect().top + scrollY
+	);
+	releaseMeshScripts();
+	await meshPage.waitForLoadState('load');
+
+	const retainedPages = [];
+	for (const [path, endpoint, selector] of [
+		['/', 'getDashboard', '.temperature-panel'],
+		['/calibration', 'getPrinter', '.preparation']
+	]) {
+		const retainedPage = await enhanced.newPage();
+		retainedPage.on('pageerror', (error) => errors.push(error.message));
+		await retainedPage.route(`**/_app/remote/**/${endpoint}`, (route) => route.abort());
+		await retainedPage.goto(base + path);
+		await retainedPage.evaluate(() => document.fonts.ready);
+		const panel = retainedPage.locator(selector);
+		const content = await panel.textContent();
+		const top = await panel.evaluate((node) => node.getBoundingClientRect().top + scrollY);
+		const checks = await panel
+			.locator('input[type=checkbox]')
+			.evaluateAll((nodes) => nodes.map((node) => node.checked));
+
+		let stopDialogText;
+		if (path === '/calibration') {
+			await retainedPage
+				.getByRole('button', { name: 'Stop current simulation…', exact: true })
+				.click();
+			const dialog = retainedPage.getByRole('dialog');
+			await dialog.waitFor();
+			assert.equal(
+				await dialog.getByRole('button', { name: 'Stop print', exact: true }).isEnabled(),
+				true
+			);
+			stopDialogText = await dialog.textContent();
+		}
+		retainedPages.push({ retainedPage, panel, content, top, checks, stopDialogText });
+	}
+	// Cover the initial live-connection grace deadline as well as hydration.
+	await meshPage.waitForTimeout(11_000);
+	assert.equal(
+		await savedMeshes.textContent(),
+		serverMeshes,
+		'SSR saved meshes survive a missing browser stream'
+	);
+	assert.equal(
+		await savedMeshes.evaluate((node) => node.getBoundingClientRect().top + scrollY),
+		serverTop
+	);
+	assert.doesNotMatch(
+		await meshPage.textContent('body'),
+		/reconnecting|retained mesh data is stale/i
+	);
+	await meshPage.close();
+	for (const { retainedPage, panel, content, top, checks, stopDialogText } of retainedPages) {
+		assert.equal(
+			await panel.textContent(),
+			content,
+			'Transport loss preserves retained temperature and calibration text'
+		);
+		assert.equal(await panel.evaluate((node) => node.getBoundingClientRect().top + scrollY), top);
+		assert.deepEqual(
+			await panel
+				.locator('input[type=checkbox]')
+				.evaluateAll((nodes) => nodes.map((node) => node.checked)),
+			checks
+		);
+
+		if (stopDialogText !== undefined) {
+			const dialog = retainedPage.getByRole('dialog');
+			assert.equal(await dialog.textContent(), stopDialogText);
+			assert.equal(
+				await dialog.getByRole('button', { name: 'Stop print', exact: true }).isDisabled(),
+				true,
+				'Open calibration stop confirmation remains gated after stream loss'
+			);
+		}
+		await retainedPage.close();
+	}
+
+	assert.equal(await app.locator('.connection-status').textContent(), serverConnectionStatus);
+	assert.equal(
+		await app.locator('.connection-details summary').textContent(),
+		serverConnectionSummary
+	);
+	assert.equal(
+		await app.getByRole('button', { name: 'Cool down nozzle & bed', exact: true }).isDisabled(),
+		true,
+		'Browser stream loss gates cooldown without changing status text'
+	);
+
 	assert.ok(!(await app.textContent('body')).includes('Reconnecting to Perilune'));
 	await mkdir('test-results', { recursive: true });
 	await app.screenshot({ path: 'test-results/progressive-desktop.png', fullPage: true });
@@ -282,9 +390,9 @@ try {
 	// ResizeObserver-driven charts settle after the viewport resize event.
 	await app.screenshot({ path: 'test-results/progressive-mobile.png', fullPage: true });
 	await app.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
-	// Long reconnect labels must fit even when the status changes after resizing.
+	// A genuine backend availability label must fit after resizing.
 	await app.locator('.connection-status').evaluate((node) => {
-		node.textContent = 'Live updates unavailable';
+		node.textContent = 'Printer unavailable';
 	});
 	await app.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth);
 	assert.equal(await app.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);

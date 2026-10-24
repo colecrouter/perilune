@@ -69,7 +69,7 @@
 				</p>{:else if fixtureState === 'Error'}<p role="alert">
 					{'The draft is retained. Review the failure before another operation. '.repeat(12)}
 				</p>{:else if fixtureState === 'Reconnect'}<p role="status">
-					Reconnecting; the draft below is retained.
+					The draft below is retained.
 				</p>{/if}
 		</FeedbackRegion>
 		<label

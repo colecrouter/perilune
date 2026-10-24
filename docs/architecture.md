@@ -1797,3 +1797,9 @@ stable; console/PID readiness and extrusion errors follow their controls.
 ReviewSkeleton is shared with the existing reserved pending-settings body.
 An owner-only development gallery provides synthetic state switches; production
 builds reject its route. See docs/layout-stability.md for scope and test cases.
+
+Browser transport feedback (unreleased): server snapshots remain the presentation
+source while live queries attach/reconnect. Browser stream availability gates
+commands separately from printer readiness; it no longer creates reconnect
+notices or marks otherwise valid retained mesh data stale. Backend faults,
+unknown command receipts and camera playback retain their own feedback.

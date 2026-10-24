@@ -85,11 +85,9 @@
 	const owns = $derived(session?.ownerId === userId);
 	const canOperate = $derived(['owner', 'operator'].includes(role));
 	const ready = $derived(
-		connected &&
-			snapshot.connection === 'connected' &&
-			snapshot.klippy === 'ready' &&
-			snapshot.telemetryReady
+		snapshot.connection === 'connected' && snapshot.klippy === 'ready' && snapshot.telemetryReady
 	);
+	const commandReady = $derived(connected && ready);
 	const homed = $derived(ready && allAxesHomed(snapshot));
 	const off = $derived(ready && heaterTargetsOff(snapshot));
 	const liveIdle = $derived(
@@ -104,11 +102,9 @@
 	const reason = $derived(
 		!canOperate
 			? 'An operator account is required.'
-			: !connected
-				? 'Reconnecting to Perilune.'
-				: live
-					? liveMeshReason(snapshot)
-					: meshProbeReason(snapshot)
+			: live
+				? liveMeshReason(snapshot)
+				: meshProbeReason(snapshot)
 	);
 	const stats = $derived(session?.result ? meshStats(session.result) : null);
 	const sessionId = $derived(session?.id);
@@ -207,10 +203,6 @@
 							</div>
 							<span class="mode-badge">{live ? 'Measured samples' : 'Synthetic samples'}</span>
 						</div>{/if}
-					{#if !ready}<p class="notice" role="status">
-							Reconnecting. This workflow is owned by the backend; check its state when the
-							connection returns.
-						</p>{/if}
 					{#if session.stage === 'probing'}
 						<p class="muted">
 							{live
@@ -235,11 +227,11 @@
 						<div class="review-actions">
 							{#if !session.usual}<button
 									class="button primary"
-									disabled={!owns || !canOperate || !ready || pending || !liveIdle}
+									disabled={!owns || !canOperate || !commandReady || pending || !liveIdle}
 									onclick={() => review('apply')}>Use temporarily…</button
 								>{/if}<button
 								class="button secondary"
-								disabled={!owns || !canOperate || !ready || pending || !liveIdle}
+								disabled={!owns || !canOperate || !commandReady || pending || !liveIdle}
 								onclick={() => review('save')}>{isNew ? 'Save as…' : 'Save replacement…'}</button
 							>
 						</div>
@@ -258,7 +250,7 @@
 						</p>{/if}
 					{#if session.stage === 'uncertain' && role === 'owner'}<button
 							class="button secondary"
-							disabled={!ready || pending}
+							disabled={!commandReady || pending}
 							onclick={() =>
 								basic({ type: 'meshProbeReconcile', probeId: session.id, confirmed: true })}
 							>Check saved outcome</button
@@ -268,7 +260,7 @@
 								class="button secondary"
 								disabled={!canOperate ||
 									(!owns && role !== 'owner') ||
-									!ready ||
+									!commandReady ||
 									pending ||
 									!liveIdle ||
 									(live && ['probing', 'saving'].includes(session.stage))}
@@ -319,17 +311,17 @@
 			{#if !live}<div class="prepare-actions">
 					<button
 						class="button secondary"
-						disabled={!canOperate || !ready || pending || homed || !idle || active}
+						disabled={!canOperate || !commandReady || pending || homed || !idle || active}
 						title={homed ? 'All axes are already homed.' : undefined}
 						onclick={() => basic({ type: 'home', axes: 'all' })}>Home all axes</button
 					><button
 						class="button secondary"
-						disabled={!canOperate || !ready || pending || off || active}
+						disabled={!canOperate || !commandReady || pending || off || active}
 						title={off ? 'Both heater targets are already off.' : undefined}
 						onclick={() => basic({ type: 'cooldown' })}>Turn heater targets off</button
 					>{#if ['printing', 'paused'].includes(snapshot.job.state)}<button
 							class="button secondary"
-							disabled={!canOperate || !ready || pending}
+							disabled={!canOperate || !commandReady || pending}
 							onclick={() => {
 								stopJob = { filename: snapshot.job.filename, runId: snapshot.job.runId ?? null };
 								stopOpen = true;
@@ -367,7 +359,7 @@
 					>Back to inspection</Dialog.Close
 				><button
 					class="button primary"
-					disabled={Boolean(reason) || pending || !clean || !clear || !understand}
+					disabled={!connected || Boolean(reason) || pending || !clean || !clear || !understand}
 					onclick={begin}
 					>{submitting
 						? 'Submitting…'
@@ -381,7 +373,8 @@
 >
 <CancelDialog
 	bind:open={stopOpen}
-	available={ready}
+	available={commandReady}
+	targetsAvailable={ready}
 	bedTarget={snapshot.heaters.bed.target}
 	nozzleTarget={snapshot.heaters.nozzle.target}
 	onConfirm={(coolBed, coolNozzle) =>
@@ -417,7 +410,7 @@
 					class="button primary"
 					disabled={!canOperate ||
 						!owns ||
-						!ready ||
+						!commandReady ||
 						!liveIdle ||
 						pending ||
 						!reviewed ||
@@ -463,7 +456,7 @@
 				<Dialog.Close class="button secondary" disabled={submitting}>Keep going</Dialog.Close
 				><button
 					class="button danger"
-					disabled={!ready || !liveIdle || pending || !reviewed}
+					disabled={!commandReady || !liveIdle || pending || !reviewed}
 					onclick={async () => {
 						if (!reviewed) return;
 						try {

@@ -33,11 +33,9 @@
 	let referencesChecked = $state(false);
 	const receipt = $derived(snapshot.actions.find((a) => a.id === lastAction));
 	const blocked = $derived(
-		!connected
-			? 'Reconnecting to Perilune.'
-			: meshProbeActive(snapshot.meshProbe)
-				? 'Finish the current mesh workflow.'
-				: meshProfileReason(snapshot)
+		meshProbeActive(snapshot.meshProbe)
+			? 'Finish the current mesh workflow.'
+			: meshProfileReason(snapshot)
 	);
 	const allowed = $derived(['owner', 'operator'].includes(role));
 	const label = (name: string) => (name === 'default' ? 'Usual mesh' : name);
@@ -99,7 +97,7 @@
 				>{/if}
 			{#if snapshot.bedMesh.active}<button
 					class="button secondary"
-					disabled={!allowed || Boolean(blocked) || submitting}
+					disabled={!allowed || !connected || Boolean(blocked) || submitting}
 					onclick={() => review('clear', snapshot.bedMesh.active)}>Clear active mesh…</button
 				>{/if}
 		</div>
@@ -124,11 +122,16 @@
 					<button class="button secondary" onclick={() => onInspect(mesh.name)}>Inspect</button
 					><button
 						class="button secondary"
-						disabled={!allowed || Boolean(blocked) || submitting || !supported(mesh.name)}
+						disabled={!allowed ||
+							!connected ||
+							Boolean(blocked) ||
+							submitting ||
+							!supported(mesh.name)}
 						onclick={() => review('load', mesh)}>Use…</button
 					><button
 						class="button secondary"
 						disabled={role !== 'owner' ||
+							!connected ||
 							Boolean(blocked) ||
 							!meshCalibrationTargetSupported(mesh.name, snapshot.mode === 'simulator')}
 						title={!meshCalibrationTargetSupported(mesh.name, snapshot.mode === 'simulator')
@@ -138,6 +141,7 @@
 					><button
 						class="button secondary"
 						disabled={role !== 'owner' ||
+							!connected ||
 							Boolean(blocked) ||
 							submitting ||
 							snapshot.bedMesh.active?.name === mesh.name ||
@@ -198,6 +202,7 @@
 					class:danger={reviewed?.operation === 'delete'}
 					class:primary={reviewed?.operation !== 'delete'}
 					disabled={submitting ||
+						!connected ||
 						Boolean(blocked) ||
 						!allowed ||
 						(reviewed?.operation === 'delete' && !referencesChecked)}

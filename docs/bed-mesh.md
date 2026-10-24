@@ -63,3 +63,8 @@ that starts each print: [Klipper mesh loading](https://www.klipper3d.org/Bed_Mes
 Repeated replacements reuse their target. New calibrations create a permanent
 profile only when explicitly saved under a new name; internal run profiles are
 workflow state rather than an expanding permanent library.
+
+Browser reconnect feedback (unreleased): the server-loaded mesh and saved profiles
+remain visible while browser live updates reconnect, without adding a reconnect
+paragraph or changing their inspection state. Commands remain gated on current
+availability; actual backend telemetry unavailability is tracked separately.

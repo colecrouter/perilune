@@ -19,10 +19,7 @@
 	});
 	const snapshot = $derived(dashboard.current ?? initial);
 	const fresh = $derived(
-		updates.available &&
-			snapshot.connection === 'connected' &&
-			snapshot.klippy === 'ready' &&
-			snapshot.telemetryReady
+		snapshot.connection === 'connected' && snapshot.klippy === 'ready' && snapshot.telemetryReady
 	);
 	async function submit(command: PrinterCommand, id?: string) {
 		return (

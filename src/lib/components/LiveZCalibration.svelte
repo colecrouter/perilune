@@ -51,8 +51,7 @@
 			? 'An operator account is required.'
 			: !snapshot.liveZEnabled
 				? 'Live Z calibration is disabled on this server.'
-				: !connected ||
-					  snapshot.connection !== 'connected' ||
+				: snapshot.connection !== 'connected' ||
 					  snapshot.klippy !== 'ready' ||
 					  !snapshot.telemetryReady
 					? 'Wait for a fresh ready printer connection.'
@@ -194,7 +193,14 @@
 			</div>
 			<button
 				class="button primary"
-				disabled={!!reason || pending || !clean || !clear || !paper || !homed || cap?.pending}
+				disabled={!connected ||
+					!!reason ||
+					pending ||
+					!clean ||
+					!clear ||
+					!paper ||
+					!homed ||
+					cap?.pending}
 				onclick={async () => {
 					const run = crypto.randomUUID();
 					startingRun = run;
@@ -261,7 +267,7 @@
 				<div class="movement">
 					<button
 						class="button secondary"
-						disabled={!!reason || pending || !withinTravel(selectedStep)}
+						disabled={!connected || !!reason || pending || !withinTravel(selectedStep)}
 						title={withinTravel(selectedStep)
 							? `Raise Z by ${selectedStep} mm`
 							: 'This step exceeds configured Z travel'}
@@ -275,7 +281,7 @@
 							})}>Z +</button
 					><button
 						class="button secondary"
-						disabled={!!reason || pending || !withinTravel(-selectedStep)}
+						disabled={!connected || !!reason || pending || !withinTravel(-selectedStep)}
 						title={withinTravel(-selectedStep)
 							? `Lower Z by ${selectedStep} mm`
 							: 'This step exceeds configured Z travel'}
@@ -306,7 +312,7 @@
 					to accept this height</label
 				><button
 					class="button primary"
-					disabled={!!reason || pending || !accepted || cap.z === null}
+					disabled={!connected || !!reason || pending || !accepted || cap.z === null}
 					onclick={() =>
 						send({
 							type: 'zProbeAccept',
