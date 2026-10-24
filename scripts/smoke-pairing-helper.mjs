@@ -39,7 +39,6 @@ export async function testPairing(owner, base, directory, filename) {
 		);
 		releaseScripts = true;
 		for (const release of heldScripts) release();
-		await page.unroute(entryScript);
 		const pairingStarted = page.waitForResponse(
 			(response) =>
 				response.url().includes('/pairBrowser') && response.request().method() === 'POST'
