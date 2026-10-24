@@ -331,6 +331,7 @@ try {
 		'Console smoke passed: shared receipts, dedup, failure/filtering, per-account shortcuts, reconnect, viewer/CSRF gates, private live responses, one socket, no live execution and 320px layout.'
 	);
 } catch (cause) {
+	console.error(logs);
 	console.error(cause);
 	throw cause;
 } finally {
