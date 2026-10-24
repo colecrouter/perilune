@@ -29,9 +29,14 @@ Live physical execution of these basic actions is still disabled. This milestone
 establishes the shared submission adapter and progressive forms; physical-operation
 coordination and printer testing are tracked in #10.
 
-Failure notice dismissal (unreleased): closing a failure notice acknowledges the
-currently displayed failures for this browser tab and account, including across
-full page navigation and reloads. New failures still appear. Activity retains the
-original receipts; dismissal does not clear recovery locks or change printer
-state. If browser tab storage is unavailable, dismissal lasts until the document
-is replaced.
+Failure notices (unreleased): failed receipts remain in Activity as history.
+Successful mesh save, discard, or verified reconciliation resolves earlier failure
+alerts belonging to that same mesh workflow. A different workflow's failures
+remain visible. Only failures belonging to the signed-in account appear as alerts.
+
+Closing an alert acknowledges its displayed receipts on the server for that
+account, across reloads, tabs and devices. The alert remains visible if the
+acknowledgement fails. The server omits resolved or acknowledged alerts from the
+initial page; there is no browser-storage dismissal after rendering. New failures
+still appear. Acknowledgement never clears a workflow lock or changes printer
+state.

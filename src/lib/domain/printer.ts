@@ -108,7 +108,11 @@ export interface ActionRecord {
 	createdAt: number;
 	message: string | null;
 }
+export interface FailureNotice extends ActionRecord {
+	path: '/actions' | '/safety';
+}
 export interface PrinterSnapshot {
+	failureNotices?: FailureNotice[];
 	filamentChange?: FilamentChangeSession | null;
 	pid?: PidState;
 	pidTelemetry?: PidTelemetry;

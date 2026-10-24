@@ -1,3 +1,4 @@
+import { withFailureNotices } from '#lib/server/failure-notices.js';
 import { buildInfo } from '#lib/server/build-info.js';
 import { defaultPreferences } from '#lib/domain/preferences.js';
 import { PreferenceService } from '#lib/server/preference-service.js';
@@ -23,6 +24,7 @@ export const load: LayoutServerLoad = async (event) => {
 		})
 	);
 	const { preferences, ...snapshot } = initial;
+	snapshot.printer = await runtime.runPromise(withFailureNotices(snapshot.printer, user.id));
 	return {
 		buildInfo,
 		user: { id: user.id, name: user.name, role: user.role },
