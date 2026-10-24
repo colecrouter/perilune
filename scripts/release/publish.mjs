@@ -1,3 +1,4 @@
+import { verifyManifestIdentity } from './manifest-identity.mjs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { releaseVersion } from './version.mjs';
@@ -16,11 +17,6 @@ const existing = spawnSync(
 );
 if (existing.status === 0) {
 	manifest = JSON.parse(existing.stdout);
-	if (
-		manifest.annotations?.['org.opencontainers.image.revision'] !== revision ||
-		manifest.annotations?.['org.opencontainers.image.version'] !== version
-	)
-		throw Error('Published version belongs to different source; never overwrite it');
 } else {
 	if (!/not found|manifest unknown|name unknown/i.test(existing.stderr))
 		throw Error(existing.stderr || 'Registry inspection failed');
@@ -45,13 +41,19 @@ if (existing.status === 0) {
 		run('docker', ['buildx', 'imagetools', 'inspect', `${image}:${version}`, '--raw'])
 	);
 }
-for (const arch of ['amd64', 'arm64'])
-	if (
-		!manifest.manifests?.some(
-			(m) => m.platform?.os === 'linux' && m.platform?.architecture === arch
-		)
+verifyManifestIdentity(manifest, version, revision, (digest) =>
+	JSON.parse(
+		run('docker', [
+			'buildx',
+			'imagetools',
+			'inspect',
+			`${image}@${digest}`,
+			'--format',
+			'{{json .Image.Config.Labels}}'
+		])
 	)
-		throw Error('Missing architecture ' + arch);
+);
+
 const digest = run('docker', [
 	'buildx',
 	'imagetools',

@@ -1,6 +1,6 @@
 {
 	"name": "perilune",
-	"version": "0.1.0-alpha.1",
+	"version": "0.1.0-alpha.2",
 	"private": true,
 	"license": "GPL-3.0-only",
 	"type": "module",
@@ -24,7 +24,7 @@
 		"test:smoke": "node scripts/smoke.mjs",
 		"test:backup": "node --test scripts/backup.test.mjs scripts/restore.test.mjs",
 		"test:compose": "node scripts/check-compose.mjs",
-		"test:release": "node --test scripts/release/bundle.test.mjs && node scripts/check-docs.mjs",
+		"test:release": "node --test scripts/release/bundle.test.mjs scripts/release/manifest-identity.test.mjs && node scripts/check-docs.mjs",
 		"test:smoke:live": "node scripts/smoke-live.mjs",
 		"test:smoke:camera": "node scripts/smoke-camera.mjs",
 		"test:smoke:auth": "node scripts/smoke-auth.mjs",

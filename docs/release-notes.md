@@ -1,15 +1,13 @@
-First public alpha of Perilune’s versioned distribution. Existing users evaluating
-source deployments should preserve their current mounts and private environment;
-the standard install bundle uses explicitly named data and backup volumes.
+Second alpha; updates are explicit and the first release remains unchanged.
 
-- Linux x86-64 and ARM64 container images, tested on native runners.
-- Digest-pinned install bundle, checksums, source/image metadata and version display.
-- Documented owner setup, read-only Moonraker connection, cameras and slicer pairing.
-- Verified backup, upgrade and fresh-volume rollback with retained accounts/secrets.
+- Pairing submissions stay disabled until browser handlers are ready, preventing
+  an early click from submitting the plain HTML form without creating a code.
+- Release retries verify both platform image configs, supporting registries that
+  omit optional OCI index annotations while still refusing source/version mismatches.
 
-Perilune remains an early alpha. Live controls and configuration writes are opt-in
-and require attended testing. Keep another printer interface available. Raw-only
-USB cameras and physical unplug/replug coverage remain limited; see camera docs.
+This release exercises installation, account retention, online backup, upgrade
+from the preceding tagged release and matching-backup rollback on native Linux
+x86-64 and ARM64. See the included upgrade guide before changing versions.
 
-The automatically generated change list below includes repository changes. For
-an overview of supported workflows, read the documentation index in the bundle.
+Perilune remains an early alpha. Physical printer controls are opt-in and require
+attended acceptance. No command with an unknown outcome is automatically replayed.
