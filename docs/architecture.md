@@ -1772,3 +1772,11 @@ SQLite acknowledgement records suppress manually acknowledged receipt IDs before
 SSR and live snapshots are serialized. A typed remote command acknowledges only
 currently visible owned failures, then wakes subscribers. No sessionStorage or
 hydration dismissal is used, and no acknowledgement changes printer recovery.
+
+Live Z control stability (unreleased): the adjustment region has fixed structure
+above its movement buttons across routine pending/telemetry/mode changes. Session
+acknowledgements and routine receipt statuses are not rendered there; failures
+remain below. Current coordinate uses large tabular numerals next to the controls.
+Preparation reuses the existing guarded Home All command. A locally initiated
+start focuses/scrolls once only after its matching session is observed active;
+there is no automatic homing, command replay or observer navigation.
