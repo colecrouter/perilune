@@ -1,3 +1,4 @@
+import { sqlTransactionReservation } from './auth/sql-reservation.js';
 import { MeshPersistenceLive } from './mesh-persistence.js';
 import { accountMailLayer } from './account-mail-service.js';
 import { mailConfig } from './auth/mail-config.js';
@@ -158,7 +159,7 @@ const jobsLayer = JobServiceLive.pipe(
 			}
 		})
 	),
-	Layer.provide(SqliteClient.layer({ filename })),
+	Layer.provide(databaseLayer),
 	Layer.provideMerge(commandsLayer)
 );
 const liveActionsLayer = moonrakerUrl
@@ -230,6 +231,7 @@ const cameraSetupLayer = CameraSetupServiceLive.pipe(
 );
 export const runtime = ManagedRuntime.make(
 	Layer.mergeAll(
+		databaseLayer,
 		cameraSetupLayer,
 		accountMailLayer(authService, mailConfig()),
 		FilamentChangeStoreLive.pipe(Layer.provide(databaseLayer)),
@@ -237,6 +239,11 @@ export const runtime = ManagedRuntime.make(
 		configurationLayer,
 		PreferenceServiceLive.pipe(Layer.provide(databaseLayer))
 	)
+);
+// Hold the same connection reservation used by all process SQL services. This
+// queues their writes asynchronously while Better Auth owns SQLite's writer.
+authService?.setTransactionReservation(
+	sqlTransactionReservation(() => runtime.runPromise(SqliteClient.SqliteClient))
 );
 export const shutdownSignal = new AbortController();
 export const integration = createIntegration();

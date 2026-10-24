@@ -64,8 +64,12 @@
 	const selected = $derived(data.selected);
 	const routeSearch = $derived(page.url.search);
 	const routePath = $derived(page.url.pathname);
+	let appliedSearch = untrack(() => page.url.search);
 	$effect(() => {
-		const params = new URLSearchParams(routeSearch);
+		const next = routeSearch;
+		if (next === appliedSearch) return;
+		appliedSearch = next;
+		const params = new URLSearchParams(next);
 		search = params.get('q') ?? '';
 		material = params.get('material') ?? '';
 	});
