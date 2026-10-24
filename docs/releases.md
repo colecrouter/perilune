@@ -62,7 +62,8 @@ publication jobs; PR image checks do not receive registry write permissions.
 pnpm validate
 pnpm test:compose
 actionlint .github/workflows/*.yml
-docker build -t perilune:release-candidate --build-arg VERSION=0.1.0-alpha.1 .
+docker build -t perilune:release-candidate --build-arg VERSION=0.1.0-alpha.1 \
+  --build-arg REVISION="$(git rev-parse HEAD)" .
 # Build a previous tagged ancestor (or bootstrap parent) as perilune:release-previous.
 node scripts/release/lifecycle.mjs perilune:release-previous perilune:release-candidate
 ```

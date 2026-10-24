@@ -5,6 +5,7 @@ import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { request } from 'playwright';
+import { version } from './version.mjs';
 const require = createRequire(import.meta.url);
 const { stringify } = await import(
 	pathToFileURL(
@@ -128,8 +129,18 @@ try {
 	const health = await start(image, volumes[0], volumes[3]);
 	docker('exec', container, 'node', 'scripts/backup.mjs', '/app/backups/candidate-fresh-volume');
 	assert.equal(health.status, 'ok');
-	assert.ok(health.version, 'Candidate reports its version');
-	assert.ok(health.revision, 'Candidate reports its revision');
+	assert.equal(health.version, version, 'Candidate reports the declared release version');
+	assert.match(health.revision, /^[a-f0-9]{40}$/, 'Candidate reports a full source commit');
+	assert.equal(
+		health.revision,
+		docker(
+			'image',
+			'inspect',
+			image,
+			'--format',
+			'{{index .Config.Labels "org.opencontainers.image.revision"}}'
+		)
+	);
 	await signIn();
 	assert.deepEqual(JSON.parse(sql('SELECT value FROM release_acceptance')), [
 		{ value: 'before-upgrade' }
