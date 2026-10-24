@@ -36,3 +36,7 @@ The owner-only `/dev/layout-states` page on `pnpm dev` exercises synthetic loadi
 pending, success, error and reconnect states. It sends no physical/configuration
 commands and is unavailable in production. See [layout conventions](layout-stability.md)
 for the shared components and desktop/phone measurement checks.
+
+The preferences ORM pilot uses the existing Effect SQLite client and migrator.
+See [persistence.md](persistence.md) before adding another migrated store; native
+transaction context and authentication reservations are part of its contract.

@@ -1813,3 +1813,12 @@ capture/mapping guidance. A pinned-companion synthetic raw probe checks decoded
 colors, shared mixed-quality capture, idle teardown and unavailable-input recovery.
 Actual raw drivers, Safari/native HLS and low-power throughput remain coordinated
 hardware/platform acceptance; no claim of universal camera compatibility is made.
+
+Preferences persistence pilot (unreleased): pinned Drizzle 1.0.0-rc.5 uses the
+Effect-native SQLite adapter over the existing process client. Typed table
+metadata mirrors migration 020; existing Effect migrations, JSON text format,
+atomic JSON merge, runtime parsing and service SqlError contracts are preserved.
+No additional connection, query caching or ORM migration runner is introduced.
+Authentication retains its current dialect and shared writer reservation.
+See [persistence.md](persistence.md) for the approved boundary, acceptance and
+remaining migration scope; issue #90 remains open for the other stores.
