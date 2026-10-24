@@ -1,5 +1,7 @@
 import { Context, Effect, Layer } from 'effect';
-import { SqlClient } from 'effect/sql/SqlClient';
+import { eq, sql } from 'drizzle-orm';
+import { makeDatabase, databaseQuery } from './persistence/database.js';
+import { userPreferences } from './persistence/schema.js';
 import type { SqlError } from 'effect/sql/SqlError';
 import {
 	defaultPreferences,
@@ -18,7 +20,7 @@ export class PreferenceService extends Context.Service<
 export const PreferenceServiceLive = Layer.effect(
 	PreferenceService,
 	Effect.gen(function* () {
-		const sql = yield* SqlClient;
+		const db = yield* makeDatabase;
 		yield* migrate;
 		const from = (value?: string): Preferences => {
 			const stored = value ? JSON.parse(value) : {};
@@ -30,17 +32,29 @@ export const PreferenceServiceLive = Layer.effect(
 		};
 		return {
 			get: (owner) =>
-				sql<{ value: string }>`SELECT value FROM user_preferences WHERE owner=${owner}`.pipe(
-					Effect.map((rows) => from(rows[0]?.value))
-				),
+				db
+					.select({ value: userPreferences.value })
+					.from(userPreferences)
+					.where(eq(userPreferences.owner, owner))
+					.pipe(
+						databaseQuery,
+						Effect.map((rows) => from(rows[0]?.value))
+					),
 			// Merge in SQLite so simultaneous tabs changing different keys cannot replace
 			// each other's settings. A patch contains validated display fields only.
 			patch: (owner, patch) =>
-				sql<{
-					value: string;
-				}>`INSERT INTO user_preferences(owner,value) VALUES(${owner},${JSON.stringify(patch)}) ON CONFLICT(owner) DO UPDATE SET value=json_patch(user_preferences.value,excluded.value) RETURNING value`.pipe(
-					Effect.map((rows) => from(rows[0].value))
-				)
+				db
+					.insert(userPreferences)
+					.values({ owner, value: JSON.stringify(patch) })
+					.onConflictDoUpdate({
+						target: userPreferences.owner,
+						set: { value: sql`json_patch(${userPreferences.value}, excluded.value)` }
+					})
+					.returning({ value: userPreferences.value })
+					.pipe(
+						databaseQuery,
+						Effect.map((rows) => from(rows[0].value))
+					)
 		};
 	})
 );

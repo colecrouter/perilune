@@ -1,9 +1,10 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Effect, ManagedRuntime } from 'effect';
+import { Effect, Layer, ManagedRuntime } from 'effect';
 import * as SqliteClient from '@effect/sql-sqlite-node/SqliteClient';
 import { expect, it } from 'vite-plus/test';
+import { PreferenceService, PreferenceServiceLive } from '../preference-service.js';
 import { createAuthService, digest } from './service.js';
 import { sqlTransactionReservation } from './sql-reservation.js';
 
@@ -21,7 +22,9 @@ function fixture() {
 	service.db
 		.prepare('INSERT INTO enrollment VALUES (?,?,?,?,NULL,?)')
 		.run(digest(details.token), 'owner', 'setup', Date.now() + 60000, Date.now());
-	const runtime = ManagedRuntime.make(SqliteClient.layer({ filename }));
+	const runtime = ManagedRuntime.make(
+		PreferenceServiceLive.pipe(Layer.provideMerge(SqliteClient.layer({ filename })))
+	);
 	const reserve = sqlTransactionReservation(() => runtime.runPromise(SqliteClient.SqliteClient));
 	service.setTransactionReservation(reserve);
 	return {
@@ -40,6 +43,7 @@ it('queues Effect SQL writes while real Better Auth enrollment owns the connecti
 	let background: Promise<unknown> | undefined;
 	try {
 		const sql = await f.runtime.runPromise(SqliteClient.SqliteClient);
+		const preferences = await f.runtime.runPromise(PreferenceService);
 		let acquisitions = 0;
 		f.service.setTransactionReservation(async () => {
 			const release = await f.reserve();
@@ -47,7 +51,15 @@ it('queues Effect SQL writes while real Better Auth enrollment owns the connecti
 			if (++acquisitions === 2) {
 				let finished = false;
 				background = f.runtime
-					.runPromise(sql`INSERT INTO auth_audit(event,created) VALUES ('background',0)`)
+					.runPromise(
+						Effect.all(
+							[
+								sql`INSERT INTO auth_audit(event,created) VALUES ('background',0)`,
+								preferences.patch('fixture-owner', { serif: false })
+							],
+							{ concurrency: 'unbounded' }
+						)
+					)
 					.then(() => {
 						finished = true;
 					});
@@ -61,6 +73,9 @@ it('queues Effect SQL writes while real Better Auth enrollment owns the connecti
 		await f.service.enroll({ ...details });
 		await background;
 		expect(acquisitions).toBeGreaterThanOrEqual(3);
+		expect(await f.runtime.runPromise(preferences.get('fixture-owner'))).toMatchObject({
+			serif: false
+		});
 		expect(f.service.db.prepare('SELECT role FROM user').get()?.role).toBe('owner');
 		expect(
 			f.service.db.prepare("SELECT count(*) n FROM auth_audit WHERE event='background'").get()?.n
@@ -82,10 +97,12 @@ it('waits asynchronously when an Effect SQL transaction precedes enrollment', as
 	let writer: Promise<unknown> | undefined;
 	try {
 		const sql = await f.runtime.runPromise(SqliteClient.SqliteClient);
+		const preferences = await f.runtime.runPromise(PreferenceService);
 		writer = f.runtime.runPromise(
 			sql.withTransaction(
 				Effect.gen(function* () {
 					yield* sql`INSERT INTO auth_audit(event,created) VALUES ('background',0)`;
+					yield* preferences.patch('fixture-owner', { serif: false });
 					entered();
 					yield* Effect.promise(() => hold);
 				})
