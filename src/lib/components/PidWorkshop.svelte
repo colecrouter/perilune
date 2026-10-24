@@ -28,11 +28,7 @@
 	const live = $derived(snapshot.mode === 'moonraker');
 	const run = $derived(snapshot.pid?.run);
 	const running = $derived(pidActive(snapshot.pid));
-	const reason = $derived(
-		!connected
-			? 'Reconnecting. Your choices are kept.'
-			: pidReason(snapshot, heater, targets[heater], role === 'owner')
-	);
+	const reason = $derived(pidReason(snapshot, heater, targets[heater], role === 'owner'));
 	let acknowledgedChoice = '';
 	$effect(() => {
 		const choice = `${heater}:${targets[heater]}:${role}`;
@@ -178,7 +174,9 @@
 					/> I am attending the printer, have checked the heater and cooling arrangement, and am ready
 					for this temperature test.</label
 				>
-				<button class="button primary" disabled={!!reason || pending || uncertain || !attended}
+				<button
+					class="button primary"
+					disabled={!connected || !!reason || pending || uncertain || !attended}
 					>{live ? 'Start heater calibration' : 'Run simulator calibration'}</button
 				>
 			{/snippet}

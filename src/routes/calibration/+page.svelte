@@ -57,19 +57,13 @@
 		void sessionId;
 		observation = null;
 	});
-	const ready = $derived(
-		updates.available && snapshot.connection === 'connected' && snapshot.klippy === 'ready'
-	);
-	const homed = $derived(updates.available && allAxesHomed(snapshot));
+	const ready = $derived(snapshot.connection === 'connected' && snapshot.klippy === 'ready');
+	const homed = $derived(allAxesHomed(snapshot));
 	const heatersOff = $derived(ready && heaterTargetsOff(snapshot));
 	const idle = $derived(ready && ['standby', 'complete', 'cancelled'].includes(snapshot.job.state));
 	const currentJob = $derived(['printing', 'paused'].includes(snapshot.job.state));
 	const startReason = $derived(
-		!canOperate
-			? 'An operator account is required.'
-			: !updates.available
-				? 'Reconnecting to Perilune. Your checklist is retained.'
-				: calibrationReason(snapshot)
+		!canOperate ? 'An operator account is required.' : calibrationReason(snapshot)
 	);
 	const blocked = $derived(
 		!canOperate ||
@@ -204,12 +198,6 @@
 				This workshop changes simulator offsets only. The diagrams are illustrations; no probe, test
 				print, motor movement or printer configuration write is performed.
 			</p>
-			{#if !updates.available || snapshot.connection !== 'connected'}<p
-					role="status"
-					class="notice"
-				>
-					Reconnecting. Your checklist and adjustment choices are retained.
-				</p>{/if}
 			{#if failure}<p role="alert" class="error-text">{failure}</p>{/if}
 			{#if receipt}<p role="status" class="action-status">
 					{receipt.label}: {receipt.status}{receipt.message ? ` — ${receipt.message}` : ''}
@@ -556,7 +544,12 @@
 					</div>
 					{#if startReason}<p class="notice">{startReason}</p>{/if}<button
 						class="button primary begin"
-						disabled={Boolean(startReason) || !clean || !clear || !understand || submitting}
+						disabled={!updates.available ||
+							Boolean(startReason) ||
+							!clean ||
+							!clear ||
+							!understand ||
+							submitting}
 						onclick={() =>
 							void send({
 								type: 'calibrationBegin',
@@ -585,7 +578,8 @@
 	{/if}</AppShell
 >
 <CancelDialog
-	available={ready}
+	available={ready && updates.available}
+	targetsAvailable={ready}
 	bind:open={stopOpen}
 	bedTarget={snapshot.heaters.bed.target}
 	nozzleTarget={snapshot.heaters.nozzle.target}

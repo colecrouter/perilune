@@ -37,23 +37,15 @@
 	let clearance = $state(false);
 	let releaseOpen = $state(false);
 	let keepEngaged = $state<HTMLButtonElement | null>(null);
-	const operatorReason = $derived(
-		!transportConnected
-			? 'Reconnecting to Perilune. Wait for live updates.'
-			: !canOperate
-				? 'An operator account is required.'
-				: null
-	);
-	const alreadyHomed = $derived(transportConnected && allAxesHomed(snapshot));
+	const operatorReason = $derived(!canOperate ? 'An operator account is required.' : null);
+	const alreadyHomed = $derived(allAxesHomed(snapshot));
 	const homeAllReason = $derived(operatorReason ?? motionReason(snapshot, ['x', 'y', 'z'], true));
 	const releaseReason = $derived(operatorReason ?? motionReason(snapshot, [], true));
 	const limits = $derived(snapshot.motion.limits);
 	const reason = $derived(
-		!transportConnected
-			? 'Reconnecting to Perilune. Wait for live updates.'
-			: !canOperate
-				? 'An operator account is required to move the printer.'
-				: motionReason(snapshot, ['x', 'y', 'z'])
+		!canOperate
+			? 'An operator account is required to move the printer.'
+			: motionReason(snapshot, ['x', 'y', 'z'])
 	);
 	const stale = $derived(
 		base !== null &&
@@ -243,7 +235,8 @@
 					<div class="jog-buttons">
 						{#each [['X −', 'x', -1], ['X +', 'x', 1], ['Y −', 'y', -1], ['Y +', 'y', 1], ['Z −', 'z', -1], ['Z +', 'z', 1]] as [name, axis, direction]}<button
 								class="button secondary"
-								disabled={!!reason ||
+								disabled={!transportConnected ||
+									!!reason ||
 									pending ||
 									jogDestination(snapshot.motion, axis as Axis, Number(direction) * step) ===
 										snapshot.motion.position[axis as Axis]}
@@ -260,7 +253,12 @@
 						{#if progressive}<ActionForm fields={{ intent: 'home', axes: 'all' }}
 								>{#snippet children({ pending: submitting, uncertain })}<button
 										class="button primary home-all"
-										disabled={!!homeAllReason || pending || submitting || uncertain || alreadyHomed}
+										disabled={!transportConnected ||
+											!!homeAllReason ||
+											pending ||
+											submitting ||
+											uncertain ||
+											alreadyHomed}
 										title={alreadyHomed
 											? 'All axes are already homed.'
 											: (homeAllReason ?? undefined)}>Home All</button
@@ -268,7 +266,7 @@
 							>{:else}
 							<button
 								class="button primary home-all"
-								disabled={!!homeAllReason || pending || alreadyHomed}
+								disabled={!transportConnected || !!homeAllReason || pending || alreadyHomed}
 								title={alreadyHomed ? 'All axes are already homed.' : (homeAllReason ?? undefined)}
 								onclick={() => submit({ type: 'home', axes: 'all' })}>Home All</button
 							>{/if}
@@ -286,7 +284,7 @@
 					<div class="jog-buttons">
 						<Dialog.Trigger
 							class="button secondary"
-							disabled={!!releaseReason || pending}
+							disabled={!transportConnected || !!releaseReason || pending}
 							title={releaseReason ?? undefined}
 							onclick={() => (error = '')}>Disengage motors</Dialog.Trigger
 						>
@@ -417,7 +415,8 @@
 				{#if reason}<p class="help">{reason}</p>{/if}
 				<button
 					class="button primary"
-					disabled={!!reason ||
+					disabled={!transportConnected ||
+						!!reason ||
 						pending ||
 						!base ||
 						stale ||
@@ -474,9 +473,9 @@
 					>Keep motors engaged</Dialog.Close
 				><button
 					class="button danger"
-					disabled={!!releaseReason || pending}
+					disabled={!transportConnected || !!releaseReason || pending}
 					onclick={async () => {
-						if (releaseReason || pending) return;
+						if (!transportConnected || releaseReason || pending) return;
 						if (await submit({ type: 'releaseMotors', axes: 'all', confirmed: true }))
 							releaseOpen = false;
 					}}>{pending ? 'Disengaging…' : 'Disengage motors'}</button

@@ -261,8 +261,10 @@ test('adjustment buttons remain fixed through pending, telemetry, coarse mode an
 	assertStable();
 	await screen.getByRole('radio', { name: 'Coarse approach', exact: true }).click();
 	assertStable();
+	const retainedText = area.textContent;
 	await screen.rerender({ connected: false });
 	assertStable();
+	expect(area.textContent).toBe(retainedText);
 	expect(area.querySelector('.coordinate')!.getBoundingClientRect().top).toBeGreaterThan(
 		movement.getBoundingClientRect().bottom
 	);

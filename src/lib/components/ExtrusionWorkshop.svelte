@@ -56,11 +56,7 @@
 	);
 	const idle = $derived(['standby', 'complete', 'cancelled'].includes(snapshot.job.state));
 	const reason = $derived(
-		!operator
-			? 'An operator account is required.'
-			: !connected
-				? 'Reconnecting to Perilune.'
-				: extrusionReason(snapshot)
+		!operator ? 'An operator account is required.' : extrusionReason(snapshot)
 	);
 	const thermalReason = $derived(temperatureReason(snapshot, 'nozzle'));
 	let previousRun: string | undefined;
@@ -233,7 +229,7 @@
 				<summary>Load or adjust filament</summary><span>Feed or retract slowly · 1 mm/s</span>
 				<div class="button-row">
 					{#each [-25, -10, -5, 5, 10, 25] as distance}<button
-							disabled={Boolean(reason) || active || pending || !loaded || !clear}
+							disabled={!connected || Boolean(reason) || active || pending || !loaded || !clear}
 							onclick={() =>
 								send({
 									type: 'extrusionFeed',
@@ -366,7 +362,7 @@
 				<button
 					class="primary"
 					disabled={!validStart ||
-						(interactive && (Boolean(reason) || pending || !loaded || !clear))}
+						(interactive && (!connected || Boolean(reason) || pending || !loaded || !clear))}
 					>{!interactive
 						? 'Calculate proposal'
 						: live

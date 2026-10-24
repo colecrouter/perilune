@@ -63,9 +63,8 @@ test('printing, reconnecting and viewer permissions disable physical controls wi
 	await expect.element(page.getByRole('button', { name: 'Home All', exact: true })).toBeDisabled();
 	await component.rerender({ snapshot: idle(), transportConnected: false });
 	await expect.element(page.getByRole('button', { name: 'X +', exact: true })).toBeDisabled();
-	await expect
-		.element(page.getByText('Reconnecting to Perilune. Wait for live updates.').first())
-		.toBeVisible();
+	expect(document.body.textContent).not.toMatch(/reconnecting/i);
+	await expect.element(page.getByRole('button', { name: 'Home All', exact: true })).toBeDisabled();
 	await component.rerender({ transportConnected: true, canOperate: false });
 	await expect.element(page.getByRole('button', { name: 'X +', exact: true })).toBeDisabled();
 	expect(onSubmit).not.toHaveBeenCalled();

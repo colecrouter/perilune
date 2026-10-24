@@ -358,3 +358,21 @@ test.each([320, 601, 700, 800])(
 		}
 	}
 );
+
+for (const fault of [
+	{ klippy: 'shutdown' as const },
+	{ storage: 'degraded' as const },
+	{ configurationBusy: true }
+]) {
+	test(`backend faults remain visible during stream loss: ${JSON.stringify(fault)}`, async () => {
+		const snapshot = { ...printing(), ...fault };
+		const screen = await render(PrintNotice, { snapshot, role: 'owner', userId: 'owner' });
+		const before = document.body.textContent;
+		expect(before).toMatch(/shutdown|storage is recovering|configuration or calibration workflow/);
+		await screen.rerender({ available: false });
+		expect(document.body.textContent).toBe(before);
+		await expect
+			.element(screen.getByRole('button', { name: 'Pause print', exact: true }))
+			.toBeDisabled();
+	});
+}

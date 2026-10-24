@@ -18,15 +18,6 @@ export function liveConnection(connected: () => boolean) {
 	return {
 		get available() {
 			return connected() || (!established && !timedOut);
-		},
-		get label() {
-			return connected()
-				? 'Live'
-				: established
-					? 'Reconnecting'
-					: timedOut
-						? 'Live updates unavailable'
-						: 'Connecting live updates';
 		}
 	};
 }

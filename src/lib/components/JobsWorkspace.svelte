@@ -55,9 +55,7 @@
 				? printActionJournal.error
 				: printActionJournal.account === account && printActionJournal.entries.length
 					? 'Review the pending print receipt before starting another print.'
-					: !updates.available
-						? 'Reconnecting to Perilune. Your selection is retained.'
-						: startReason(snapshot)
+					: startReason(snapshot)
 	);
 	let search = $state(untrack(() => data.catalog.query.q));
 	let material = $state(untrack(() => data.catalog.query.material));
@@ -266,11 +264,10 @@
 		</header>
 		{#if failure}<p role="alert" class="notice error-text">{failure}</p>{/if}
 		{#if message}<p role="status" class="notice">{message}</p>{/if}
-		{#if !updates.available || snapshot.connection !== 'connected' || snapshot.klippy !== 'ready'}
+		{#if snapshot.connection !== 'connected' || snapshot.klippy !== 'ready'}
 			<p class="notice" role="status">
-				{!updates.available ? 'Reconnecting to Perilune.' : 'The printer is unavailable.'} Showing the
-				last known job; your file selection is retained. Print controls will return when the connection
-				is ready.
+				The printer is unavailable. Showing the last known job; your file selection is retained.
+				Print controls will return when the connection is ready.
 			</p>
 		{/if}
 		{#if stale || !catalog.available}<p class="notice">
@@ -457,10 +454,23 @@
 						role="button"
 						href={`/actions?intent=start&fileId=${selected.id}`}
 						class="button primary start-button"
-						aria-disabled={Boolean(reason) || missing || submitting || stale || !catalog.available}
+						aria-disabled={!updates.available ||
+							Boolean(reason) ||
+							missing ||
+							submitting ||
+							stale ||
+							!catalog.available}
 						onclick={(event) => {
 							event.preventDefault();
-							if (reason || missing || submitting || stale || !catalog.available) return;
+							if (
+								!updates.available ||
+								reason ||
+								missing ||
+								submitting ||
+								stale ||
+								!catalog.available
+							)
+								return;
 							startOpen = true;
 							failure = '';
 						}}>{live ? 'Start print…' : 'Start simulation…'}</a
@@ -552,7 +562,7 @@
 				<Dialog.Close class="button secondary" disabled={submitting}>Keep reviewing</Dialog.Close
 				><button
 					class="button primary"
-					disabled={Boolean(reason) || submitting || missing}
+					disabled={!updates.available || Boolean(reason) || submitting || missing}
 					onclick={() => void start()}
 					>{submitting ? 'Submitting…' : live ? 'Start print' : 'Start simulated print'}</button
 				>
