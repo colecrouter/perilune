@@ -1,5 +1,9 @@
 # Macros and console
 
+Available since **0.1.0-alpha.1**. This guide describes **0.1.0-alpha.2**.
+
+![Console workspace with synthetic data](images/console.png)
+
 Open **Console** for macro discovery, shortcuts, command history and printer
 responses. Operator or owner access is required: output may include private
 filenames, diagnostics or values printed by your own macros. Viewers retain the

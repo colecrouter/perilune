@@ -1,5 +1,9 @@
 # Configuration workspace
 
+Available since **0.1.0-alpha.1**. This guide describes **0.1.0-alpha.2**.
+
+![Configuration workspace with synthetic data](images/configuration.png)
+
 Open **Configuration** with an owner account. Configuration files can contain
 credentials and private macros, so operators and viewers cannot read the file API,
 backups, or exports. Files never enter the shared printer dashboard stream.

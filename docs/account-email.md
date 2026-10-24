@@ -1,5 +1,7 @@
 # Optional account email
 
+Available since **0.1.0-alpha.1**. This guide describes **0.1.0-alpha.2**.
+
 Perilune works without email. Password/passkey login, browser pairing, copyable
 invitations and offline host recovery remain available. SMTP enables emailed
 invitations and verified-address password recovery; it does not enable public signup.

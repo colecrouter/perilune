@@ -1,5 +1,7 @@
 # Camera compatibility milestone
 
+Available since **0.1.0-alpha.1**. This guide describes **0.1.0-alpha.2**.
+
 ## Agreed scope
 
 Users can connect camera sources without Frigate or a pre-existing go2rtc server.

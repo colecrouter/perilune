@@ -71,3 +71,25 @@ node scripts/release/lifecycle.mjs perilune:release-previous perilune:release-ca
 The lifecycle script creates uniquely named disposable Docker containers/volumes,
 uses synthetic accounts, and removes only those resources. Never pass a production
 container or data volume to an isolated acceptance test.
+
+## Wiki publication
+
+The Wiki is the primary user guide. Repository Markdown remains the reviewed,
+versioned source and is included in install bundles for offline or older-version
+use. Publish only after the corresponding GitHub release is public:
+
+```sh
+# Clone once (GitHub requires an initial Home page to exist).
+git clone https://github.com/colecrouter/perilune.wiki.git /tmp/perilune-wiki
+node scripts/release/wiki.mjs v0.1.0-alpha.2 /tmp/perilune-wiki
+git -C /tmp/perilune-wiki diff --check
+git -C /tmp/perilune-wiki add -- '*.md'
+git -C /tmp/perilune-wiki commit -S -m 'docs: publish guides for v0.1.0-alpha.2'
+git -C /tmp/perilune-wiki push
+```
+
+The generator reads an explicit tag, verifies its package version, rewrites guide
+links to Wiki pages and pins screenshots/developer links to that immutable tag.
+It replaces only its managed pages/sidebar/footer and retains unrelated pages.
+Review the diff before pushing; GitHub Wiki does not have the repository's PR gate.
+Do not publish working-tree drafts or private deployment material.

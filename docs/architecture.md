@@ -1753,18 +1753,19 @@ for diagnosis. Lifecycle CI exercises account persistence and a durable marker
 through install, upgrade and rollback. No physical printer commands are involved.
 
 Versioned install/upgrade guides and the docs index cover this distribution pass.
-Full illustrated feature docs and final site/wiki presentation remain under #149;
-release automation is tracked in #150. Registry visibility is separately verified
+The release-tag Wiki snapshot, illustrated core-workflow guides and explicit alpha
+acceptance ledger complete the distribution documentation pass in #149. Release
+automation is tracked in #150. Registry visibility is separately verified
 through anonymous access before publishing an installable release.
 
-Interrupted mesh recovery (unreleased): candidate-less interrupted runs can use
+Interrupted mesh recovery (0.1.0-alpha.2; unreleased until tag publication): candidate-less interrupted runs can use
 read-only persistence reconciliation to prove restoration of the pre-run saved
 and loaded baseline with no pending settings. Explicit Discard then journals the
 activation obligation and restores previous compensation without restarting.
 Reconciliation retains unresolved recovery until that compensation is verified.
 Emergency recovery may independently close after automatic readiness checks.
 
-Failure notices (unreleased) are an account-scoped server projection of receipt
+Failure notices (0.1.0-alpha.2; unreleased until tag publication) are an account-scoped server projection of receipt
 history. Completed mesh finish/cancel/reconciliation receipts resolve preceding
 failed attempts with the same probe ID; receipt statuses remain unchanged.
 SQLite acknowledgement records suppress manually acknowledged receipt IDs before

@@ -13,12 +13,12 @@ Early alpha—keep your existing interface available while evaluating it.
 - Jobs, slicer uploads/browser pairing, configuration assistance and guided calibration.
 - Passwords, passkeys, invitations, recovery and configurable push notifications.
 
-**[Install Perilune](docs/getting-started.md)** · **[Documentation](docs/README.md)** ·
+**[Install Perilune](https://github.com/colecrouter/perilune/wiki/Installation)** · **[Documentation](https://github.com/colecrouter/perilune/wiki)** ·
 **[Releases](https://github.com/colecrouter/perilune/releases)** ·
 **[Contribute](CONTRIBUTING.md)** · **[Report an issue](https://github.com/colecrouter/perilune/issues)**
 
 Published containers support Linux x86-64 and ARM64. Install bundles pin exact
-image digests and include [upgrade/rollback](docs/upgrading.md) instructions.
+image digests and include [upgrade/rollback](https://github.com/colecrouter/perilune/wiki/Upgrading) instructions.
 Live printer writes require explicit opt-ins and attended testing; commands with
 unknown outcomes are never automatically replayed.
 

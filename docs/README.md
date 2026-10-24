@@ -1,9 +1,12 @@
 # Perilune documentation
 
+> Release status: alpha.2 changes are **unreleased until** the matching
+> `v0.1.0-alpha.2` release is published. Use the alpha.1 guides for alpha.1 installs.
+
+
 These guides describe **0.1.0-alpha.2**. Use the copy inside an install bundle or
 the repository’s matching release tag when running an older version. `main` may
-describe unreleased changes. The first release includes the established workflows
-below; future guides record when capabilities change.
+describe unreleased changes. Feature guides name their first public release. The [Wiki](https://github.com/colecrouter/perilune/wiki) is the primary reading location; these matching sources also ship in release bundles.
 
 ## Start here
 
@@ -14,16 +17,18 @@ below; future guides record when capabilities change.
 
 ## Use Perilune
 
-| Area                                                        | Guide                                                                     |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Job library, uploads, OrcaSlicer and browser pairing        | [Jobs and slicers](jobs.md)                                               |
-| Camera sources, quality and local USB                       | [Camera setup](camera-setup.md), [compatibility](camera-compatibility.md) |
-| Physical control opt-ins and recovery                       | [Live controls](live-controls.md), [action receipts](actions.md)          |
-| Configuration drafts, editor assistance and reviewed saving | [Configuration](configuration.md)                                         |
-| Bed mesh, Z and calibration workflows                       | [Calibration](calibration.md)                                             |
-| Console, macro history and shortcuts                        | [Console](console.md)                                                     |
-| Layout, display and device preferences                      | [Preferences](preferences.md)                                             |
-| SMTP, email verification and account recovery               | [Email and recovery](account-email.md)                                    |
+Start with [Overview and everyday printing](overview.md).
+
+| Area                                                        | Guide                                                                             |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Job library, uploads, OrcaSlicer and browser pairing        | [Jobs and slicers](jobs.md)                                                       |
+| Camera sources, quality and local USB                       | [Camera setup](camera-setup.md), [compatibility](camera-compatibility.md)         |
+| Physical control opt-ins and recovery                       | [Live controls](live-controls.md), [action receipts](actions.md)                  |
+| Configuration drafts, editor assistance and reviewed saving | [Configuration](configuration.md)                                                 |
+| Bed mesh, Z and calibration workflows                       | [Bed mesh](bed-mesh.md), [Calibration](calibration.md), [PID](pid-calibration.md) |
+| Console, macro history and shortcuts                        | [Console](console.md)                                                             |
+| Layout, display and device preferences                      | [Preferences](preferences.md), [Notifications](notifications.md)                  |
+| SMTP, email verification and account recovery               | [Email and recovery](account-email.md)                                            |
 
 The in-app **Help** page links to everyday workflows. Screenshots use synthetic
 fixtures; no private printer configuration or captured media is published.
@@ -38,6 +43,13 @@ fixtures; no private printer configuration or captured media is published.
 
 </details>
 
+## Help and acceptance
+
+- [Locks, failures and recovery](recovery.md)
+- [Accounts and browser pairing](accounts.md)
+- [Filament-change compatibility](filament-changes.md)
+- [Alpha acceptance and known limits](acceptance.md)
+
 ## Build and maintain
 
 - [Development/source installations](development.md)
@@ -45,6 +57,4 @@ fixtures; no private printer configuration or captured media is published.
 - [Release policy and maintainer procedure](releases.md)
 - [Architecture and implementation scope](architecture.md)
 
-This milestone establishes versioned installation documentation. The broader
-feature-by-feature illustrated docs and final website/wiki presentation remain
-tracked in [#149](https://github.com/colecrouter/perilune/issues/149).
+The Wiki is published from an explicit release tag using the [maintainer procedure](releases.md#wiki-publication).

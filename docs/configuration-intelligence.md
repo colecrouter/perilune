@@ -1,5 +1,7 @@
 # Configuration language assistance
 
+Available since **0.1.0-alpha.1**. This guide describes **0.1.0-alpha.2**.
+
 Raw configuration editing now adds Klipper-aware assistance to the existing
 CodeMirror editor. It never evaluates templates, runs G-code, writes configuration
 or restarts firmware. Existing review, backup and application safeguards remain

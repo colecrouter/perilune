@@ -1,5 +1,9 @@
 # Jobs
 
+Available since **0.1.0-alpha.1**. This guide describes **0.1.0-alpha.2**.
+
+![Jobs workspace with synthetic data](images/jobs.png)
+
 Open **Jobs** to upload and inspect a sliced text `.gcode` file. Uploading through Jobs never
 starts a print. Choose a file, review its reported material and estimates, then
 use the explicit start action once the printer or simulator is ready. Missing metadata
