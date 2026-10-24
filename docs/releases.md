@@ -23,8 +23,8 @@ this is recorded in the job summary. No real printer or camera is connected.
 
 Install assets include Compose, camera/USB overrides, example settings, docs,
 `release.json` and SHA256 checksums. A draft GitHub release is populated before
-publication. Retries reuse an existing version manifest only when its source and
-version annotations match; published versions/assets are not overwritten. Failure
+publication. Retries reuse an existing version manifest only when both platform images’ source and
+version config labels match; published versions/assets are not overwritten. Failure
 before publication may leave staging images or a draft release for diagnosis.
 Checksums detect accidental corruption; they are not an independent signature.
 
