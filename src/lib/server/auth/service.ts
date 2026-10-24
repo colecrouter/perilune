@@ -3,6 +3,7 @@ import { createHash, randomBytes, createCipheriv, createDecipheriv } from 'node:
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { AuthSqliteDialect } from './sqlite-dialect.js';
 import { betterAuth } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { makeSignature } from 'better-auth/crypto';
@@ -88,7 +89,11 @@ export function createAuthService(
 		appName: 'Perilune',
 		baseURL: origin,
 		secret,
-		database: db,
+		database: {
+			dialect: new AuthSqliteDialect({ database: db }),
+			type: 'sqlite',
+			transaction: true
+		},
 		advanced: { ipAddress: { ipAddressHeaders: ['x-perilune-client-ip'] } },
 		emailAndPassword: {
 			enabled: true,

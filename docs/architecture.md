@@ -1724,3 +1724,9 @@ use the implicit RTSP hop. H.264/HEVC and network sources retain their existing
 transport. Raw-only USB conversion remains unverified; the pinned companion’s Y4M
 path does not safely normalize packed/semiplanar pixel layouts. This assumes the supplied companion configuration’s internal API port
 1984, independent of host port mappings. Physical acceptance is tracked in #147.
+
+Authentication uses the pinned Better Auth SQLite dialect with `BEGIN IMMEDIATE`
+for its transactions. Reserving the writer before reads avoids a stale WAL read
+snapshot when the process-scoped printer services write through their separate
+connection. Transactions retain commit/rollback semantics; enrollment is never
+replayed and a claimed invitation is never reopened after an ambiguous failure.
