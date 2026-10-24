@@ -25,6 +25,7 @@ services:
       PERILUNE_CAMERA_COMPANION_URL: ${PERILUNE_CAMERA_COMPANION_URL:-}
     volumes:
       - perilune-data:/app/data
+      - perilune-backups:/app/backups
     restart: unless-stopped
     healthcheck:
       test:
@@ -40,3 +41,4 @@ services:
       retries: 3
 volumes:
   perilune-data:
+  perilune-backups:

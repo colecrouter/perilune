@@ -1,0 +1,71 @@
+name: Release image verification
+on:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+jobs:
+  image:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            node_arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            node_arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: npm install --global pnpm@12.11.2
+      - run: pnpm install --frozen-lockfile
+      - name: Build current image and previous release source
+        run: |
+          version=$(node -p "JSON.parse(require('fs').readFileSync('package.json')).version")
+          revision=$(git rev-parse HEAD)
+          created=$(git show -s --format=%cI HEAD)
+          docker build --build-arg VERSION="$version" --build-arg REVISION="$revision" --build-arg CREATED="$created" -t perilune:candidate .
+          baseline=$(git describe --tags --match 'v[0-9]*' --abbrev=0 HEAD^ 2>/dev/null || git rev-parse HEAD^)
+          mkdir "$RUNNER_TEMP/perilune-previous"
+          git archive "$baseline" | tar -x -C "$RUNNER_TEMP/perilune-previous"
+          docker build -t perilune:previous "$RUNNER_TEMP/perilune-previous"
+          echo "Upgrade baseline: $baseline" >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify native architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.node_arch }}
+        run: test "$(docker run --rm --entrypoint node perilune:candidate -p process.arch)" = "$EXPECTED_ARCH"
+      - name: Exercise install, upgrade and matching-backup rollback
+        run: node scripts/release/lifecycle.mjs perilune:previous perilune:candidate
+      - uses: docker/login-action@v4
+        if: inputs.publish
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push tested architecture image
+        if: inputs.publish
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          staging="$IMAGE:build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$ARCH"
+          docker tag perilune:candidate "$staging"
+          docker push "$staging"
+          mkdir -p "$RUNNER_TEMP/digests"
+          docker image inspect "$staging" --format '{{index .RepoDigests 0}}' > "$RUNNER_TEMP/digests/$ARCH.txt"
+      - uses: actions/upload-artifact@v7
+        if: inputs.publish
+        with:
+          name: release-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/
+          if-no-files-found: error
+          retention-days: 7

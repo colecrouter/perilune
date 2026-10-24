@@ -4,6 +4,7 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 concurrency:
@@ -124,10 +125,13 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
 
+  release-images:
+    uses: ./.github/workflows/release-images.yml
+
   # Stable required check: never green when a dependency fails or is skipped.
   validate:
     if: always()
-    needs: [checks, build, smoke, container, camera]
+    needs: [checks, build, smoke, container, camera, release-images]
     runs-on: ubuntu-latest
     steps:
       - name: Require every validation group
@@ -137,9 +141,11 @@ jobs:
           SMOKE: ${{ needs.smoke.result }}
           CONTAINER: ${{ needs.container.result }}
           CAMERA: ${{ needs.camera.result }}
+          RELEASE_IMAGES: ${{ needs.release-images.result }}
         run: |
           test "$CHECKS" = success
           test "$BUILD" = success
           test "$SMOKE" = success
           test "$CONTAINER" = success
           test "$CAMERA" = success
+          test "$RELEASE_IMAGES" = success

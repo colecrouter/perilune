@@ -1,141 +1,123 @@
-# Install, connect, and update Perilune
+# Install and connect Perilune
 
-## If you already have a panel address
+Available since **0.1.0-alpha.1**. Perilune is an early alpha; keep your existing
+printer interface available during evaluation. Already have a panel address?
+Open it and sign in. You do not need another installation.
 
-Open the existing Perilune address and sign in. You do not need a second local
-installation to use it from another computer, phone, or slicer. Ask the person
-hosting that installation to update its server. Reloading a browser only updates
-the browser, not the server.
+## Requirements
 
-Use **Account → Integrations** for slicer credentials and paired browsers. Open
-**Help** in the panel for printing, filament changes, phone setup, and notifications.
+Use a 64-bit Linux x86-64 or ARM64 host with [Docker Engine and Compose](https://docs.docker.com/engine/install/).
+Docker Desktop can run the simulator on a development computer. USB device mapping
+requires a Linux host. The backend must reach Moonraker; Perilune does not replace
+Klipper or Moonraker. A 32-bit Raspberry Pi OS installation is not supported.
 
-## New installation with Docker Compose
+## Install a published release
 
-Run the backend on a computer/server that can reach the printer’s Moonraker API.
-The printer itself does not need another installation. Keep Mainsail available
-while testing. Install Git and a running Docker engine with Compose first.
+Download a specific release from [GitHub Releases](https://github.com/colecrouter/perilune/releases).
+The install archive includes Compose, private-setting examples, camera overrides
+and a copy of the documentation. No Git checkout, Node installation or local
+application build is required.
 
 ```sh
-git clone https://github.com/colecrouter/perilune.git
+perilune_release=v0.1.0-alpha.1
+curl -fLO "https://github.com/colecrouter/perilune/releases/download/$perilune_release/perilune-$perilune_release-install.tar.gz"
+curl -fLO "https://github.com/colecrouter/perilune/releases/download/$perilune_release/release.json"
+curl -fLO "https://github.com/colecrouter/perilune/releases/download/$perilune_release/SHA256SUMS"
+sha256sum --check SHA256SUMS
+# macOS: shasum -a 256 --check SHA256SUMS
+tar -xzf "perilune-$perilune_release-install.tar.gz"
 cd perilune
 cp .env.example .env
-docker compose up -d --build
+chmod 600 .env
+docker compose pull
+docker compose up -d --wait
 docker compose exec perilune node scripts/auth.mjs setup
 ```
 
-Open <http://localhost:3000/setup> on that computer and enter the one-time token,
-your name, email, and a password of at least 12 characters. Email is a login
-identifier; no email service is required. The token expires after 30 minutes.
+Open <http://localhost:3000/setup> on that host. Enter the token, your name, email,
+and a password of at least 12 characters. The token expires after 30 minutes.
+Email is a login identifier; SMTP is optional. The first visitor cannot claim a
+server without its token. Setup closes once the owner account exists. A failed/interrupted signup consumes
+its token. For an account-free installation, stop the app, run
+`docker compose run --rm perilune node scripts/auth.mjs setup-reset --server-stopped`,
+then generate a new setup token and restart. Do not reset an installation that
+already contains accounts.
 
-The default is a shared simulator. Nothing is connected to a physical printer.
-The Compose volume stores accounts, history, and a private signing-secret file.
-Keep the volume when updating; `docker compose down -v` deletes it.
+The default is a shared simulator with no physical printer connection. The image
+is pinned by digest in `.env`; updates are explicit. Accounts and history live in
+the `perilune-data` volume; backups use `perilune-backups`. Never run
+`docker compose down -v` on an installation you want to keep. Preserve `.env` and
+any external secrets separately, and copy backups off the host.
+
+The sidebar and `/health` report the running version. `release.json` records the
+source commit, image digest and supported architectures.
 
 ## Connect Moonraker read-only
 
-Edit the private `.env` file created above:
+Edit `.env` with an address reachable **from the Perilune backend**:
 
 ```dotenv
 PERILUNE_MOONRAKER_URL=ws://printer-host:7125/websocket
-# Only when required by Moonraker:
+# Only if Moonraker requires it:
 # PERILUNE_MOONRAKER_API_KEY=your-private-key
 ```
 
-Replace `printer-host` with an address reachable from the backend. Port 7125 is
-Moonraker’s usual direct port; your installation may use another port or a private
-proxy. Use `wss://` for a TLS endpoint. A public Mainsail page protected by another
-login is not automatically a usable backend Moonraker connection. The URL must
-not contain passwords, query parameters, or a browser login token.
+Use your actual host and port. A browser-facing Mainsail URL behind another login
+is not necessarily a usable Moonraker API endpoint. Use `wss://` for TLS; do not
+put credentials or browser-login tokens in the URL.
 
-Apply the settings:
+At an idle printer, recreate the app:
 
 ```sh
-docker compose up -d
+docker compose up -d --wait
 ```
 
-Open the panel and confirm it shows live state rather than simulator state, a
-connected/ready printer, and plausible temperatures. Live workflows stay read-only
-until their individual options are enabled. Coordinate an attended, idle-printer
-check before enabling [physical controls](live-controls.md), [mesh probing](calibration.md),
-or [configuration writes](configuration.md).
+Confirm **live** mode, ready state and plausible temperatures. Physical workflows
+remain read-only until their [individual options](live-controls.md) are enabled.
+Coordinate attended acceptance before motion, heating, probing or configuration
+writes. Unknown outcomes require review and are never automatically replayed.
 
-For cameras, configure a backend-reachable go2rtc API base and registered stream
-as described in the [README camera guide](../README.md#camera-gateway).
+## Add a camera
 
-## Access from phones and slicers
+For the managed camera service, add this line to `.env`, then recreate services:
 
-The default Compose port binds to the server’s loopback address. For access from
-other devices, configure a stable HTTPS address and a reverse proxy following the
-[deployment guide](deployment.md). Set `PERILUNE_ORIGIN` to exactly that browser-visible
-origin before account/passkey setup. Non-loopback plain HTTP origins are rejected.
-Do not publish Moonraker or camera services directly to the internet.
-
-In a compatible slicer, select **Klipper / Moonraker**, use the Perilune HTTPS
-address, and paste a key from **Account → Integrations**. Choose Upload files access
-unless you intend to allow starting prints. Device-tab login is separate: choose
-**Sign in with another browser**, enter its code at `/pair` in your normal signed-in
-browser, and approve. See [Jobs and slicers](jobs.md).
-
-## Updating
-
-These commands apply to the standard checkout/Compose installation above. A custom
-image deployment should use its existing release procedure instead of creating a
-second instance.
-
-1. Save drafts. Choose an idle time for the service restart.
-2. Make a consistent database and signing-secret backup into a new directory:
-
-   ```sh
-   docker compose exec perilune node scripts/backup.mjs /app/data/backup-before-update-YYYYMMDD-HHMM
-   ```
-
-   Replace the suffix with a unique date/time. Copy the backup off the host as well;
-   the local data volume alone does not protect against disk loss. Preserve the private
-   `.env` separately. If using an external `PERILUNE_AUTH_SECRET`, preserve that exact
-   secret too. See [backups and restore](deployment.md#backups-and-restore).
-
-3. Update and recreate the service, retaining its volume and settings:
-
-   ```sh
-   git pull --ff-only
-   docker compose up -d --build
-   docker compose ps
-   ```
-
-4. Wait for the service to become healthy, then open your normal panel address.
-   Existing accounts remain. Do not run setup again. Save edits before choosing
-   **Reload to update**; **Later** leaves them intact.
-
-Keep the previous image and pre-update backup for rollback. Older code may not
-understand a migrated database; restore its matching snapshot rather than starting
-old code against new data.
-
-## Run directly with Node
-
-Requires Node 24.13+ and pnpm 12.11.2. From the checkout:
+```dotenv
+COMPOSE_FILE=compose.yaml:compose.camera.yaml
+```
 
 ```sh
-pnpm install
-pnpm build
-PERILUNE_ORIGIN=http://localhost:3000 pnpm start
+docker compose up -d --wait
 ```
 
-In another terminal in the same directory, run `node scripts/auth.mjs setup`, then
-open <http://localhost:3000/setup>. Use the same database and origin environment for
-both commands if you override them. Run exactly one process per database.
+Open **Camera settings**, choose an imported printer camera, a network endpoint,
+or a local USB camera, then test and save. The companion API stays private.
+[Camera setup](camera-setup.md) covers Crowsnest, USB mapping, conversion and
+recovery after a device reconnect. On Linux, local USB additionally uses
+`compose.camera-usb.yaml` and an explicit stable device path. Keep `COMPOSE_FILE`
+and the device selection in `.env` so future commands use the same services.
 
-Node and `pnpm dev` read exported process environment variables, not `.env` files.
-For a read-only local development connection, stop any existing process using the
-same database first, then run:
+## Phones, internet access and slicers
 
-```sh
-PERILUNE_ORIGIN=http://localhost:4181 \
-PERILUNE_MOONRAKER_URL=ws://printer-host:7125/websocket \
-pnpm dev
-```
+The published port binds to loopback. For other devices, set up a stable HTTPS
+address using the [proxy guide](deployment.md#https-proxy), then set
+`PERILUNE_ORIGIN` to exactly that browser-visible origin. Do this before enrolling
+passkeys. Non-loopback HTTP origins are rejected. Do not expose Moonraker or
+go2rtc publicly. For installation over SSH, a localhost tunnel can provide the
+initial local browser access until HTTPS is configured.
 
-Open <http://localhost:4181>. This is a development process, not an always-on service.
-For a direct-Node update, stop the service, back up the database and its authoritative
-secret, pull the source, run `pnpm install` and `pnpm build`, then restart with the
-same private environment. Use your process manager for an always-on deployment.
+Owners invite users in **Account**. Viewers can watch; operators can use enabled
+printer controls; owners also manage access. Passkeys need HTTPS or localhost.
+For owner recovery, stop the app and follow [account recovery](account-email.md).
+
+In OrcaSlicer or another compatible slicer, select **Klipper / Moonraker**, use the
+Perilune HTTPS address, and paste a scoped key from **Account → Integrations**.
+Prefer upload-only access unless starting prints is intended. Device-tab login
+uses **Sign in with another browser** and approval from an already signed-in
+browser. See [Jobs and slicers](jobs.md).
+
+## Next steps
+
+- [Upgrade and rollback](upgrading.md)
+- [Configuration reference](configuration-options.md)
+- [Features and everyday workflows](README.md)
+- [Development/source installations](development.md)

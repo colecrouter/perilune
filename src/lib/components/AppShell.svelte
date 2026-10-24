@@ -156,7 +156,8 @@
 			class="sidebar-footer"
 			href="https://github.com/colecrouter/perilune"
 			target="_blank"
-			rel="noreferrer">Built in the open<small>View development on GitHub</small></a
+			rel="noreferrer"
+			>Built in the open<small>{page.data.buildInfo?.version ?? 'Development'}</small></a
 		>
 	</aside>
 	<main id="main-content" tabindex="-1">

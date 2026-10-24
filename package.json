@@ -1,6 +1,6 @@
 {
 	"name": "perilune",
-	"version": "0.0.1",
+	"version": "0.1.0-alpha.1",
 	"private": true,
 	"license": "GPL-3.0-only",
 	"type": "module",
@@ -22,8 +22,9 @@
 		"format:check": "vp fmt --check && prettier --check \"src/**/*.svelte\"",
 		"validate": "pnpm run validate:checks && vp run build && node scripts/smoke-suite.mjs",
 		"test:smoke": "node scripts/smoke.mjs",
-		"test:backup": "node --test scripts/backup.test.mjs",
+		"test:backup": "node --test scripts/backup.test.mjs scripts/restore.test.mjs",
 		"test:compose": "node scripts/check-compose.mjs",
+		"test:release": "node --test scripts/release/bundle.test.mjs && node scripts/check-docs.mjs",
 		"test:smoke:live": "node scripts/smoke-live.mjs",
 		"test:smoke:camera": "node scripts/smoke-camera.mjs",
 		"test:smoke:auth": "node scripts/smoke-auth.mjs",
@@ -36,7 +37,7 @@
 		"test:smoke:console": "node scripts/smoke-console.mjs",
 		"test:smoke:progressive": "node scripts/smoke-progressive.mjs",
 		"test:smoke:live-actions": "node scripts/smoke-live-actions.mjs",
-		"validate:checks": "vp run format:check && vp run lint && vp run check && vp run test && vp run test:backup && node scripts/smoke-suite.mjs --check",
+		"validate:checks": "vp run format:check && vp run lint && vp run check && vp run test && vp run test:backup && vp run test:release && node scripts/smoke-suite.mjs --check",
 		"test:smoke:account-email": "node scripts/smoke-account-email.mjs",
 		"generate:config-language": "node scripts/generate-config-language.mjs"
 	},

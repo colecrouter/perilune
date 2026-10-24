@@ -1734,3 +1734,25 @@ Reserving the writer before reads avoids a stale WAL read
 snapshot when the process-scoped printer services write through their separate
 connection. Transactions retain commit/rollback semantics; enrollment is never
 replayed and a claimed invitation is never reopened after an ambiguous failure.
+
+## Versioned distribution (0.1.0-alpha.1)
+
+Tagged releases rerun CI and native Linux amd64/arm64 image/lifecycle checks before
+publishing a multi-platform GHCR manifest. Package version and tag must agree and
+the source must belong to main. Exact image digests, commit metadata, OCI labels,
+install bundles and checksums make the install path independent of a source build.
+Release assets are staged in a draft before publication; mismatched version tags
+are never overwritten. The standard bundle binds only loopback, defaults to the
+simulator, and explicitly names its data/backup volumes. Existing custom/source
+installs retain their own volume identity and are not silently migrated.
+
+The restore helper only accepts a fresh target with no database, secret or WAL/SHM
+files, checks backup integrity/secret mode, and uses exclusive copies. Rollback uses
+the old image with its matching backup in a fresh volume, preserving upgraded data
+for diagnosis. Lifecycle CI exercises account persistence and a durable marker
+through install, upgrade and rollback. No physical printer commands are involved.
+
+Versioned install/upgrade guides and the docs index cover this distribution pass.
+Full illustrated feature docs and final site/wiki presentation remain under #149;
+release automation is tracked in #150. Registry visibility is separately verified
+through anonymous access before publishing an installable release.
