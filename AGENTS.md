@@ -25,3 +25,6 @@
   Lunar identity comes from a midnight-blue rail, subtle static stars, a crescent
   mark, pale lavender accents, and the camera orbit. Avoid tinting the entire UI
   green or replacing the established palette with a single hue.
+- User-facing changes must update the relevant versioned guides/examples and mark
+  new behavior unreleased until its first tag. Keep README concise and use synthetic
+  screenshots. Release changes must verify install, backup, upgrade and rollback.

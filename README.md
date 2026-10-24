@@ -1,221 +1,26 @@
-<p align="center"><img src="static/brand/readme-logo.png" width="192" height="192" alt="Perilune: a textured crescent moon with a lavender satellite" /></p>
+<p align="center"><img src="static/brand/readme-logo.png" width="128" height="128" alt="Perilune crescent moon" /></p>
 
-<h1 align="center">Perilune</h1>
-<p align="center"><strong>Your printer, in orbit.</strong><br />A reliable, thoughtfully designed control interface for Klipper printers.</p>
+# Perilune
 
-Perilune is in early development. It places persistent Moonraker connectivity,
-shared printer state, action tracking, and authenticated camera access behind a
-self-hosted backend. The browser presents clear progress and reconnecting states
-without throwing away inputs.
+**Your printer, in orbit.** A self-hosted Klipper/Moonraker interface with a
+persistent backend, shared printer state and a responsive desktop/mobile UI.
+Early alpha—keep your existing interface available while evaluating it.
 
-## Jobs
+![Perilune Overview with synthetic printer data](docs/images/overview.png)
 
-Browse and inspect G-code files, upload with visible progress, and start shared
-prints with explicit confirmation. Persistent print observations are available under Jobs. Slicer keys and browser pairing are managed under Account → Integrations. Live file changes and printing require the live-controls opt-in.
-See [Jobs and OrcaSlicer setup](docs/jobs.md).
+- Printer progress and controls across pages, retained drafts, and explicit action receipts.
+- Authenticated camera video, snapshots and USB MJPEG conversion.
+- Jobs, slicer uploads/browser pairing, configuration assistance and guided calibration.
+- Passwords, passkeys, invitations, recovery and configurable push notifications.
 
-## Get started
+**[Install Perilune](docs/getting-started.md)** · **[Documentation](docs/README.md)** ·
+**[Releases](https://github.com/colecrouter/perilune/releases)** ·
+**[Contribute](CONTRIBUTING.md)** · **[Report an issue](https://github.com/colecrouter/perilune/issues)**
 
-Already have a hosted panel? Open its address and sign in—no local installation is needed.
-For a new installation, printer connection, and updates, follow the [step-by-step guide](docs/getting-started.md). The panel’s **Help** page covers everyday use.
+Published containers support Linux x86-64 and ARM64. Install bundles pin exact
+image digests and include [upgrade/rollback](docs/upgrading.md) instructions.
+Live printer writes require explicit opt-ins and attended testing; commands with
+unknown outcomes are never automatically replayed.
 
-## Run locally
-
-Requires Node.js 24.13+ and pnpm 12.11.2. Vite+ is installed locally.
-
-```sh
-pnpm install
-pnpm dev
-```
-
-Open http://localhost:4181. By default this is **simulator mode**: no physical printer is
-connected or controlled. Pause, stop, temperature changes, and disconnects affect
-shared demo state. Stop the demo print to try the XY bed map, destination shortcuts,
-fine jogging, and separate Z controls at `/controls`. Live connections default to read-only; opt-in physical controls are described below. Overview includes temperature history, inferred heater state, and simulator target/
-cooldown controls. Shared history survives page reloads and disconnects, retaining
-up to one hour until the backend restarts. Additional live sensors are read-only.
-Serif headings, warm neutrals, and teal are the established visual direction.
-
-For a production build:
-
-```sh
-pnpm build
-PERILUNE_ORIGIN=http://localhost:3000 pnpm start
-```
-
-Open http://localhost:3000. Set `PERILUNE_ORIGIN` to the browser-visible origin when
-using a reverse proxy. Settings are read at runtime; rebuilding is unnecessary.
-
-For Docker:
-
-```sh
-docker compose up --build
-```
-
-Compose binds to localhost:3000 and persists the SQLite database in a volume.
-Built-in login protects printer state, controls, and media. Physical printer controls require explicit live-workflow options and attended acceptance. Use an HTTPS reverse proxy when exposing Perilune remotely.
-
-## Accounts and first setup
-
-The first visitor cannot claim an installation. Generate a one-time token on the
-server, then enter it at `/setup` with your name, email, and a password of at least
-12 characters. Email is a login identifier; no email service is required.
-
-```sh
-node scripts/auth.mjs setup
-# Docker:
-docker compose exec perilune node scripts/auth.mjs setup
-```
-
-Running `node scripts/auth.mjs` without a subcommand, or with `--help`, prints help
-without opening or changing the database. Invalid commands and setup refusals exit
-with a short message and a nonzero status.
-
-Use the same `PERILUNE_DATABASE` and `PERILUNE_ORIGIN` environment as the server. Tokens expire after
-30 minutes. Setup closes after the first account. A failed or interrupted signup
-consumes its token; for a fresh installation with no accounts, stop the server,
-run `node scripts/auth.mjs setup-reset --server-stopped`, generate a new setup token, then restart.
-
-Owners invite others from **Account**, selecting viewer, operator, or owner.
-Invitation links are single-use and expire after 24 hours. Viewers can watch
-status and camera; operators can use available controls; owners also manage
-accounts and invitations. Real printer controls are read-only by default; the
-explicit live bed mesh option below enables operator access to that workflow. Owners can revoke invitations and other accounts. Revocation closes
-active live updates and camera streams; checks across processes run every second.
-
-Signed-in users can add a passkey from Account. Passkeys need an HTTPS hostname
-(or `localhost` for development), and are tied to that hostname. Passwords remain
-available when developing on a loopback IP. Set `PERILUNE_ORIGIN` explicitly for
-production and whenever changing the dev server origin. Non-loopback HTTP origins
-are rejected. Keep Moonraker and go2rtc private behind the Perilune server.
-
-For owner recovery, stop Perilune first, then run this on the server:
-
-```sh
-node scripts/auth.mjs recover owner@example.com --server-stopped
-# Restart the server after generating the link.
-# Docker:
-docker compose stop perilune
-docker compose run --rm perilune node scripts/auth.mjs recover owner@example.com --server-stopped
-docker compose up -d perilune
-```
-
-The CLI requires explicit maintenance mode and refuses recovery while the local
-server process is running. Run one Perilune process per database; do not share a
-data volume between concurrent hosts or containers.
-
-Recovery disables the old password, revokes sessions and passkeys, and
-prints a single-use password reset link that expires in 30 minutes. A newly
-issued recovery link invalidates older links. No reset email is sent.
-
-SQLite and a generated private `*.auth-secret` file persist together in the data
-volume. Back up both. An optional `PERILUNE_AUTH_SECRET` of at least 32 characters
-can supply the secret instead; preserve it across restarts. No ORM is needed:
-Better Auth uses its SQLite adapter, and app state continues to use Effect SQL.
-
-For an always-on service, HTTPS proxy and verified backups, see the [deployment guide](docs/deployment.md).
-
-## Connect a real printer
-
-Live controls are read-only by default. Set `PERILUNE_LIVE_MESH=true` to opt into the
-[cold bed mesh workflow](docs/calibration.md#live-cold-bed-mesh-probing): physical homing/probing, temporary use/restoration, and explicitly confirmed
-configuration saving with a Klipper restart.
-
-`PERILUNE_LIVE_CONTROLS=true` enables acknowledged homing/motion, motor release,
-primary heaters, job controls and live file changes. Separate opt-ins enable
-`PERILUNE_LIVE_FILAMENT`, `PERILUNE_LIVE_Z_CALIBRATION` and
-`PERILUNE_LIVE_CONFIGURATION`. Reviewed console/macros additionally require `PERILUNE_LIVE_CONSOLE=true`. See [live controls](docs/live-controls.md) and the
-[configuration guide](docs/configuration.md). Start with an attended, idle printer;
-unknown outcomes require explicit recovery and are never replayed.
-
-Set a direct Moonraker WebSocket endpoint on the **backend**:
-
-```sh
-PERILUNE_MOONRAKER_URL=ws://printer.local:7125/websocket pnpm dev
-```
-
-The URL stays on the server. Use `wss://` where TLS is available. If Moonraker
-requires authentication, set `PERILUNE_MOONRAKER_API_KEY` separately. Do not put
-credentials or query parameters in the URL. For production, pass these variables
-to the Node process; Compose reads them from your shell or local `.env` file.
-Plain `pnpm dev` and `pnpm start` read process environment variables, not `.env`.
-
-Live mode discovers available objects and displays job state and temperatures.
-Missing readings appear as unknown. Perilune and Moonraker reconnect independently;
-last telemetry and editable drafts remain visible. Klipper startup, shutdown, and
-unavailable states are separate from the Moonraker connection. Controls follow the selected live feature flags. Simulator actions cannot control a live printer. Remove the URL to return to simulator mode.
-
-The backend connects directly to Moonraker; existing browser-facing Cloudflare
-Access protection does not authenticate this connection. Perilune authenticates browser access independently of Moonraker.
-
-## Camera gateway
-
-For new installations, the packaged media companion needs no NVR:
-
-```sh
-docker compose -f compose.yaml -f compose.camera.yaml up -d
-```
-
-Owners can open **Camera settings** from the overview, select an imported Moonraker
-camera or enter an endpoint, test, then save. Tests leave the active camera intact.
-See [camera setup](docs/camera-setup.md) for installation, USB/CSI capture, relative
-URLs, quality choices and limits.
-
-Camera selection uses one owner test/preview/save workflow. The private companion
-uses `PERILUNE_CAMERA_COMPANION_URL` and must remain inaccessible to browsers and
-the internet. Disconnecting clears the saved camera. An existing NVR/go2rtc can
-still supply a network stream, entered through the same setup flow.
-
-Authenticated same-origin MP4/native HLS delivery keeps endpoints and credentials
-server-side. The companion remuxes encoded H.264 and converts MJPEG/H.265 when
-needed. Useful lower resolutions are remembered per device. JPEG-only sources show
-still images with manual refresh. Video pauses when hidden and reconnects with
-backoff. Capture downloads a fresh JPEG without server retention or display
-rotation/flips. Media uses `no-store`. Native HLS adds buffering latency; actual
-Safari device acceptance remains pending.
-
-## Verify
-
-```sh
-pnpm exec playwright install chromium
-pnpm validate
-```
-
-CI runs formatting, linting, Svelte/TypeScript and Effect diagnostics, domain and
-headless Vitest browser tests, a production build, and a two-client production
-smoke test, plus live-protocol and encoded-camera production smoke tests. Screenshots are uploaded as CI artifacts. SQLite records action
-history; unfinished records are never replayed after restart.
-
-See [architecture](docs/architecture.md), [visual direction](docs/design/README.md),
-[calibration workshop](docs/calibration.md), [configuration workspace](docs/configuration.md), and [milestones](https://github.com/colecrouter/perilune/milestones).
-
-## Direction
-
-- SvelteKit 3, Effect 4 and Effect language tooling, Vite+.
-- Node.js initially; Docker Compose installation.
-- SQLite persistence with Effect SQL.
-- Live remote queries backed by process-owned services.
-- Mobile-friendly controls, guided calibration, and explained printer configuration.
-- Per-device push notifications and installation are available in Account.
-- Representative camera hardware acceptance and layout preferences remain future work.
-
-Licensed under GPL-3.0-only. See [LICENSE](LICENSE).
-
-### Install Perilune and enable notifications
-
-Open **Account → Perilune on this device**. Install using the offered button or
-browser menu. On iPhone/iPad, use Share → Add to Home Screen, then open the
-installed app to enable notifications (iOS/iPadOS 16.4+). HTTPS is required remotely.
-Choose completed/failed prints and printer errors, optional private camera captures,
-and quiet hours for each device. Send a test to verify OS permission settings.
-Snapshots may appear on the lock screen on supported devices. Push is best effort;
-missed or quiet-hour events are not replayed. A lost connection can hide a job
-transition, so notifications do not replace checking the printer.
-
-No separate push account or API key is needed. Perilune generates VAPID keys once
-and stores them in its SQLite database. Retain that database across upgrades.
-Outbound HTTPS to the browser's push provider is required. Existing reverse-proxy
-access policies must allow the installed app and worker to access Perilune; an
-expired external login can prevent snapshot retrieval. No private printer content
-is cached for offline operation. Updates offer an explicit reload so edits can be
-saved first. Monochrome/maskable icons are supplied, but OS tinting varies.
+For source builds and simulator development, see [development](docs/development.md).
+Licensed [GPL-3.0-only](LICENSE).
