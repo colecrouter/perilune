@@ -190,3 +190,7 @@ conversion with generated YUYV/NV12 color bars. Only the V4L2 device read is
 substituted with a raw fixture. It verifies decoded colors, mixed-quality shared
 capture, idle teardown, unavailable-input recovery and reopening. It opens no
 host camera and does not establish real driver, USB cable or Safari acceptance.
+
+Scaled camera qualities (unreleased) round the proportional height to an even
+number for H.264 encoding. This avoids failures for source aspect ratios that
+would otherwise produce an odd height at 640 or 320 pixels wide.

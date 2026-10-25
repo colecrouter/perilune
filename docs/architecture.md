@@ -1880,3 +1880,7 @@ resource by query key, and promise getter reads retain effect-scoped leases. No
 application cache, fetch-on-mount layer, server service or manual reconnect loop is
 added. Browser navigation tests require obsolete dashboard/printer streams to
 close in both directions while active consumers continue receiving updates.
+
+Scaled camera qualities (unreleased) round the proportional height to an even
+number for H.264 encoding. This avoids failures for source aspect ratios that
+would otherwise produce an odd height at 640 or 320 pixels wide.
