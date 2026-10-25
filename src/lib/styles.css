@@ -1140,9 +1140,12 @@ button[aria-busy='true'] {
 /* One outer frame anchors every page; task content can choose a narrower measure. */
 .page-frame {
 	width: 100%;
-	max-width: 100rem;
+	max-width: 76rem;
 	margin-inline: auto;
 	padding: clamp(1rem, 3vw, 2.5rem);
+}
+.page-frame.page-frame--wide {
+	max-width: 100rem;
 }
 .page-frame > :is(section, nav, article, div, details, p) {
 	width: 100%;

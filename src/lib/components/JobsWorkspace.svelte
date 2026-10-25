@@ -249,7 +249,7 @@
 
 <svelte:head><title>Jobs · Perilune</title></svelte:head>
 <AppShell {snapshot} active="Jobs"
-	><div class="jobs-page page-frame serif">
+	><div class="jobs-page page-frame page-frame--wide serif">
 		<header>
 			<div>
 				<h1>Jobs</h1>
