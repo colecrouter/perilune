@@ -8,7 +8,8 @@ const groups = {
 		'test:smoke:live',
 		'test:smoke:camera',
 		'test:smoke:auth',
-		'test:smoke:account-email'
+		'test:smoke:account-email',
+		'test:smoke:readiness'
 	],
 	calibration: ['test:smoke:calibration', 'test:smoke:mesh-probe', 'test:smoke:live-mesh'],
 	workspaces: ['test:smoke:jobs', 'test:smoke:extrusion', 'test:smoke:configuration'],

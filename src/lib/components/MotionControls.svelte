@@ -758,7 +758,7 @@
 		color: var(--accent);
 	}
 	.legend-target {
-		color: var(--highlight-text);
+		color: var(--text);
 	}
 	.coordinate-fields {
 		display: grid;
