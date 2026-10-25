@@ -20,6 +20,7 @@ export const handle: typeof integration.handle = async ({ event, resolve }) => {
 	if (
 		!event.isRemoteRequest &&
 		(event.url.pathname === '/manifest.webmanifest' ||
+			event.url.pathname === '/social-card.png' ||
 			event.url.pathname === '/service-worker.js' ||
 			/^\/icons\/[a-z0-9.-]+$/.test(event.url.pathname))
 	) {

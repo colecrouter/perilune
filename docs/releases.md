@@ -93,3 +93,18 @@ links to Wiki pages and pins screenshots/developer links to that immutable tag.
 It replaces only its managed pages/sidebar/footer and retains unrelated pages.
 Review the diff before pushing; GitHub Wiki does not have the repository's PR gate.
 Do not publish working-tree drafts or private deployment material.
+
+## Beta candidate preparation (unreleased)
+
+The [beta readiness ledger](beta-readiness.md) separates passing automation from
+pending owner/platform acceptance. Native lifecycle CI now also enrolls an owner
+and writes a backup on a fresh candidate. It seeds synthetic preferences, filament
+settings and completed/unknown receipts on the previous tagged baseline, then
+checks exact data and VAPID identity through upgrade and matching-backup rollback.
+No receipt is submitted or replayed; no printer/camera is connected. Only uniquely
+named disposable containers and six volumes are used and cleaned up.
+
+The static share card can be regenerated with `node scripts/generate-social-card.mjs`
+in a development install. Metadata is fixed brand copy, never live printer state;
+image URLs use the installation origin and omit request queries/paths. External
+access gateways can still prevent a crawler from reaching the page or asset.

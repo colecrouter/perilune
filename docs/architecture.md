@@ -1851,3 +1851,11 @@ Tests independently verify JWT signatures and decrypt wire records with Node cry
 actual phone/provider delivery remains coordinated acceptance rather than a mock
 success claim. Notification deduplication, epochs, payload privacy and SQL ownership
 remain unchanged.
+
+Beta release preparation (unreleased, #144/#167): root SSR adds fixed brand-only
+OpenGraph/large-card metadata and a public static PNG. No job/account/camera data
+or query strings enter metadata. Native lifecycle acceptance separately exercises
+fresh candidate enrollment/backup and exact settings, push identity and completed/
+unknown receipt retention across previous-tag upgrade and matching-backup rollback.
+The beta ledger records pending owner decisions; package version, publication and
+final evidence remain deferred until accepted visual changes are included.

@@ -19,7 +19,9 @@ const volumes = [
 	prefix + '-data',
 	prefix + '-backup',
 	prefix + '-restore',
-	prefix + '-candidate-backup'
+	prefix + '-candidate-backup',
+	prefix + '-fresh-data',
+	prefix + '-fresh-backup'
 ];
 const container = prefix + '-app';
 const docker = (...args) =>
@@ -78,23 +80,7 @@ const signIn = async () => {
 	});
 	assert.equal(r.status(), 200, await r.text());
 };
-try {
-	for (const volume of volumes) docker('volume', 'create', volume);
-	// Bootstrap images predate the owned backup directory; prepare only this disposable volume.
-	docker(
-		'run',
-		'--rm',
-		'--user',
-		'0',
-		'-v',
-		`${volumes[1]}:/app/backups`,
-		'--entrypoint',
-		'node',
-		previousImage,
-		'-e',
-		"require('node:fs').chownSync('/app/backups',1000,1000)"
-	);
-	await start(previousImage, volumes[0]);
+const enroll = async () => {
 	const token = docker('exec', container, 'node', 'scripts/auth.mjs', 'setup').split('\n').at(-1);
 	const hash = docker(
 		'exec',
@@ -122,8 +108,70 @@ try {
 	});
 	assert.equal((await enrollment.json()).type, 'result');
 	await signIn();
+};
+const fixtureSnapshot = () => ({
+	preferences: JSON.parse(sql('SELECT owner,value FROM user_preferences ORDER BY owner')),
+	filament: JSON.parse(
+		sql('SELECT target,revision,value FROM filament_change_settings ORDER BY target')
+	),
+	pushKeys: JSON.parse(sql('SELECT public_key,private_key FROM push_keys WHERE id=1')),
+	receipts: JSON.parse(
+		sql(
+			"SELECT id,payload,status,actor_id,message,created_at FROM actions WHERE id LIKE 'release-fixture-%' ORDER BY id"
+		)
+	)
+});
+try {
+	for (const volume of volumes) docker('volume', 'create', volume);
+	// Bootstrap images predate the owned backup directory; prepare only this disposable volume.
+	docker(
+		'run',
+		'--rm',
+		'--user',
+		'0',
+		'-v',
+		`${volumes[1]}:/app/backups`,
+		'--entrypoint',
+		'node',
+		previousImage,
+		'-e',
+		"require('node:fs').chownSync('/app/backups',1000,1000)"
+	);
+	// Verify owner enrollment and backup on a fresh candidate, independently of upgrade.
+	await start(image, volumes[4], volumes[5]);
+	await enroll();
+	docker('exec', container, 'node', 'scripts/backup.mjs', '/app/backups/fresh-install');
+	stop();
+	await start(previousImage, volumes[0]);
+	await enroll();
+
 	sql('CREATE TABLE release_acceptance(value TEXT)');
 	sql("INSERT INTO release_acceptance VALUES ('before-upgrade')");
+	const quote = (value) => "'" + value.replaceAll("'", "''") + "'";
+	const owner = JSON.parse(sql(`SELECT id FROM "user" WHERE email='release@example.test'`))[0].id;
+	const preferences = JSON.stringify({
+		serif: false,
+		jobsPageSize: 25,
+		futureBetaFixture: 'preserved'
+	});
+	const filament = JSON.stringify({
+		revision: 2,
+		fingerprint: '',
+		mode: 'disabled',
+		changeMacro: 'M600',
+		resumeMacro: 'RESUME',
+		reviewed: false
+	});
+	sql(`INSERT INTO user_preferences(owner,value) VALUES(${quote(owner)},${quote(preferences)})`);
+	sql(
+		`INSERT INTO filament_change_settings(target,revision,value) VALUES('release-fixture',7,${quote(filament)})`
+	);
+	for (const status of ['completed', 'unknown']) {
+		sql(
+			`INSERT INTO actions(id,payload,label,status,created_at,message,actor_id) VALUES('release-fixture-${status}','{"type":"pause"}','Synthetic release receipt','${status}',1,'Synthetic receipt; never replay',${quote(owner)})`
+		);
+	}
+	const before = fixtureSnapshot();
 	docker('exec', container, 'node', 'scripts/backup.mjs', '/app/backups/pre-upgrade');
 	stop();
 	const health = await start(image, volumes[0], volumes[3]);
@@ -145,7 +193,13 @@ try {
 	assert.deepEqual(JSON.parse(sql('SELECT value FROM release_acceptance')), [
 		{ value: 'before-upgrade' }
 	]);
+	assert.deepEqual(
+		fixtureSnapshot(),
+		before,
+		'Application settings, push identity and completed/unknown receipts survive upgrade with statuses unchanged'
+	);
 	sql("UPDATE release_acceptance SET value='after-upgrade'");
+	sql("UPDATE user_preferences SET value='{}'");
 	stop();
 	// Restore into a fresh volume; never launch old code against the migrated volume.
 	docker(
@@ -167,10 +221,20 @@ try {
 	assert.deepEqual(JSON.parse(sql('SELECT value FROM release_acceptance')), [
 		{ value: 'before-upgrade' }
 	]);
+	assert.deepEqual(
+		fixtureSnapshot(),
+		before,
+		'Matching backup restores original settings, push identity and receipts'
+	);
 	assert.equal(JSON.parse(sql('PRAGMA quick_check'))[0].quick_check, 'ok');
 	console.log(
 		JSON.stringify({
 			install: true,
+			freshCandidateEnrollment: true,
+			freshCandidateBackup: true,
+			applicationSettingsRetained: true,
+			pushIdentityRetained: true,
+			unknownReceiptsRetained: true,
 			upgrade: true,
 			rollback: true,
 			accountsRetained: true,

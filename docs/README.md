@@ -1,7 +1,7 @@
 # Perilune documentation
 
-> Release status: alpha.2 changes are **unreleased until** the matching
-> `v0.1.0-alpha.2` release is published. Use the alpha.1 guides for alpha.1 installs.
+> Published baseline: **0.1.0-alpha.2**. Sections marked **unreleased** describe
+> work after that tag and are not yet included in a published beta.
 
 These guides describe **0.1.0-alpha.2**. Use the copy inside an install bundle or
 the repository’s matching release tag when running an older version. `main` may
@@ -48,6 +48,7 @@ fixtures; no private printer configuration or captured media is published.
 - [Accounts and browser pairing](accounts.md)
 - [Filament-change compatibility](filament-changes.md)
 - [Alpha acceptance and known limits](acceptance.md)
+- [Beta preparation and release decision (unreleased)](beta-readiness.md)
 
 ## Build and maintain
 

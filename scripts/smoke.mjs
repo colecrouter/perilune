@@ -55,6 +55,7 @@ try {
 	const publicContext = await browser.newContext();
 	for (const path of [
 		'/manifest.webmanifest',
+		'/social-card.png',
 		'/service-worker.js',
 		'/icons/app-180.png',
 		'/icons/maskable-512.png',
@@ -72,6 +73,21 @@ try {
 		(await appRequest(publicContext.request, 'GET', `${base}/api/preferences`)).status(),
 		401
 	);
+	const entry = await publicContext.request.get(base + '/login');
+	const entryHtml = await entry.text();
+	assert.match(entryHtml, /property="og:title" content="Perilune/);
+	assert.match(entryHtml, /name="twitter:card" content="summary_large_image"/);
+	assert.match(
+		entryHtml,
+		new RegExp(
+			`property="og:image" content="${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/social-card.png"`
+		)
+	);
+	const card = await publicContext.request.get(base + '/social-card.png');
+	assert.match(card.headers()['content-type'], /image\/png/);
+	const cardBytes = await card.body();
+	assert.equal(cardBytes.readUInt32BE(16), 1200);
+	assert.equal(cardBytes.readUInt32BE(20), 630);
 	await publicContext.close();
 	await authenticate(context, base, join(directory, 'state.sqlite'));
 	assert.equal(
