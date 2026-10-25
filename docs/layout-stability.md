@@ -85,3 +85,9 @@ occludes the orbit under the full moon disk, including its dark side. Filtered
 no-match states retain the file icon. The prototype's crowded fixed-height dialog
 was an illustration issue; application dialogs remain content-sized with bounded
 scrolling and padding.
+
+Page width (unreleased): the shared frame is centered and capped at 76rem on
+large screens, keeping dashboards, controls, account pages and workshops at a
+comfortable width. The configuration editor and job library explicitly use the
+100rem wide frame for source editing and file tables. Responsive panel layouts
+and mobile gutters remain in place.

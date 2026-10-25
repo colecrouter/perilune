@@ -1884,3 +1884,7 @@ close in both directions while active consumers continue receiving updates.
 Scaled camera qualities (unreleased) round the proportional height to an even
 number for H.264 encoding. This avoids failures for source aspect ratios that
 would otherwise produce an odd height at 640 or 320 pixels wide.
+
+Page frames (unreleased) default to a centered 76rem maximum including gutters.
+Configuration and Jobs opt into the shared 100rem wide variant for editing and
+file tables. Individual reading measures remain bounded inside the outer frame.

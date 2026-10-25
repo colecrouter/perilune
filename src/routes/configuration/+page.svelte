@@ -61,7 +61,7 @@
 
 <svelte:head><title>Configuration · Perilune</title></svelte:head>
 <AppShell active="Configuration"
-	><div class="config-page page-frame serif">
+	><div class="config-page page-frame page-frame--wide serif">
 		<header>
 			<h1>Configuration</h1>
 		</header>
