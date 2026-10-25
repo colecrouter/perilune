@@ -2,7 +2,10 @@
 export async function followPreferenceLink(
 	event: MouseEvent,
 	preferences: { readonly unsaved: boolean; settle(): Promise<boolean> },
-	navigate: { document: (url: string) => void; client: (url: string) => Promise<unknown> }
+	navigate: {
+		document: (url: string) => void;
+		client: (url: string, options?: { reset?: boolean; replace?: boolean }) => Promise<unknown>;
+	}
 ) {
 	if (
 		!preferences.unsaved ||
@@ -21,9 +24,22 @@ export async function followPreferenceLink(
 		(anchor.target && anchor.target !== '_self')
 	)
 		return;
+	const option = (name: string) =>
+		anchor.closest(`[data-sveltekit-${name}]`)?.getAttribute(`data-sveltekit-${name}`);
+	const reload = option('reload');
+	const reset = option('reset');
+	const replace = option('replacestate');
+	const options: { reset?: boolean; replace?: boolean } = {};
+	if (reset !== undefined) options.reset = reset !== 'false';
+	if (replace !== undefined) options.replace = replace !== 'false';
+	const href = anchor.href;
+	const documentLink =
+		(reload !== undefined && reload !== 'false') ||
+		anchor.origin !== location.origin ||
+		anchor.relList.contains('external');
 	event.preventDefault();
 	if (!(await preferences.settle())) return;
-	if (anchor.closest('[data-sveltekit-reload]')?.getAttribute('data-sveltekit-reload') === 'false')
-		await navigate.client(anchor.href);
-	else navigate.document(anchor.href);
+	if (documentLink) navigate.document(href);
+	else if (Object.keys(options).length) await navigate.client(href, options);
+	else await navigate.client(href);
 }

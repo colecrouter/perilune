@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { liveQuery } from '#lib/client/live-query.js';
 	import { untrack } from 'svelte';
 	import { asset } from '$app/paths';
 	import { moonPhasePath } from '#lib/domain/moon.js';
@@ -6,7 +7,7 @@
 	import fallback from '#lib/assets/favicon.svg';
 
 	let { overview }: { overview: boolean } = $props();
-	const source = untrack(() => (overview ? getDashboard() : getPrinter()));
+	const source = untrack(() => (overview ? liveQuery(getDashboard) : liveQuery(getPrinter)));
 	$effect(() => {
 		void Promise.resolve(source).catch(() => {});
 	});

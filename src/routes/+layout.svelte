@@ -25,7 +25,7 @@
 	const followLink = (event: MouseEvent) =>
 		followPreferenceLink(event, preferences, {
 			document: (url) => location.assign(url),
-			client: (url) => goto(url)
+			client: (url, options) => goto(url, options)
 		});
 
 	$effect(() => {
@@ -82,12 +82,7 @@
 	}}
 />
 <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-<div
-	onclick={followLink}
-	data-sveltekit-reload
-	class="app-preferences"
-	data-serif={preferences.values.serif}
->
+<div onclick={followLink} class="app-preferences" data-serif={preferences.values.serif}>
 	{@render children()}
 	{#if data.preferencesUnavailable}<p class="preference-error" role="status">
 			Saved display preferences are unavailable. Showing defaults until they can be loaded again.

@@ -92,6 +92,28 @@ try {
 		if (result.violations.length) violations.push({ label, violations: result.violations });
 		scans++;
 	}
+	// A real enhanced route click preserves the document and mounts a page fade.
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	await page.goto(base);
+	await page.evaluate(() => {
+		window.enhancedDocumentMarker = 'retained';
+		window.routeEntryAnimations = [];
+		document.addEventListener('animationstart', (event) => {
+			if (event.animationName === 'page-arrive')
+				window.routeEntryAnimations.push(event.target.className);
+		});
+	});
+	await page.getByRole('link', { name: 'Controls', exact: true }).click();
+	await page.waitForURL(base + '/controls');
+	await page.waitForFunction(() => window.routeEntryAnimations.length > 0);
+	assert.equal(await page.evaluate(() => window.enhancedDocumentMarker), 'retained');
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	await page.evaluate(() => {
+		window.routeEntryAnimations = [];
+	});
+	await page.getByRole('link', { name: 'Console', exact: true }).click();
+	await page.waitForURL(base + '/console');
+	assert.equal(await page.evaluate(() => window.routeEntryAnimations.length), 0);
 	// Document-entry motion must not replay when simulator telemetry changes.
 	await page.emulateMedia({ reducedMotion: 'no-preference' });
 	await page.goto(base);

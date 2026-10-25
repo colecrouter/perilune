@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { liveQuery } from '#lib/client/live-query.js';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import MotionControls from '#lib/components/MotionControls.svelte';
 	import { liveConnection } from '#lib/client/live-connection.svelte.js';
 	import { onMount } from 'svelte';
 	import { getPrinter, submitAction } from '../printer.remote.js';
 	let { data } = $props();
-	const printer = getPrinter();
+	const printer = liveQuery(getPrinter);
 	const initial = $derived(data.initial!.printer);
 	const updates = liveConnection(() => printer.connected);
 	onMount(() => {

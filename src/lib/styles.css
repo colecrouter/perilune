@@ -1164,14 +1164,14 @@ button[aria-busy='true'] {
 @media (prefers-reduced-motion: no-preference) {
 	.page-frame,
 	.entry-card {
-		animation: page-arrive 120ms ease-out;
+		animation: page-arrive 160ms ease-out;
 	}
 	[role='menu'][data-state='open'] {
 		animation: menu-arrive 100ms ease-out;
 	}
 	@keyframes page-arrive {
 		from {
-			opacity: 0.85;
+			opacity: 0;
 		}
 		to {
 			opacity: 1;

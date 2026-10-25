@@ -426,7 +426,7 @@ try {
 	await sortLink.click();
 	await page.waitForURL(/direction=desc/);
 	await page.waitForFunction(() => document.querySelector('th[aria-sort="descending"]'));
-	assert.equal(await page.evaluate(() => window.jobsNavigationMarker), undefined);
+	assert.equal(await page.evaluate(() => window.jobsNavigationMarker), true);
 	await page.locator('.columns summary').click();
 	await page.getByRole('checkbox', { name: 'Size', exact: true }).uncheck();
 	assert.equal(await page.getByRole('columnheader', { name: 'Size', exact: true }).count(), 0);

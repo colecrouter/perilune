@@ -71,8 +71,9 @@ real-device input and owner workflow acceptance remain separate in #107/#35/#52.
 
 ## Motion and lunar details (unreleased)
 
-Document-entry content uses a short 120ms opacity change without translation.
-Hard-link navigation and SSR remain intact; there is no exit delay. Menus enter
+Page content uses a 160ms opacity fade from transparent when its component mounts.
+Normal SvelteKit-enhanced anchors retain the document; initial loads and refreshes
+remain server-rendered. No cross-document transition API is used; there is no exit delay. Menus enter
 with a 100ms opacity fade; the existing 140ms dialog fade is retained. Controls
 remain interactive immediately, and system reduced-motion disables these effects.
 Incoming telemetry does not remount or reanimate the page frame. Print/recovery

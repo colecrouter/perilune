@@ -43,3 +43,9 @@ choose email delivery when SMTP is configured. Treat copied invitations and rese
 links as credentials: share them privately, revoke unused links and never post
 screenshots containing them. Owner-generated reset links provide a fallback when
 email delivery is unavailable; they do not prove inbox ownership.
+
+Navigation correction (unreleased): Account sections remain ordinary URL-backed
+links. With JavaScript they use SvelteKit client navigation; refresh and history
+still select the section from the URL, and direct links work without JavaScript.
+The global full-reload override has been removed. Authentication completion and
+sign-out still replace the document to establish the correct session boundary.

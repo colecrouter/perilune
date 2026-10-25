@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { liveQuery } from '#lib/client/live-query.js';
 	import { onMount } from 'svelte';
 	import { liveConnection } from '#lib/client/live-connection.svelte.js';
 	import { temperatureSensors } from '#lib/domain/temperature.js';
@@ -7,7 +8,7 @@
 	import TemperatureHistory from '#lib/components/TemperatureHistory.svelte';
 	import { getPrinter, getTemperatureHistory } from '../../printer.remote.js';
 	let { data } = $props();
-	const printer = getPrinter();
+	const printer = liveQuery(getPrinter);
 	const history = getTemperatureHistory();
 	const updates = liveConnection(() => printer.connected);
 	const snapshot = $derived(printer.current ?? data.initial!.printer);
