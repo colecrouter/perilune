@@ -32,3 +32,12 @@ bodies and same-origin validation on writes. Server rendering uses the account's
 saved defaults; if that optional read fails, printer state remains available with
 an explicit preference fallback message. Preferences require no printer opt-in
 or hardware testing.
+
+## On/off switches (unreleased)
+
+Persistent display choices such as Serif headings and console follow/group/internal
+options use labelled lunar switches. They keep native keyboard and form behavior:
+Tab focuses the control, Space changes its state, and disabled controls stay disabled.
+Notification preferences use the same switches, with the existing Save preferences
+step unchanged. Panel/column selections and safety/review acknowledgements remain
+checkboxes; their meaning and submission rules are unchanged.

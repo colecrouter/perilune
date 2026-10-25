@@ -1,4 +1,5 @@
 <script lang="ts">
+	import EmptyLibraryOrbit from './EmptyLibraryOrbit.svelte';
 	import {
 		createTable,
 		tableFeatures,
@@ -208,7 +209,10 @@
 		>{/each}
 </div>
 {#if !catalog.files.length}<div class="empty">
-		<Icon name="jobs" size={36} />
+		{#if !catalog.query.q && !catalog.query.material}<EmptyLibraryOrbit />{:else}<Icon
+				name="jobs"
+				size={36}
+			/>{/if}
 		<h3>
 			{catalog.query.q || catalog.query.material ? 'No matching files' : 'Room for your next idea'}
 		</h3>

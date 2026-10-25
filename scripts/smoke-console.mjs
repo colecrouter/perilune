@@ -243,7 +243,7 @@ try {
 		.getByText('B:25 /0 T0:26 /0', { exact: true })
 		.waitFor();
 	await livePage.getByText('History display', { exact: true }).click();
-	await livePage.getByRole('checkbox', { name: 'Group repeated responses' }).uncheck();
+	await livePage.getByRole('switch', { name: 'Group repeated responses' }).uncheck();
 	assert.equal(await livePage.locator('.response-group').count(), 0);
 	assert.equal(
 		await livePage.getByRole('button', { name: 'Run TEST_MACRO', exact: true }).isDisabled(),

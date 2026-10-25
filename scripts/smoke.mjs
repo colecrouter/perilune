@@ -177,7 +177,7 @@ try {
 	const sansSaved = first.waitForResponse(
 		(r) => r.url().includes('/savePreferences') && r.request().method() === 'POST' && r.ok()
 	);
-	await first.getByRole('checkbox', { name: 'Serif headings', exact: true }).uncheck();
+	await first.getByRole('switch', { name: 'Serif headings', exact: true }).uncheck();
 	await sansSaved;
 	await first.goto(base);
 	await first.waitForFunction(() =>
@@ -211,7 +211,7 @@ try {
 	const saved = first.waitForResponse(
 		(r) => r.url().includes('/savePreferences') && r.request().method() === 'POST' && r.ok()
 	);
-	await first.getByRole('checkbox', { name: 'Serif headings', exact: true }).check();
+	await first.getByRole('switch', { name: 'Serif headings', exact: true }).check();
 	await saved;
 	await first.goto(base);
 	// Empty libraries prioritize upload; table preferences belong to a populated library.
@@ -620,11 +620,11 @@ try {
 		window.accountNavigationMarker = true;
 	});
 	await first.getByRole('link', { name: 'Display', exact: true }).click();
-	await first.getByRole('checkbox', { name: 'Serif headings', exact: true }).waitFor();
+	await first.getByRole('switch', { name: 'Serif headings', exact: true }).waitFor();
 	assert.equal(await first.evaluate(() => window.accountNavigationMarker), undefined);
 	assert.equal(new URL(first.url()).searchParams.get('section'), 'preferences');
 	await first.reload();
-	await first.getByRole('checkbox', { name: 'Serif headings', exact: true }).waitFor();
+	await first.getByRole('switch', { name: 'Serif headings', exact: true }).waitFor();
 	assert.equal(
 		await first.getByRole('link', { name: 'Display', exact: true }).getAttribute('aria-current'),
 		'page'
