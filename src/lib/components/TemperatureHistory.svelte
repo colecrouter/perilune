@@ -368,7 +368,9 @@
 		</div>{/if}
 	{#if inspected}<div class="sample-reading">
 			<strong>{inspectedAt === null ? 'Latest' : 'Selected'} · {time(inspected.at, true)}</strong
-			>{#if all}{#each sensors as item, i}<span style:color={color(i)}
+			>{#if all}{#each sensors as item, i}<span
+						class="sensor-reading"
+						style:--sensor-color={color(i)}
 						>{item.label}
 						{reading(inspected.readings[item.id]?.current)}{item.heater
 							? ` / ${reading(inspected.readings[item.id]?.target)} target`
@@ -533,6 +535,18 @@
 		flex-wrap: wrap;
 		gap: 0.75rem;
 		font-size: 0.8rem;
+	}
+	.sensor-reading {
+		color: var(--text);
+	}
+	.sensor-reading::before {
+		content: '';
+		display: inline-block;
+		width: 0.55em;
+		height: 0.55em;
+		margin-right: 0.35em;
+		border-radius: 50%;
+		background: var(--sensor-color);
 	}
 	.actual-key {
 		color: var(--accent);

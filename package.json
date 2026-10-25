@@ -39,7 +39,8 @@
 		"test:smoke:live-actions": "node scripts/smoke-live-actions.mjs",
 		"validate:checks": "vp run format:check && vp run lint && vp run check && vp run test && vp run test:backup && vp run test:release && node scripts/smoke-suite.mjs --check",
 		"test:smoke:account-email": "node scripts/smoke-account-email.mjs",
-		"generate:config-language": "node scripts/generate-config-language.mjs"
+		"generate:config-language": "node scripts/generate-config-language.mjs",
+		"test:smoke:readiness": "node scripts/smoke-readiness.mjs"
 	},
 	"dependencies": {
 		"@better-auth/kysely-adapter": "1.7.7",
@@ -88,6 +89,7 @@
 		"@types/ws": "^8.18.2",
 		"@vitejs/plugin-legacy": "^8.2.3",
 		"@vitest/browser-playwright": "5.0.1",
+		"axe-core": "4.10.3",
 		"playwright": "^1.64.0",
 		"prettier": "^3.9.10",
 		"prettier-plugin-svelte": "^4.1.1",

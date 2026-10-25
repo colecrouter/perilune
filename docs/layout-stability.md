@@ -46,3 +46,25 @@ insert notices, replace printer status, or mark a retained bed mesh stale.
 Physical controls still disable when the browser cannot verify current state.
 Backend-reported printer faults and uncertain command outcomes remain actionable;
 camera playback retains its separate connection feedback.
+
+## Beta core readiness (unreleased)
+
+Secondary text on light tinted surfaces has stronger contrast. Temperature-history
+sample labels use ordinary text color with decorative sensor-color markers, so
+readings remain legible independently of chart colors. Dark-theme teal text and
+the movement destination legend also retain readable contrast.
+
+`pnpm test:smoke:readiness` runs an isolated simulator with synthetic accounts. Its
+143 route/state checks cover light/dark core routes at 320, 390, 700 and 1440 CSS
+pixels, plus 200% root text enlargement at 640px. It checks document overflow,
+automated WCAG 2 A/AA and 2.1 AA rules, page identity and uncaught page errors.
+Keyboard checks cover skip-to-main, entering the Overview dialog, forward/backward
+focus wrapping, entering/navigating compact menus and Escape focus return. Public
+sign-in, password recovery and browser pairing are scanned at 320px in both themes.
+
+These are default synthetic states, not a complete accessibility certification.
+Existing component and production suites cover retained server state, permission
+and failure/unknown flows, draft preservation and dialogs through reconnects. Their
+coverage does not imply that every combination of roles, faults and workflows was
+included in the automated accessibility sweep. Manual screen-reader, native zoom,
+real-device input and owner workflow acceptance remain separate in #107/#35/#52.

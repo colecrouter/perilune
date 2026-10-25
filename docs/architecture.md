@@ -1831,3 +1831,12 @@ reservation/session lock query retain workflow ownership checks. No printer
 commands, schema changes or authentication changes are introduced. The remaining
 store inventory in persistence.md defines later reviewed batches; a complete ORM
 conversion is not a beta prerequisite.
+
+Beta core readiness (unreleased, #166): a pinned development-only axe engine adds
+an isolated production smoke across default core routes, light/dark responsive
+sizes, enlarged text and public entry/recovery. Keyboard checks exercise skip,
+modal wrapping and menu navigation/focus return. The audit fixed light secondary
+text, sensor reading and dark destination/teal contrast without changing control
+lifecycle or reconnect presentation. Existing state-specific component/smoke tests
+remain the evidence for drafts, permission gates and failed/unknown recovery;
+manual assistive-technology and device acceptance are not replaced by automation.
