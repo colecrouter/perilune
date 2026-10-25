@@ -29,3 +29,18 @@ printer state or authenticated configuration.
 
 Owner acceptance has confirmed small-print notifications with camera images on
 two devices. Remaining platform cases are recorded in the [alpha checklist](acceptance.md).
+
+## Sender compatibility (unreleased)
+
+The server uses pinned `web-push-browser` with a small reviewed compatibility patch.
+Existing VAPID keys, registered subscriptions and device preferences retain their
+storage format; upgrading does not rotate keys or require re-enabling notifications.
+The sender keeps the five-minute TTL and normal urgency, aborts requests after eight
+seconds or process-work cancellation, refuses redirects and removes expired
+subscriptions on HTTP 404/410. Delivery claims remain durable and ambiguous sends
+are not automatically repeated.
+
+Synthetic protocol tests verify signed VAPID claims and independently decrypt the
+actual AES128GCM wire payload. These tests do not establish OS display, app-closed
+delivery or renewed phone/platform acceptance; keep using the test notification and
+remaining device checklist after an upgrade.

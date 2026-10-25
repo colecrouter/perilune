@@ -2,6 +2,9 @@ import { afterEach, expect, it, vi } from 'vite-plus/test';
 import { Effect, Layer, ManagedRuntime, SubscriptionRef } from 'effect';
 import * as SqliteClient from '@effect/sql-sqlite-node/SqliteClient';
 import { SqlClient } from 'effect/sql/SqlClient';
+import { createECDH } from 'node:crypto';
+import { migrate } from './migrations.js';
+import type { VapidKeys } from './push-transport.js';
 import {
 	NotificationService,
 	NotificationServiceLive,
@@ -21,10 +24,19 @@ const subscription = {
 	endpoint: 'https://fcm.googleapis.com/fcm/send/fixture',
 	keys: { p256dh: 'A'.repeat(87), auth: 'B'.repeat(22) }
 };
-async function fixture() {
+async function fixture(storedKeys?: VapidKeys) {
 	let valid = true;
 	const send = vi.fn(async (_subscription: unknown, _payload: string) => {});
-	const db = SqliteClient.layer({ filename: ':memory:' });
+	const sqlite = SqliteClient.layer({ filename: ':memory:' });
+	const db = Layer.effectDiscard(
+		Effect.gen(function* () {
+			yield* migrate;
+			if (storedKeys) {
+				const sql = yield* SqlClient;
+				yield* sql`INSERT INTO push_keys VALUES(1,${storedKeys.publicKey},${storedKeys.privateKey})`;
+			}
+		})
+	).pipe(Layer.provideMerge(sqlite));
 	const printer = PrinterServiceLive.pipe(Layer.provide(ActionStoreLive.pipe(Layer.provide(db))));
 	const capture = vi.fn(() =>
 		Effect.succeed(
@@ -307,4 +319,25 @@ it('pause notices require opt-in, respect job ownership, deduplicate stable paus
 	await f.runtime.runPromise(SubscriptionRef.set(f.state, printing));
 	await f.runtime.runPromise(SubscriptionRef.set(f.state, paused));
 	await vi.waitFor(() => expect(f.send).toHaveBeenCalledTimes(4));
+});
+
+it('keeps pre-migration VAPID keys and subscriptions unchanged when loading the new sender', async () => {
+	const legacy = createECDH('prime256v1');
+	legacy.generateKeys();
+	const keys = {
+		publicKey: legacy.getPublicKey().toString('base64url'),
+		privateKey: Buffer.from(
+			legacy.getPrivateKey().toString('hex').padStart(64, '0'),
+			'hex'
+		).toString('base64url')
+	};
+	const f = await fixture(keys);
+	expect(f.service.publicKey).toBe(keys.publicKey);
+	await f.manage('test');
+	expect(f.send.mock.calls[0]?.[0]).toEqual(subscription);
+	const sql = await f.runtime.runPromise(SqlClient);
+	const [stored] = await f.runtime.runPromise(
+		sql`SELECT public_key,private_key FROM push_keys WHERE id=1`
+	);
+	expect(stored).toEqual({ public_key: keys.publicKey, private_key: keys.privateKey });
 });

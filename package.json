@@ -73,7 +73,7 @@
 		"layerchart": "^2.7.0",
 		"nodemailer": "^10.1.7",
 		"sveltekit-effect": "0.2.0",
-		"web-push": "^3.6.7"
+		"web-push-browser": "1.4.2"
 	},
 	"devDependencies": {
 		"@effect/language-service": "^0.87.4",
@@ -85,7 +85,6 @@
 		"@types/d3-shape": "^3.2.0",
 		"@types/node": "^24.19.2",
 		"@types/nodemailer": "^8.0.2",
-		"@types/web-push": "^3.6.4",
 		"@types/ws": "^8.18.2",
 		"@vitejs/plugin-legacy": "^8.2.3",
 		"@vitest/browser-playwright": "5.0.1",

@@ -1,0 +1,51 @@
+diff --git a/build/crypto/helpers.js b/build/crypto/helpers.js
+index 68d1efcfb3ae1ade2a10dc3a389c0886637e3275..1c6590566e939756f9910f18429f25a488cbfb9d 100644
+--- a/build/crypto/helpers.js
++++ b/build/crypto/helpers.js
+@@ -33,7 +33,7 @@ export function createHeader(opts) {
+         return concat(encoder.encode(`Content-Encoding: ${opts.algorithm}\0`), encoder.encode("P-256\0"), new Uint8Array(new Uint16Array([opts.clientPublicKey.byteLength]).buffer), new Uint8Array(opts.clientPublicKey), new Uint8Array(new Uint16Array([opts.localPublicKey.byteLength]).buffer), new Uint8Array(opts.localPublicKey));
+     }
+     if (opts.algorithm === "aes128gcm") {
+-        return concat(new Uint8Array(opts.salt), new Uint8Array(new Uint32Array([4096]).buffer), // 4 bytes for record size
++        return concat(new Uint8Array(opts.salt), new Uint8Array([0, 0, 16, 0]), // 4 bytes for record size
+         new Uint8Array([opts.localPublicKey.byteLength]), // 1 byte for key length
+         new Uint8Array(opts.localPublicKey));
+     }
+diff --git a/build/crypto/jwt.js b/build/crypto/jwt.js
+index e3e03b63101bc2932824bc8d835df6b263cae5d3..74b3779d98a70a1559251ba786244675f4be2fdd 100644
+--- a/build/crypto/jwt.js
++++ b/build/crypto/jwt.js
+@@ -11,7 +11,7 @@ import { toBase64Url } from "../utils/base64url.js";
+ export async function createJWT(privateVapidKey, endpoint, email) {
+     const aud = endpoint.origin;
+     const exp = Math.floor(Date.now() / 1000) + 12 * 60 * 60; // 12 hours from now
+-    const sub = `mailto:${email}`;
++    const sub = /^(https:|mailto:)/.test(email) ? email : `mailto:${email}`;
+     return await signJWT({ alg: "ES256", typ: "JWT" }, {
+         aud,
+         exp,
+diff --git a/build/request/send.d.ts b/build/request/send.d.ts
+index 56d8cbade834d5be46b2475320c6c87a7291699b..88f6be61946ebb873f14f5116b18a883e6ec6986 100644
+--- a/build/request/send.d.ts
++++ b/build/request/send.d.ts
+@@ -4,6 +4,7 @@ type EncryptionOptions = {
+     urgency?: "very-low" | "low" | "normal" | "high";
+     ttl?: number;
+     salt?: ArrayBuffer;
++    signal?: AbortSignal;
+ };
+ /**
+  * Send a push notification to a user.
+diff --git a/build/request/send.js b/build/request/send.js
+index d07e7dbc70bd83bb8478810a0bcb2a0da65897b5..d7d96c1632652e465c98e3e9b21b955d7c64867f 100644
+--- a/build/request/send.js
++++ b/build/request/send.js
+@@ -23,6 +23,8 @@ export async function sendPushNotification(vapidKeys, subscription, email, paylo
+         method: "POST",
+         headers,
+         body: encrypted,
++        signal: options.signal,
++        redirect: "manual",
+     });
+     return fetch(request);
+ }
