@@ -3,7 +3,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, it } from 'vite-plus/test';
-import { Layer, ManagedRuntime } from 'effect';
+import { Effect, Exit, Layer, ManagedRuntime } from 'effect';
+import { isSqlError } from 'effect/sql/SqlError';
 import * as SqliteClient from '@effect/sql-sqlite-node/SqliteClient';
 import { filamentChangeCapability } from './filament-change-capability.js';
 import { FilamentChangeStore, FilamentChangeStoreLive } from './filament-change-settings.js';
@@ -154,4 +155,111 @@ it('keeps parser extrusion verification private and rejects malformed or extra-a
 		expect(
 			normalizeMoonrakerStatus({ gcode_move: { position } }, previous).gcodePosition
 		).toBeNull();
+});
+
+it('allows exactly one initial writer and preserves the winning plan on stale updates', async () => {
+	const runtime = ManagedRuntime.make(
+		FilamentChangeStoreLive.pipe(Layer.provide(SqliteClient.layer({ filename: ':memory:' })))
+	);
+	try {
+		const store = await runtime.runPromise(FilamentChangeStore);
+		const results = await Promise.all(
+			['FIRST', 'SECOND'].map((changeMacro) =>
+				runtime.runPromise(store.put('printer', { ...defaultFilamentChangeSettings, changeMacro }))
+			)
+		);
+		expect(results.filter(Boolean)).toHaveLength(1);
+		const winner = await runtime.runPromise(store.get('printer'));
+		expect(winner.changeMacro).toBe(results[0] ? 'FIRST' : 'SECOND');
+		expect(winner.revision).toBe(1);
+		expect(await runtime.runPromise(store.put('printer', defaultFilamentChangeSettings))).toBe(
+			false
+		);
+		expect(await runtime.runPromise(store.get('printer'))).toEqual(winner);
+	} finally {
+		await runtime.dispose();
+	}
+});
+
+it('rolls back nested settings writes on outer failure and interruption', async () => {
+	const runtime = ManagedRuntime.make(
+		FilamentChangeStoreLive.pipe(Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })))
+	);
+	try {
+		const store = await runtime.runPromise(FilamentChangeStore);
+		const sql = await runtime.runPromise(SqlClient);
+		await runtime.runPromise(store.put('printer', defaultFilamentChangeSettings));
+		const before = await runtime.runPromise(store.get('printer'));
+		const failed = await runtime.runPromiseExit(
+			sql.withTransaction(
+				Effect.gen(function* () {
+					expect(yield* store.put('printer', { ...before, changeMacro: 'ROLLED_BACK' })).toBe(true);
+					return yield* Effect.fail('rollback');
+				})
+			)
+		);
+		expect(Exit.isFailure(failed)).toBe(true);
+		expect(await runtime.runPromise(store.get('printer'))).toEqual(before);
+		const controller = new AbortController();
+		let entered!: () => void;
+		const written = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		const pending = runtime.runPromiseExit(
+			sql.withTransaction(
+				Effect.gen(function* () {
+					expect(yield* store.put('printer', { ...before, changeMacro: 'INTERRUPTED' })).toBe(true);
+					entered();
+					return yield* Effect.never;
+				})
+			),
+			{ signal: controller.signal }
+		);
+		await written;
+		controller.abort();
+		expect(Exit.isFailure(await pending)).toBe(true);
+		expect(await runtime.runPromise(store.get('printer'))).toEqual(before);
+	} finally {
+		await runtime.dispose();
+	}
+});
+
+it('reads legacy authoritative revisions without schema changes and preserves SQL error contracts', async () => {
+	const runtime = ManagedRuntime.make(
+		FilamentChangeStoreLive.pipe(Layer.provideMerge(SqliteClient.layer({ filename: ':memory:' })))
+	);
+	try {
+		const store = await runtime.runPromise(FilamentChangeStore);
+		const sql = await runtime.runPromise(SqlClient);
+		const schema = await runtime.runPromise(
+			sql`SELECT type,name,sql FROM sqlite_schema ORDER BY name`
+		);
+		await runtime.runPromise(
+			sql`INSERT INTO filament_change_settings(target,revision,value) VALUES('legacy',7,${JSON.stringify({ ...defaultFilamentChangeSettings, revision: 2, futureField: 'retained' })})`
+		);
+		const before = await runtime.runPromise(store.get('legacy'));
+		expect(before.revision).toBe(7);
+		expect(
+			await runtime.runPromise(store.put('legacy', { ...before, changeMacro: 'UPDATED' }))
+		).toBe(true);
+		expect(await runtime.runPromise(store.get('legacy'))).toMatchObject({
+			revision: 8,
+			changeMacro: 'UPDATED',
+			futureField: 'retained'
+		});
+		expect(
+			await runtime.runPromise(sql`SELECT type,name,sql FROM sqlite_schema ORDER BY name`)
+		).toEqual(schema);
+		await runtime.runPromise(sql`DROP TABLE filament_change_settings`);
+		for (const query of [
+			store.get('private-printer').pipe(Effect.asVoid),
+			store.put('private-printer', defaultFilamentChangeSettings).pipe(Effect.asVoid)
+		]) {
+			const error = await runtime.runPromise(query.pipe(Effect.flip));
+			expect(isSqlError(error)).toBe(true);
+			expect(String(error)).not.toContain('private-printer');
+		}
+	} finally {
+		await runtime.dispose();
+	}
 });
