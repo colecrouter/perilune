@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { liveQuery } from '#lib/client/live-query.js';
 	import { page } from '$app/state';
 	import ActionNotices from './ActionNotices.svelte';
 	import { untrack } from 'svelte';
@@ -17,8 +18,8 @@
 	let acknowledged = $state<PrinterSnapshot | undefined>();
 	let { snapshot, initial }: { snapshot?: PrinterSnapshot; initial?: PrinterSnapshot } = $props();
 	const overview = untrack(() => page.url.pathname === '/');
-	const dashboard = overview ? getDashboard() : null;
-	const source = overview ? null : getPrinter();
+	const dashboard = overview ? liveQuery(getDashboard) : null;
+	const source = overview ? null : liveQuery(getPrinter);
 	const updates = liveConnection(() => dashboard?.connected ?? source?.connected ?? false);
 	const received = $derived(dashboard?.current?.printer ?? source?.current);
 	$effect(() => {

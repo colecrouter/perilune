@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+	import { liveQuery } from '#lib/client/live-query.js';
 	import OverviewCustomizer from '#lib/components/OverviewCustomizer.svelte';
 	import { preferencesContext } from '#lib/client/preferences.svelte.js';
 	import { overviewLayout, type OverviewLayout } from '#lib/domain/overview-layout.js';
@@ -49,7 +50,7 @@
 		await preferences.commit({ overviewLayout: value });
 		revealedTemperature = false;
 	}
-	const dashboard = getDashboard();
+	const dashboard = liveQuery(getDashboard);
 	const temperatureHistory = getTemperatureHistory();
 	const initial = $derived(data.initial!);
 	const updates = liveConnection(() => dashboard.connected);

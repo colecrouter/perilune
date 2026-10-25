@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { liveQuery } from '#lib/client/live-query.js';
 	import { submitTrackedPrintAction } from '#lib/client/submit-print-action.js';
 	import { printActionJournal } from '#lib/client/print-action-journal.svelte.js';
 	import { removeJob } from '../../routes/jobs/jobs.remote.js';
@@ -33,7 +34,7 @@
 			user: { id?: string; role: string } | null;
 		};
 	} = $props();
-	const dashboard = getPrinter();
+	const dashboard = liveQuery(getPrinter);
 	const updates = liveConnection(() => dashboard.connected);
 	const initial = $derived(data.initial!.printer);
 	onMount(() => {

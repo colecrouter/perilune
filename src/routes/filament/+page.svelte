@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { liveQuery } from '#lib/client/live-query.js';
 	import { onMount, untrack } from 'svelte';
 	import FilamentChangeWorkflow from '#lib/components/FilamentChangeWorkflow.svelte';
 	import {
@@ -10,7 +11,7 @@
 	import { getPrinter } from '../printer.remote.js';
 	import { getFilamentSetup, saveFilamentSetup } from './filament.remote.js';
 	let { data } = $props();
-	const printer = getPrinter();
+	const printer = liveQuery(getPrinter);
 	const initialPrinter = await printer;
 	const snapshot = $derived(printer.current ?? initialPrinter);
 	const allowed = $derived(data.user?.role === 'owner' || data.user?.role === 'operator');

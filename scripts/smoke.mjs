@@ -615,14 +615,18 @@ try {
 		.check();
 	await first.getByLabel('Quiet hours', { exact: true }).check();
 	await first.getByLabel('From', { exact: true }).fill('21:30');
-	// Section links load documents, and the server selects the correct content without JavaScript.
+	// Enhanced section links retain the document; server HTML still selects tabs without JavaScript.
 	await first.evaluate(() => {
 		window.accountNavigationMarker = true;
 	});
 	await first.getByRole('link', { name: 'Display', exact: true }).click();
 	await first.getByRole('switch', { name: 'Serif headings', exact: true }).waitFor();
-	assert.equal(await first.evaluate(() => window.accountNavigationMarker), undefined);
+	assert.equal(await first.evaluate(() => window.accountNavigationMarker), true);
 	assert.equal(new URL(first.url()).searchParams.get('section'), 'preferences');
+	await first.goBack();
+	await first.getByRole('heading', { name: 'Perilune on this device', exact: true }).waitFor();
+	await first.goForward();
+	await first.getByRole('switch', { name: 'Serif headings', exact: true }).waitFor();
 	await first.reload();
 	await first.getByRole('switch', { name: 'Serif headings', exact: true }).waitFor();
 	assert.equal(

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { liveQuery } from '#lib/client/live-query.js';
 	import { actionStatusLabel } from '#lib/client/action-label.js';
 	import { onMount } from 'svelte';
 	import { Tabs } from 'bits-ui';
@@ -7,7 +8,7 @@
 	import AppShell from '#lib/components/AppShell.svelte';
 	import { getPrinter } from '../printer.remote.js';
 	let { data } = $props();
-	const printer = getPrinter();
+	const printer = liveQuery(getPrinter);
 	onMount(() => {
 		void Promise.resolve(printer).catch(() => {});
 	});

@@ -1,10 +1,11 @@
 <script lang="ts">
+	import { liveQuery } from '#lib/client/live-query.js';
 	import { onMount } from 'svelte';
 	import { getCameraSetup, getLocalCameras, updateCameraSetup } from './camera.remote.js';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import { getPrinter } from '../printer.remote.js';
 	let { data } = $props();
-	const printer = getPrinter();
+	const printer = liveQuery(getPrinter);
 	const snapshot = $derived(printer.current ?? data.initial!.printer);
 	const settings = getCameraSetup();
 	const initialSetup = await settings;

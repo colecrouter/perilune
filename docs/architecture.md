@@ -1501,17 +1501,20 @@ addresses/tokens, outbox capacity/restart, SMTP trickle/deadline/shutdown and fu
 headless email verification/reset/invitation flows. Live SMTP delivery remains a
 host configuration and acceptance step; no real email provider is enabled by default.
 
-### Document navigation
+### Enhanced navigation (unreleased correction)
 
-Ordinary application links inherit `data-sveltekit-reload` from the root layout
-and use browser document navigation. Account sections are normal links to
+Ordinary same-origin application anchors use normal SvelteKit client navigation
+when JavaScript is available. The root layout no longer opts every link into full
+document reloads. Explicit receipt refresh links, auth completion and logout keep
+their deliberate document-navigation behavior. Pending preference writes settle
+before following a link, retaining its reset/history/reload options. Account sections are normal links to
 `/account?section=notifications`, `integrations`, or `preferences`; `/account`
 selects Access & people. The server selects the section before rendering, including
 when JavaScript is disabled. Unknown section values fall back to Access & people.
 Previous fragment-based internal links have been updated; fragments cannot select
 server-rendered sections because browsers do not send them to the server.
-Configuration file links explicitly retain client navigation so switching files
-preserves unsaved multi-file drafts. Imperative navigation after uploads and the in-memory calibration proposal handoff
+Configuration file links retain client navigation and scroll behavior so switching
+files preserves unsaved multi-file drafts. Imperative navigation after uploads and the in-memory calibration proposal handoff
 remains explicit, as do fragment-token handling and interactive menus/actions.
 
 Application reads and mutations use typed remote functions; #128 is complete.
@@ -1867,3 +1870,13 @@ notification settings only; selections and explicit safety acknowledgements stay
 checkboxes. CSS document-entry/menu opacity effects honor reduced motion and add
 no JS navigation, exit delay, ongoing numeric motion or telemetry remount. The
 static empty-library orbit is masked beneath a unique full-disk SVG mask.
+
+Live query ownership correction (unreleased): persistent component fields now hold
+read-through facades, not the framework's first live-query proxy. Kit 3's shared
+resource can retain its creation component context, forming a context/proxy cycle
+that prevents the weak-reference cache from closing an unused stream. Property
+reads create transient framework proxies; the framework cache still shares one
+resource by query key, and promise getter reads retain effect-scoped leases. No
+application cache, fetch-on-mount layer, server service or manual reconnect loop is
+added. Browser navigation tests require obsolete dashboard/printer streams to
+close in both directions while active consumers continue receiving updates.

@@ -57,3 +57,20 @@ wire decoder uses Node crypto independently of the replacement's encryption code
 see [RFC 8188](https://www.rfc-editor.org/rfc/rfc8188.html) and
 [RFC 8291](https://www.rfc-editor.org/rfc/rfc8291.html). Use synthetic subscriptions
 only in automation; real-device notification acceptance remains separate.
+
+### Enhanced navigation and live-query ownership (unreleased)
+
+The root reload override is removed. Internal anchors normally use SvelteKit
+navigation; authentication boundaries and explicit receipt reloads retain document
+navigation. Account selection remains URL-driven and server-rendered, with history,
+refresh and JavaScript-disabled coverage. Pending preference writes preserve the
+clicked destination and inherited reset/history/reload options.
+
+`liveQuery` is a read-through compatibility facade for live remote functions.
+Retaining the first framework proxy in its creator's component context can form a
+cycle through Kit 3's shared resource, preventing stream release after navigation.
+The facade keeps the factory rather than that proxy; it preserves property getter,
+method receiver, thenable and async-iterator behavior. Framework caching and effect
+leases remain authoritative. Remove this workaround only after an upstream fix and
+production navigation/shared-consumer/reconnect regressions pass. Do not replace it
+with a new connection or polling loop.

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { liveQuery } from '#lib/client/live-query.js';
 	import { onMount } from 'svelte';
 	import { liveConnection } from '#lib/client/live-connection.svelte.js';
 	import AppShell from '#lib/components/AppShell.svelte';
@@ -11,7 +12,7 @@
 	let selectedMesh = $state('active');
 	let inspectingSaved = $state(false);
 	let probe: BedMeshProbe | undefined = $state();
-	const dashboard = getPrinter();
+	const dashboard = liveQuery(getPrinter);
 	const initial = $derived(data.initial!.printer);
 	const updates = liveConnection(() => dashboard.connected);
 	onMount(() => {

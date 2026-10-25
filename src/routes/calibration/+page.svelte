@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { liveQuery } from '#lib/client/live-query.js';
 	import { onMount } from 'svelte';
 	import { liveConnection } from '#lib/client/live-connection.svelte.js';
 	import { Dialog } from 'bits-ui';
@@ -19,7 +20,7 @@
 	import { submitTrackedPrintAction } from '#lib/client/submit-print-action.js';
 	import { getPrinter, submitAction } from '../printer.remote.js';
 	let { data } = $props();
-	const dashboard = getPrinter();
+	const dashboard = liveQuery(getPrinter);
 	const initial = $derived(data.initial!.printer);
 	const updates = liveConnection(() => dashboard.connected);
 	onMount(() => {
