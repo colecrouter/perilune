@@ -10,6 +10,7 @@
 	import AppUpdate from '#lib/components/AppUpdate.svelte';
 	import PrintFavicon from '#lib/components/PrintFavicon.svelte';
 	import favicon from '#lib/assets/favicon.svg';
+	import { asset } from '$app/paths';
 	import type { LayoutProps } from './$types';
 	let { children, data }: LayoutProps = $props();
 	const preferences = createPreferences(
@@ -36,8 +37,35 @@
 	});
 </script>
 
-<svelte:head
-	><link rel="manifest" href="/manifest.webmanifest" /><link
+<svelte:head>
+	<meta
+		name="description"
+		content="A calm home for your Klipper printer. Prints, camera and controls, together in Perilune."
+	/>
+	<meta property="og:type" content="website" />
+	<meta property="og:site_name" content="Perilune" />
+	<meta property="og:title" content="Perilune · Your printer, in orbit" />
+	<meta
+		property="og:description"
+		content="A calm home for your Klipper printer. Prints, camera and controls, together in Perilune."
+	/>
+	<meta property="og:image" content={new URL(asset('social-card.png'), page.url.origin).href} />
+	<meta property="og:image:type" content="image/png" />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="630" />
+	<meta
+		property="og:image:alt"
+		content="Perilune. Your printer, in orbit. A crescent moon and subtle stars on midnight blue."
+	/>
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content="Perilune · Your printer, in orbit" />
+	<meta name="twitter:description" content="A calm home for your Klipper printer." />
+	<meta name="twitter:image" content={new URL(asset('social-card.png'), page.url.origin).href} />
+	<meta
+		name="twitter:image:alt"
+		content="Perilune. Your printer, in orbit. A crescent moon and subtle stars on midnight blue."
+	/>
+	<link rel="manifest" href="/manifest.webmanifest" /><link
 		rel="apple-touch-icon"
 		href="/icons/app-180.png"
 	/><meta name="theme-color" content="#15182b" /><meta

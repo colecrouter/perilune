@@ -1,7 +1,8 @@
 # Alpha acceptance and known limits
 
-> Release status: alpha.2 changes are **unreleased until** the matching
-> `v0.1.0-alpha.2` release is published. Use the alpha.1 guides for alpha.1 installs.
+> Historical acceptance baseline: published **0.1.0-alpha.2**. See the
+> [beta preparation ledger](beta-readiness.md) for later unreleased work and the
+> pending release decision.
 
 Release target: **0.1.0-alpha.2**. This is an early alpha, not a claim that every
 printer, camera, browser or hardware workflow has been validated. Keep your current
@@ -13,7 +14,8 @@ printer interface available while evaluating it.
   previous-version upgrade and matching-backup rollback gates.
 - The public alpha.1 bundle was anonymously downloaded/pulled and installed in an
   isolated simulator; owner login, backup and persistence after restart passed.
-  Alpha.2 repeats public-bundle acceptance before handoff.
+  The alpha.2 public release is available; its release-era evidence does not certify
+  an unreleased beta bundle.
 - Owner testing confirmed native OrcaSlicer upload/start and Device-tab pairing,
   persistence after quit/relaunch and revocation (Orca approximately 2.4.2).
 - A small real print completed and sent image push notifications to two devices.
@@ -48,6 +50,7 @@ fixtures do not establish hardware safety.
 
 Cold rectangular probing with discrete probes is the current mesh workflow.
 Saving a mesh does not alter print-start macros. Camera support depends on source
-format and the managed companion; raw-only USB conversion is not established.
+format and the managed companion; raw USB conversion has later synthetic protocol coverage, but real raw-driver
+acceptance remains unverified (see the beta ledger).
 Push delivery is best effort and browser/platform dependent. Browser sign-in lasts
 90 days; race-safe rolling renewal is a future enhancement, not an alpha.2 feature.
