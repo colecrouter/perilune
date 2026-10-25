@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { cameraDefinitions, cameraProfiles } from '../src/lib/server/camera-profiles.ts';
 const image =
 	'alexxit/go2rtc:1.9.14@sha256:675c318b23c06fd862a61d262240c9a63436b4050d177ffc68a32710d9e05bae';
 const directory = await mkdtemp(join(tmpdir(), 'perilune-camera-probe-'));
@@ -13,9 +14,33 @@ let container;
 const controllers = [];
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 try {
+	const id = `perilune_${'c'.repeat(32)}`;
+	const profiles = cameraProfiles(id);
+	const streams = {
+		fixture: 'ffmpeg:virtual?video=testsrc2&size=640x360&rate=10#video=mjpeg',
+		balanced: 'ffmpeg:fixture#video=h264#width=320',
+		http: 'ffmpeg:http://127.0.0.1:1984/api/stream.mjpeg?src=fixture#video=h264#width=320',
+		native: 'ffmpeg:virtual?video=testsrc2&size=640x360&rate=10#video=h264',
+		hevc: 'ffmpeg:virtual?video=testsrc2&size=640x360&rate=10#video=h265',
+		compatible: 'ffmpeg:hevc#video=h264#width=320',
+		http_encoded: 'ffmpeg:http://127.0.0.1:1984/api/stream.mp4?src=native&video=h264#video=copy',
+		// Width-only scaling yields an invalid 640x359 H.264 output for this source.
+		...Object.fromEntries(
+			cameraDefinitions(
+				id,
+				{ kind: 'rtsp', streamUrl: 'synthetic' },
+				'ffmpeg:virtual?video=testsrc2&size=1280x718&rate=10#video=h264'
+			)
+		)
+	};
 	await writeFile(
 		join(directory, 'go2rtc.yaml'),
-		`api:\n  listen: ":1984"\nrtsp:\n  listen: ":8554"\nwebrtc:\n  listen: ""\nstreams:\n  fixture: ffmpeg:virtual?video=testsrc2&size=640x360&rate=10#video=mjpeg\n  balanced: ffmpeg:fixture#video=h264#width=320\n  http: ffmpeg:http://127.0.0.1:1984/api/stream.mjpeg?src=fixture#video=h264#width=320\n  native: ffmpeg:virtual?video=testsrc2&size=640x360&rate=10#video=h264\n  hevc: ffmpeg:virtual?video=testsrc2&size=640x360&rate=10#video=h265\n  compatible: ffmpeg:hevc#video=h264#width=320\n  http_encoded: ffmpeg:http://127.0.0.1:1984/api/stream.mp4?src=native&video=h264#video=copy\n`
+		JSON.stringify({
+			api: { listen: ':1984' },
+			rtsp: { listen: ':8554' },
+			webrtc: { listen: '' },
+			streams
+		})
 	);
 	container = docker(
 		'run',
@@ -104,6 +129,40 @@ try {
 			})
 		);
 	}
+	for (const [profile, width, height] of [
+		[profiles.balanced, 640, 360],
+		[profiles['data-saver'], 320, 180]
+	]) {
+		const decoded = execFileSync(
+			'docker',
+			[
+				'exec',
+				container,
+				'ffmpeg',
+				'-hide_banner',
+				'-loglevel',
+				'error',
+				'-i',
+				`http://127.0.0.1:1984/api/stream.mp4?src=${profile}&video=h264`,
+				'-frames:v',
+				'1',
+				'-pix_fmt',
+				'rgb24',
+				'-f',
+				'rawvideo',
+				'-'
+			],
+			{ timeout: 30000, maxBuffer: 4 * 1024 * 1024 }
+		);
+		assert.equal(
+			decoded.length,
+			width * height * 3,
+			'Production profile decodes at even dimensions'
+		);
+		await idle();
+		console.log(JSON.stringify({ width, height, decoded: true, idleShutdown: true }));
+	}
+
 	console.log(
 		JSON.stringify({
 			platform: docker('info', '--format', '{{.OSType}}/{{.Architecture}}'),

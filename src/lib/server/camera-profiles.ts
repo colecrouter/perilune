@@ -33,10 +33,11 @@ export function cameraDefinitions(
 		input.kind === 'local' ? new URL(input.streamUrl).searchParams.get('input_format') : null;
 	const source = format === 'mjpeg' ? `http://127.0.0.1:1984/api/stream.mjpeg?src=${id}` : id;
 	const raw = format === 'yuyv422' || format === 'nv12';
+	// H.264 yuv420p needs even dimensions; -2 preserves aspect ratio with even rounding.
 	return [
 		[id, httpRemux ? `ffmpeg:${endpoint}#video=copy` : capture],
 		[profiles.compatible, `ffmpeg:${source}#video=${raw ? 'copy' : 'h264'}`],
-		[profiles.balanced, `ffmpeg:${source}#video=h264#width=640`],
-		[profiles['data-saver'], `ffmpeg:${source}#video=h264#width=320`]
+		[profiles.balanced, `ffmpeg:${source}#video=h264#width=640#height=-2`],
+		[profiles['data-saver'], `ffmpeg:${source}#video=h264#width=320#height=-2`]
 	];
 }
