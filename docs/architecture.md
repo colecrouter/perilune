@@ -1840,3 +1840,14 @@ text, sensor reading and dark destination/teal contrast without changing control
 lifecycle or reconnect presentation. Existing state-specific component/smoke tests
 remain the evidence for drafts, permission gates and failed/unknown recovery;
 manual assistive-technology and device acceptance are not replaced by automation.
+
+Push transport migration (unreleased, #91): exact web-push-browser 1.4.2 replaces
+web-push without changing raw VAPID scalar/public-point storage or subscriptions.
+A server adapter imports existing keys via JWK, maps HTTP statuses to sanitized
+errors, disposes responses and propagates Effect cancellation with an eight-second
+abort. The pinned pnpm patch preserves HTTPS/mailto subjects, passes AbortSignal,
+disables redirect following and writes the AES128GCM record size in network order.
+Tests independently verify JWT signatures and decrypt wire records with Node crypto;
+actual phone/provider delivery remains coordinated acceptance rather than a mock
+success claim. Notification deduplication, epochs, payload privacy and SQL ownership
+remain unchanged.

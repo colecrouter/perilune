@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import webpush from 'web-push';
+import { generatePushKeys, sendPush, type PushSubscription } from './push-transport.js';
 import {
 	Context,
 	Data,
@@ -46,9 +46,10 @@ export class NotificationSettings extends Context.Service<
 		origin: string;
 		valid: (actor: PushActor) => boolean;
 		send?: (
-			subscription: webpush.PushSubscription,
+			subscription: PushSubscription,
 			payload: string,
-			keys: { publicKey: string; privateKey: string }
+			keys: { publicKey: string; privateKey: string },
+			signal?: AbortSignal
 		) => Promise<unknown>;
 	}
 >()('perilune/NotificationSettings') {}
@@ -64,9 +65,9 @@ export class NotificationService extends Context.Service<
 	}
 >()('perilune/NotificationService') {}
 /** Endpoints are untrusted browser input. Never permit arbitrary outbound hosts/ports. */
-export function checkPushSubscription(value: unknown): webpush.PushSubscription {
+export function checkPushSubscription(value: unknown): PushSubscription {
 	if (!value || typeof value !== 'object') throw failure('Invalid push subscription.');
-	const s = value as webpush.PushSubscription;
+	const s = value as PushSubscription;
 	const url = new URL(s.endpoint);
 	const allowed =
 		url.hostname === 'fcm.googleapis.com' ||
@@ -98,7 +99,7 @@ export const NotificationServiceLive = Layer.effect(
 		const settings = yield* NotificationSettings;
 		const printer = yield* PrinterService;
 		const camera = yield* CameraService;
-		const generated = webpush.generateVAPIDKeys();
+		const generated = yield* Effect.promise(generatePushKeys);
 		yield* sql`INSERT OR IGNORE INTO push_keys VALUES (1,${generated.publicKey},${generated.privateKey})`;
 		const [stored] = yield* sql<{
 			public_key: string;
@@ -107,13 +108,8 @@ export const NotificationServiceLive = Layer.effect(
 		const keys = { publicKey: stored!.public_key, privateKey: stored!.private_key };
 		const send =
 			settings.send ??
-			((subscription, payload, vapid) =>
-				webpush.sendNotification(subscription, payload, {
-					vapidDetails: { subject: settings.origin, ...vapid },
-					TTL: 300,
-					timeout: 8000,
-					urgency: 'normal'
-				}));
+			((subscription, payload, vapid, signal) =>
+				sendPush(subscription, payload, vapid, settings.origin, signal));
 		const lock = yield* Semaphore.make(1);
 		const authorize = (actor: PushActor) => {
 			if (!settings.valid(actor)) throw failure('Please sign in again.');
@@ -183,8 +179,13 @@ export const NotificationServiceLive = Layer.effect(
 
 				if (!settings.valid(actor)) return;
 				yield* Effect.tryPromise({
-					try: () =>
-						send(JSON.parse(device.subscription), JSON.stringify({ ...notice, image }), keys),
+					try: (signal) =>
+						send(
+							JSON.parse(device.subscription),
+							JSON.stringify({ ...notice, image }),
+							keys,
+							signal
+						),
 					catch: (cause) => failure('Push delivery failed.', cause)
 				}).pipe(
 					Effect.catch((cause) =>

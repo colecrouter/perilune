@@ -40,3 +40,20 @@ for the shared components and desktop/phone measurement checks.
 The preferences ORM pilot uses the existing Effect SQLite client and migrator.
 See [persistence.md](persistence.md) before adding another migrated store; native
 transaction context and authentication reservations are part of its contract.
+
+### Push sender patch (unreleased)
+
+`web-push-browser@1.4.2` is pinned and patched through pnpm, including production
+installs. The patch adds HTTPS/mailto VAPID subject passthrough, AbortSignal and
+manual redirects, and fixes the 4096-byte AES128GCM record-size field to network byte
+order. Remove individual hunks only after an upstream release contains equivalent
+behavior and the transport regressions pass. No Node package internals are imported
+through unsupported export paths. The adapter keeps the existing raw VAPID private
+scalar rather than adopting the library's PKCS8 serialization.
+
+Run `pnpm exec vp test run src/lib/server/push-transport.test.ts
+src/lib/server/notification-service.test.ts` for protocol/ownership coverage. The
+wire decoder uses Node crypto independently of the replacement's encryption code;
+see [RFC 8188](https://www.rfc-editor.org/rfc/rfc8188.html) and
+[RFC 8291](https://www.rfc-editor.org/rfc/rfc8291.html). Use synthetic subscriptions
+only in automation; real-device notification acceptance remains separate.

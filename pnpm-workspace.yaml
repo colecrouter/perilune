@@ -18,3 +18,4 @@ allowBuilds:
   core-js: false
 patchedDependencies:
   '@sveltejs/kit@3.0.1': patches/@sveltejs__kit@3.0.1.patch
+  web-push-browser@1.4.2: patches/web-push-browser@1.4.2.patch
