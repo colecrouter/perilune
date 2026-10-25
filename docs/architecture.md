@@ -1859,3 +1859,11 @@ fresh candidate enrollment/backup and exact settings, push identity and complete
 unknown receipt retention across previous-tag upgrade and matching-backup rollback.
 The beta ledger records pending owner decisions; package version, publication and
 final evidence remain deferred until accepted visual changes are included.
+
+Approved lunar/motion pass (unreleased, #81/#8): SettingSwitch retains a native
+checkbox input with switch semantics, labelled state, keyboard/form/fieldset
+behavior and a decorative cratered thumb. It replaces on/off display, console and
+notification settings only; selections and explicit safety acknowledgements stay
+checkboxes. CSS document-entry/menu opacity effects honor reduced motion and add
+no JS navigation, exit delay, ongoing numeric motion or telemetry remount. The
+static empty-library orbit is masked beneath a unique full-disk SVG mask.

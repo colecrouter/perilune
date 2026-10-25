@@ -92,6 +92,27 @@ try {
 		if (result.violations.length) violations.push({ label, violations: result.violations });
 		scans++;
 	}
+	// Document-entry motion must not replay when simulator telemetry changes.
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	await page.goto(base);
+	const frame = page.locator('.page-frame');
+	assert.equal(await frame.evaluate((node) => getComputedStyle(node).animationName), 'page-arrive');
+	await page.waitForFunction(
+		() => document.querySelector('.page-frame').getAnimations().length === 0
+	);
+	await frame.evaluate((node) => {
+		node.dataset.motionFixture = 'retained';
+		window.telemetryAnimationStarts = 0;
+		node.addEventListener('animationstart', () => window.telemetryAnimationStarts++);
+	});
+	await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
+	await page.getByRole('button', { name: 'Reconnect', exact: true }).waitFor();
+	assert.equal(await frame.getAttribute('data-motion-fixture'), 'retained');
+	assert.equal(await page.evaluate(() => window.telemetryAnimationStarts), 0);
+	await page.getByRole('button', { name: 'Reconnect', exact: true }).click();
+	await page.getByRole('button', { name: 'Disconnect', exact: true }).waitFor();
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	assert.equal(await frame.evaluate((node) => getComputedStyle(node).animationName), 'none');
 	for (const colorScheme of ['light', 'dark']) {
 		await page.emulateMedia({ colorScheme });
 		for (const width of [1440, 700, 390, 320]) {
@@ -168,6 +189,10 @@ try {
 	);
 	await page.keyboard.press('ArrowUp');
 	await page.waitForFunction((first) => document.activeElement?.textContent === first, firstItem);
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	assert.equal(await menu.evaluate((node) => getComputedStyle(node).animationName), 'menu-arrive');
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	assert.equal(await menu.evaluate((node) => getComputedStyle(node).animationName), 'none');
 	await audit('dark/320/navigation-menu');
 	await page.keyboard.press('Escape');
 	await page.waitForFunction(() => document.activeElement?.textContent?.includes('More'));

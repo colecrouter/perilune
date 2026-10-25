@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SettingSwitch from './SettingSwitch.svelte';
 	import FeedbackRegion from './FeedbackRegion.svelte';
 	import { canReviewPrinterLock } from '#lib/domain/printer-locks.js';
 	import { page } from '$app/state';
@@ -258,8 +259,7 @@
 			/></label
 		>
 		<label class="check"
-			><input
-				type="checkbox"
+			><SettingSwitch
 				bind:checked={showInternal}
 				onchange={(event) =>
 					preferences?.update({ consoleShowInternal: event.currentTarget.checked })}
@@ -327,16 +327,14 @@
 						><option value="commands">Submitted commands</option></select
 					></label
 				><label class="check"
-					><input
-						type="checkbox"
+					><SettingSwitch
 						bind:checked={follow}
 						onchange={(event) =>
 							preferences?.update({ consoleFollow: event.currentTarget.checked })}
 					/>Follow latest</label
 				>
 				<label class="check"
-					><input
-						type="checkbox"
+					><SettingSwitch
 						bind:checked={compact}
 						onchange={(event) =>
 							preferences?.update({ consoleCompact: event.currentTarget.checked })}
@@ -554,11 +552,6 @@
 		align-items: center;
 		min-height: 44px;
 		font-size: 0.85rem;
-	}
-	.check input {
-		width: 18px;
-		height: 18px;
-		accent-color: var(--accent);
 	}
 	input[type='search'],
 	textarea,

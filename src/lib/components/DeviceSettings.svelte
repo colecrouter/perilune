@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SettingSwitch from './SettingSwitch.svelte';
 	import { onMount } from 'svelte';
 	import { getNotificationKey, manageNotifications } from '../../routes/device.remote.js';
 	const notificationKey = await getNotificationKey();
@@ -179,31 +180,28 @@
 					integrations. Unattributed prints are skipped.
 				</p>
 				<label
-					><input type="checkbox" bind:checked={preferences.allPrints} />Include prints started by
-					anyone</label
+					><SettingSwitch bind:checked={preferences.allPrints} />Include prints started by anyone</label
 				>
 				<label
-					><input type="checkbox" bind:checked={preferences.sharedErrors} />Include printer errors
-					when I have no active print</label
+					><SettingSwitch bind:checked={preferences.sharedErrors} />Include printer errors when I
+					have no active print</label
 				>
 				<label
-					><input type="checkbox" bind:checked={preferences.paused} />Paused prints · may need
-					filament or attention</label
+					><SettingSwitch bind:checked={preferences.paused} />Paused prints · may need filament or
+					attention</label
 				>
-				<label><input type="checkbox" bind:checked={preferences.complete} />Completed prints</label>
-				<label><input type="checkbox" bind:checked={preferences.failed} />Failed prints</label>
+				<label><SettingSwitch bind:checked={preferences.complete} />Completed prints</label>
+				<label><SettingSwitch bind:checked={preferences.failed} />Failed prints</label>
+				<label><SettingSwitch bind:checked={preferences.printerError} />Printer errors</label>
 				<label
-					><input type="checkbox" bind:checked={preferences.printerError} />Printer errors</label
-				>
-				<label
-					><input type="checkbox" bind:checked={preferences.snapshot} />Include a camera snapshot
-					when available</label
+					><SettingSwitch bind:checked={preferences.snapshot} />Include a camera snapshot when
+					available</label
 				>
 				<p class="help">
 					Notifications use generic text. Snapshots may appear on your lock screen on supported
 					devices; private images expire after five minutes.
 				</p>
-				<label><input type="checkbox" bind:checked={preferences.quiet} />Quiet hours</label>
+				<label><SettingSwitch bind:checked={preferences.quiet} />Quiet hours</label>
 				{#if preferences.quiet}<div class="quiet">
 						<label>From<input type="time" bind:value={preferences.quietStart} /></label><label
 							>Until<input type="time" bind:value={preferences.quietEnd} /></label
@@ -308,11 +306,6 @@
 		align-items: center;
 		gap: 0.7rem;
 		min-height: 44px;
-	}
-	input[type='checkbox'] {
-		width: 20px;
-		height: 20px;
-		accent-color: var(--accent);
 	}
 	.quiet {
 		display: flex;

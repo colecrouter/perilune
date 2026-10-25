@@ -1159,3 +1159,30 @@ button[aria-busy='true'] {
 .page-frame > h1 {
 	margin-bottom: 0.5rem;
 }
+
+/* Document entry only: incoming telemetry never remounts these frames. */
+@media (prefers-reduced-motion: no-preference) {
+	.page-frame,
+	.entry-card {
+		animation: page-arrive 120ms ease-out;
+	}
+	[role='menu'][data-state='open'] {
+		animation: menu-arrive 100ms ease-out;
+	}
+	@keyframes page-arrive {
+		from {
+			opacity: 0.85;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+	@keyframes menu-arrive {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+}

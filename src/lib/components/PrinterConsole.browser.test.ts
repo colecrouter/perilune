@@ -147,7 +147,7 @@ test('response groups expand to original samples and can be disabled', async () 
 	await screen.getByText('Temperature updates · 2 messages').click();
 	await expect.element(screen.getByText('B:25 /0 T0:26 /0', { exact: true })).toBeVisible();
 	await screen.getByText('History display', { exact: true }).click();
-	await screen.getByRole('checkbox', { name: 'Group repeated responses' }).click();
+	await screen.getByRole('switch', { name: 'Group repeated responses' }).click();
 	await expect
 		.element(screen.getByText('Temperature updates · 2 messages'))
 		.not.toBeInTheDocument();
@@ -188,7 +188,7 @@ test('expanding a response group pauses following and revision-only updates pres
 	});
 	await screen.getByText('Temperature updates · 100 messages').click();
 	await screen.getByText('History display', { exact: true }).click();
-	await expect.element(screen.getByRole('checkbox', { name: 'Follow latest' })).not.toBeChecked();
+	await expect.element(screen.getByRole('switch', { name: 'Follow latest' })).not.toBeChecked();
 	const log = screen.container.querySelector('.log') as HTMLElement;
 	log.scrollTop = 150;
 	log.dispatchEvent(new Event('scroll'));

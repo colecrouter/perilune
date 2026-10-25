@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SettingSwitch from './SettingSwitch.svelte';
 	import { preferencesContext } from '#lib/client/preferences.svelte.js';
 	const preferences = preferencesContext();
 </script>
@@ -11,8 +12,7 @@
 			Perilune. Notification permissions remain specific to each device.
 		</p>
 		<label
-			><input
-				type="checkbox"
+			><SettingSwitch
 				checked={preferences.values.serif}
 				onchange={(event) => preferences.update({ serif: event.currentTarget.checked })}
 			/>Serif headings</label
