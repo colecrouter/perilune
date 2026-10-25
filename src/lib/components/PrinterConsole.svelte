@@ -135,18 +135,40 @@
 			)
 			.join('\n')
 	);
+	let positionedLog: HTMLDivElement | null = null;
+	let scrollingToLatest = false;
+	let followFrame: number | null = null;
 	$effect(() => {
 		void activity;
 		if (!follow || !log) return;
 		const element = log;
-		const frame = requestAnimationFrame(() => {
-			if (follow && log === element) element.scrollTop = element.scrollHeight;
-		});
-		return () => cancelAnimationFrame(frame);
+		const animate =
+			positionedLog === element && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+		const from = element.scrollTop;
+		const started = performance.now();
+		const advance = (now: number) => {
+			followFrame = null;
+			if (!follow || log !== element) return;
+			positionedLog = element;
+			const target = Math.max(0, element.scrollHeight - element.clientHeight);
+			const progress = animate ? Math.min(1, (now - started) / 180) : 1;
+			scrollingToLatest = progress < 1;
+			element.scrollTop = from + (target - from) * (1 - (1 - progress) ** 3);
+			if (progress < 1) followFrame = requestAnimationFrame(advance);
+		};
+		followFrame = requestAnimationFrame(advance);
+		return () => {
+			if (followFrame !== null) cancelAnimationFrame(followFrame);
+			followFrame = null;
+		};
 	});
 	function pauseFollowing() {
 		follow = false;
+		scrollingToLatest = false;
+		if (followFrame !== null) cancelAnimationFrame(followFrame);
+		followFrame = null;
 	}
+
 	function collapseGroup(event: MouseEvent) {
 		const details = (event.currentTarget as HTMLElement).closest('details');
 		if (!details || !log) return;
@@ -329,8 +351,10 @@
 				><label class="check"
 					><SettingSwitch
 						bind:checked={follow}
-						onchange={(event) =>
-							preferences?.update({ consoleFollow: event.currentTarget.checked })}
+						onchange={(event) => {
+							if (!event.currentTarget.checked) pauseFollowing();
+							preferences?.update({ consoleFollow: event.currentTarget.checked });
+						}}
 					/>Follow latest</label
 				>
 				<label class="check"
@@ -342,15 +366,25 @@
 				>
 			</div>
 		</details>
-		<!-- svelte-ignore a11y_no_noninteractive_tabindex (Keyboard users must be able to focus and scroll retained output.) -->
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions (Readers can focus output and interrupt automatic scrolling with keyboard, touch or pointer.) -->
 		<div
 			class="log"
 			bind:this={log}
 			role="region"
 			aria-label="Console history"
 			tabindex="0"
+			onwheel={pauseFollowing}
+			ontouchstart={pauseFollowing}
+			onpointerdown={pauseFollowing}
+			onkeydown={(event) => {
+				if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key))
+					pauseFollowing();
+			}}
 			onscroll={() => {
-				if (log && log.scrollHeight - log.scrollTop - log.clientHeight > 48) pauseFollowing();
+				if (!log) return;
+				const remaining = log.scrollHeight - log.scrollTop - log.clientHeight;
+				if (remaining <= 1) scrollingToLatest = false;
+				else if (!scrollingToLatest && remaining > 48) pauseFollowing();
 			}}
 		>
 			{#each groups as group (group.id)}{@const line = group.latest}

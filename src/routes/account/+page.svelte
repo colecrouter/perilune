@@ -144,180 +144,191 @@
 				>
 			{/each}
 		</nav>
-		{#if data.section === 'preferences'}
-			<DisplayPreferences />
-		{:else if data.section === 'notifications'}
-			<DeviceSettings />
-		{:else if data.section === 'integrations'}
-			<Integrations canOperate={data.user?.role === 'owner' || data.user?.role === 'operator'} />
-		{:else}
-			<section class="account-card" aria-labelledby="secure-access">
-				<h2 id="secure-access">Secure access</h2>
-				<p>Use your device’s fingerprint, face recognition, or security key to sign in.</p>
-				<div class="actions">
-					<button class="button primary" onclick={addPasskey} disabled={pending.security}
-						>Add a passkey</button
-					><button class="button secondary" onclick={logout} disabled={pending.security}
-						>Sign out</button
-					>
-				</div>
-				{#if messages.security}<p class="feedback" role="status">{messages.security}</p>{/if}
-			</section>
-			<section class="account-card" aria-labelledby="recovery-heading">
-				<h2 id="recovery-heading">Account recovery</h2>
-				<p>
-					{recovery.email} · {recovery.verified
-						? 'Verified recovery address'
-						: 'Not verified for recovery'}
-				</p>
-				{#if recovery.enabled}<p>
-						Password resets sign out browser sessions. Passkeys, slicer keys and notification
-						registrations stay in place. Verify your email before relying on this recovery method.
-					</p>
-					<div class="actions">
-						{#if !recovery.verified}<button
-								class="button primary"
-								disabled={pending.recovery}
-								onclick={() => recoveryAction('request-verification')}>Verify recovery email</button
-							>{/if}{#if data.user?.role === 'owner'}<button
-								class="button secondary"
-								disabled={pending.recovery}
-								onclick={() => recoveryAction('test')}>Send test email</button
-							>{/if}<button class="button secondary" disabled={pending.recovery} onclick={load}
-							>Refresh email status</button
-						>
-					</div>
-					{#each recovery.deliveries as mail}<p class="help">
-							{String(mail.kind)} · {mail.status === 'sent'
-								? 'Accepted by mail server'
-								: mail.status === 'unknown'
-									? 'Send outcome unknown; no automatic retry'
-									: String(mail.status)} · {new Date(Number(mail.created)).toLocaleString()}
-						</p>{/each}
-				{:else}<p>
-						Email is not configured. Keep a working password or passkey, or use another signed-in
-						browser to pair. The host can perform emergency recovery from the server.
-					</p>
-					{#if data.user?.role === 'owner'}<p class="help">
-							To enable email, configure SMTP on the server. <a href="/help#account-email"
-								>Email setup instructions</a
+		{#key data.section}
+			<div class="account-panel">
+				{#if data.section === 'preferences'}
+					<DisplayPreferences />
+				{:else if data.section === 'notifications'}
+					<DeviceSettings />
+				{:else if data.section === 'integrations'}
+					<Integrations
+						canOperate={data.user?.role === 'owner' || data.user?.role === 'operator'}
+					/>
+				{:else}
+					<section class="account-card" aria-labelledby="secure-access">
+						<h2 id="secure-access">Secure access</h2>
+						<p>Use your device’s fingerprint, face recognition, or security key to sign in.</p>
+						<div class="actions">
+							<button class="button primary" onclick={addPasskey} disabled={pending.security}
+								>Add a passkey</button
+							><button class="button secondary" onclick={logout} disabled={pending.security}
+								>Sign out</button
 							>
-						</p>{/if}{/if}
-				{#if messages.recovery}<p role="status">{messages.recovery}</p>{/if}
-			</section>
-			{#if data.user?.role === 'owner'}
-				<section class="account-card" aria-labelledby="invite-heading">
-					<h2 id="invite-heading">Invite someone</h2>
-					{#if recovery.enabled}
-						<label class="email-option">
-							<input type="checkbox" bind:checked={sendEmail} />
-							Send by email
-						</label>
+						</div>
+						{#if messages.security}<p class="feedback" role="status">{messages.security}</p>{/if}
+					</section>
+					<section class="account-card" aria-labelledby="recovery-heading">
+						<h2 id="recovery-heading">Account recovery</h2>
+						<p>
+							{recovery.email} · {recovery.verified
+								? 'Verified recovery address'
+								: 'Not verified for recovery'}
+						</p>
+						{#if recovery.enabled}<p>
+								Password resets sign out browser sessions. Passkeys, slicer keys and notification
+								registrations stay in place. Verify your email before relying on this recovery
+								method.
+							</p>
+							<div class="actions">
+								{#if !recovery.verified}<button
+										class="button primary"
+										disabled={pending.recovery}
+										onclick={() => recoveryAction('request-verification')}
+										>Verify recovery email</button
+									>{/if}{#if data.user?.role === 'owner'}<button
+										class="button secondary"
+										disabled={pending.recovery}
+										onclick={() => recoveryAction('test')}>Send test email</button
+									>{/if}<button class="button secondary" disabled={pending.recovery} onclick={load}
+									>Refresh email status</button
+								>
+							</div>
+							{#each recovery.deliveries as mail}<p class="help">
+									{String(mail.kind)} · {mail.status === 'sent'
+										? 'Accepted by mail server'
+										: mail.status === 'unknown'
+											? 'Send outcome unknown; no automatic retry'
+											: String(mail.status)} · {new Date(Number(mail.created)).toLocaleString()}
+								</p>{/each}
+						{:else}<p>
+								Email is not configured. Keep a working password or passkey, or use another
+								signed-in browser to pair. The host can perform emergency recovery from the server.
+							</p>
+							{#if data.user?.role === 'owner'}<p class="help">
+									To enable email, configure SMTP on the server. <a href="/help#account-email"
+										>Email setup instructions</a
+									>
+								</p>{/if}{/if}
+						{#if messages.recovery}<p role="status">{messages.recovery}</p>{/if}
+					</section>
+					{#if data.user?.role === 'owner'}
+						<section class="account-card" aria-labelledby="invite-heading">
+							<h2 id="invite-heading">Invite someone</h2>
+							{#if recovery.enabled}
+								<label class="email-option">
+									<input type="checkbox" bind:checked={sendEmail} />
+									Send by email
+								</label>
+							{/if}
+							<div class="invite-form">
+								{#if recovery.enabled && sendEmail}
+									<label class="recipient-field">
+										Recipient email
+										<input type="email" bind:value={inviteEmail} maxlength="254" required />
+									</label>
+								{/if}
+								<label
+									>Access<select bind:value={role}
+										><option value="viewer">Viewer</option><option value="operator">Operator</option
+										><option value="owner">Owner</option></select
+									></label
+								><button
+									class="button primary"
+									disabled={pending.invite ||
+										(sendEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail.trim()))}
+									onclick={() =>
+										action(
+											'invite',
+											{ role, email: sendEmail ? inviteEmail : undefined },
+											'invite'
+										)}>{pending.invite ? 'Creating…' : 'Create invitation'}</button
+								>
+							</div>
+							<p class="help">
+								{role === 'viewer'
+									? 'Viewers can watch status and the camera.'
+									: role === 'operator'
+										? 'Operators can also use printer controls.'
+										: 'Owners can also manage accounts and invitations.'}
+							</p>
+							{#if link}<div class="invite-link">
+									<label
+										>Single-use link · expires in 24 hours<input
+											readonly
+											value={link}
+											onclick={(event) => event.currentTarget.select()}
+										/></label
+									><button class="button secondary" onclick={copyInvitation}>Copy link</button>
+								</div>{/if}
+							{#if messages.invite}<p class="feedback" role="status">{messages.invite}</p>{/if}
+						</section>
+						{#if messages.people}<div class="account-card" role="status">
+								<p>{messages.people}</p>
+								<button class="button secondary" onclick={load}>Retry loading accounts</button>
+							</div>{/if}
+						<section class="account-card" aria-labelledby="accounts-heading">
+							<h2 id="accounts-heading">Accounts</h2>
+							{#if messages.accountsResult}<p class="feedback" role="status">
+									{messages.accountsResult}
+								</p>{/if}
+							{#if !loaded && !messages.people}<p role="status">Loading accounts…</p>{/if}
+							{#each accounts as account}<div class="crew-row">
+									<div>
+										<strong>{account.name}</strong><small>{account.email} · {account.role}</small
+										>{#if messages[account.id]}<p class="feedback" role="status">
+												{messages[account.id]}
+											</p>{/if}
+									</div>
+									{#if account.role !== 'owner'}<button
+											class="button secondary"
+											onclick={() => (resetTarget = account)}
+											aria-label={`Reset password for ${account.name}`}>Reset password…</button
+										>{/if}
+									{#if account.id !== data.user.id}<button
+											class="button danger-outline"
+											disabled={pending[account.id]}
+											onclick={() => action('revoke-account', { id: account.id }, account.id)}
+											>Revoke access</button
+										>{/if}
+								</div>{/each}
+						</section>
+						<OwnerPasswordReset bind:target={resetTarget} />
+						<section class="account-card" aria-labelledby="invitations-heading">
+							<h2 id="invitations-heading">Invitations</h2>
+							{#if messages.invitationsResult}<p class="feedback" role="status">
+									{messages.invitationsResult}
+								</p>{/if}
+							{#each invitations as invite}<div class="crew-row">
+									<div>
+										<strong
+											>{invite.role} · {invite.revoked
+												? 'Revoked'
+												: invite.claimed
+													? 'Used'
+													: invite.expires <= Date.now()
+														? 'Expired'
+														: 'Ready'}</strong
+										>{#if invite.email}<small>{invite.email}</small>{/if}<small
+											>Expires {new Date(invite.expires).toLocaleString()}</small
+										>{#if messages[invite.hash]}<p class="feedback" role="status">
+												{messages[invite.hash]}
+											</p>{/if}
+									</div>
+									<button
+										class="button danger-outline"
+										disabled={pending[invite.hash] ||
+											!!invite.revoked ||
+											!!invite.claimed ||
+											invite.expires <= Date.now()}
+										onclick={() => action('revoke-invite', { hash: invite.hash }, invite.hash)}
+										>Revoke invitation</button
+									>
+								</div>{:else}{#if loaded}<p class="help">No outstanding invitations.</p>{/if}{/each}
+						</section>
 					{/if}
-					<div class="invite-form">
-						{#if recovery.enabled && sendEmail}
-							<label class="recipient-field">
-								Recipient email
-								<input type="email" bind:value={inviteEmail} maxlength="254" required />
-							</label>
-						{/if}
-						<label
-							>Access<select bind:value={role}
-								><option value="viewer">Viewer</option><option value="operator">Operator</option
-								><option value="owner">Owner</option></select
-							></label
-						><button
-							class="button primary"
-							disabled={pending.invite ||
-								(sendEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail.trim()))}
-							onclick={() =>
-								action('invite', { role, email: sendEmail ? inviteEmail : undefined }, 'invite')}
-							>{pending.invite ? 'Creating…' : 'Create invitation'}</button
-						>
-					</div>
-					<p class="help">
-						{role === 'viewer'
-							? 'Viewers can watch status and the camera.'
-							: role === 'operator'
-								? 'Operators can also use printer controls.'
-								: 'Owners can also manage accounts and invitations.'}
-					</p>
-					{#if link}<div class="invite-link">
-							<label
-								>Single-use link · expires in 24 hours<input
-									readonly
-									value={link}
-									onclick={(event) => event.currentTarget.select()}
-								/></label
-							><button class="button secondary" onclick={copyInvitation}>Copy link</button>
-						</div>{/if}
-					{#if messages.invite}<p class="feedback" role="status">{messages.invite}</p>{/if}
-				</section>
-				{#if messages.people}<div class="account-card" role="status">
-						<p>{messages.people}</p>
-						<button class="button secondary" onclick={load}>Retry loading accounts</button>
-					</div>{/if}
-				<section class="account-card" aria-labelledby="accounts-heading">
-					<h2 id="accounts-heading">Accounts</h2>
-					{#if messages.accountsResult}<p class="feedback" role="status">
-							{messages.accountsResult}
-						</p>{/if}
-					{#if !loaded && !messages.people}<p role="status">Loading accounts…</p>{/if}
-					{#each accounts as account}<div class="crew-row">
-							<div>
-								<strong>{account.name}</strong><small>{account.email} · {account.role}</small
-								>{#if messages[account.id]}<p class="feedback" role="status">
-										{messages[account.id]}
-									</p>{/if}
-							</div>
-							{#if account.role !== 'owner'}<button
-									class="button secondary"
-									onclick={() => (resetTarget = account)}
-									aria-label={`Reset password for ${account.name}`}>Reset password…</button
-								>{/if}
-							{#if account.id !== data.user.id}<button
-									class="button danger-outline"
-									disabled={pending[account.id]}
-									onclick={() => action('revoke-account', { id: account.id }, account.id)}
-									>Revoke access</button
-								>{/if}
-						</div>{/each}
-				</section>
-				<OwnerPasswordReset bind:target={resetTarget} />
-				<section class="account-card" aria-labelledby="invitations-heading">
-					<h2 id="invitations-heading">Invitations</h2>
-					{#if messages.invitationsResult}<p class="feedback" role="status">
-							{messages.invitationsResult}
-						</p>{/if}
-					{#each invitations as invite}<div class="crew-row">
-							<div>
-								<strong
-									>{invite.role} · {invite.revoked
-										? 'Revoked'
-										: invite.claimed
-											? 'Used'
-											: invite.expires <= Date.now()
-												? 'Expired'
-												: 'Ready'}</strong
-								>{#if invite.email}<small>{invite.email}</small>{/if}<small
-									>Expires {new Date(invite.expires).toLocaleString()}</small
-								>{#if messages[invite.hash]}<p class="feedback" role="status">
-										{messages[invite.hash]}
-									</p>{/if}
-							</div>
-							<button
-								class="button danger-outline"
-								disabled={pending[invite.hash] ||
-									!!invite.revoked ||
-									!!invite.claimed ||
-									invite.expires <= Date.now()}
-								onclick={() => action('revoke-invite', { hash: invite.hash }, invite.hash)}
-								>Revoke invitation</button
-							>
-						</div>{:else}{#if loaded}<p class="help">No outstanding invitations.</p>{/if}{/each}
-				</section>
-			{/if}
-		{/if}
+				{/if}
+			</div>
+		{/key}
 	</div>
 </AppShell>
 
@@ -351,6 +362,25 @@
 		color: var(--muted);
 		font-size: 0.875rem;
 		background: transparent;
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		.account-tab {
+			transition:
+				background-color 160ms ease,
+				color 160ms ease,
+				border-color 160ms ease;
+		}
+		.account-panel {
+			animation: account-section-arrive 160ms ease-out;
+		}
+	}
+	@keyframes account-section-arrive {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
 	}
 	.account-tab:hover {
 		background: var(--surface);

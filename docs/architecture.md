@@ -1888,3 +1888,8 @@ would otherwise produce an odd height at 640 or 320 pixels wide.
 Page frames (unreleased) default to a centered 76rem maximum including gutters.
 Configuration and Jobs opt into the shared 100rem wide variant for editing and
 file tables. Individual reading measures remain bounded inside the outer frame.
+
+Account/console motion (unreleased): URL-driven Account sections have a short CSS
+opacity entry transition. Console following uses a component-owned cancellable
+180ms scroll animation after its initial position; reader input cancels it and
+preserves the reading position. Reduced motion keeps immediate presentation.

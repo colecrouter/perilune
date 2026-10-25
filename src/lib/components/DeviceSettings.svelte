@@ -263,6 +263,7 @@
 		margin: 1.5rem 0;
 	}
 	.heading {
+		margin-bottom: 1.25rem;
 		display: flex;
 		align-items: center;
 		gap: 1rem;
@@ -282,6 +283,9 @@
 	}
 	p {
 		line-height: 1.6;
+	}
+	.device-card > p {
+		margin-block: 0.75rem 1rem;
 	}
 	.help {
 		font-size: 0.85rem;

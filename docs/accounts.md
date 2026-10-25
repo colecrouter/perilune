@@ -49,3 +49,7 @@ links. With JavaScript they use SvelteKit client navigation; refresh and history
 still select the section from the URL, and direct links work without JavaScript.
 The global full-reload override has been removed. Authentication completion and
 sign-out still replace the document to establish the correct session boundary.
+
+Account polish (unreleased): section changes use a short opacity fade and tab
+colors transition without delaying navigation. Install instructions and actions
+have additional spacing. Reduced-motion preferences disable these animations.
