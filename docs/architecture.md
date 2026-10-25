@@ -1822,3 +1822,12 @@ No additional connection, query caching or ORM migration runner is introduced.
 Authentication retains its current dialect and shared writer reservation.
 See [persistence.md](persistence.md) for the approved boundary, acceptance and
 remaining migration scope; issue #90 remains open for the other stores.
+
+Filament settings persistence (unreleased, #164/#165): native Drizzle queries use
+that same process client and preserve migration 023's JSON/revision format.
+Revision-zero inserts refuse existing rows; updates require the matching SQL
+revision and increment it atomically. The existing transaction and explicit
+reservation/session lock query retain workflow ownership checks. No printer
+commands, schema changes or authentication changes are introduced. The remaining
+store inventory in persistence.md defines later reviewed batches; a complete ORM
+conversion is not a beta prerequisite.
