@@ -264,3 +264,94 @@ test('history commands recall exact multiline drafts by click or keyboard withou
 	await screen.getByRole('button', { name: 'Send command', exact: true }).click();
 	expect(onSubmit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ script }));
 });
+
+test.each([
+	{ reduced: false, interrupt: 'wheel' },
+	{ reduced: false, interrupt: 'switch' },
+	{ reduced: true, interrupt: 'wheel' }
+])(
+	'new output follows without pausing itself and reader input interrupts (%j)',
+	async ({ reduced, interrupt }) => {
+		const media = vi
+			.spyOn(window, 'matchMedia')
+			.mockReturnValue({ matches: reduced } as MediaQueryList);
+		try {
+			const responses = Array.from({ length: 60 }, (_, i) => ({
+				id: `output-${i}`,
+				at: i,
+				kind: 'response' as const,
+				text: `Unique response ${i}`
+			}));
+			const screen = await render(PrinterConsole, {
+				snapshot: { ...initial, responses },
+				connected: true,
+				onSubmit: vi.fn(),
+				onFind: vi.fn(),
+				onPin: vi.fn()
+			});
+			const log = screen.getByRole('region', { name: 'Console history' }).element() as HTMLElement;
+			await expect.poll(() => log.scrollHeight - log.clientHeight - log.scrollTop).toBeLessThan(2);
+			const beforeFirst = log.scrollTop;
+			const next = [
+				...responses,
+				...Array.from({ length: 20 }, (_, i) => ({
+					id: `latest-${i}`,
+					at: 100 + i,
+					kind: 'response' as const,
+					text: `New output ${i}`
+				}))
+			];
+			await screen.rerender({ snapshot: { ...initial, responses: next } });
+			if (!reduced)
+				await expect
+					.poll(
+						() =>
+							log.scrollTop > beforeFirst &&
+							log.scrollHeight - log.clientHeight - log.scrollTop > 10,
+						{ interval: 10 }
+					)
+					.toBe(true);
+			await expect.poll(() => log.scrollHeight - log.clientHeight - log.scrollTop).toBeLessThan(2);
+			await screen.getByText('History display', { exact: true }).click();
+			await expect.element(screen.getByRole('switch', { name: 'Follow latest' })).toBeChecked();
+			if (!reduced) {
+				const before = log.scrollTop;
+				next.push(
+					...Array.from({ length: 50 }, (_, i) => ({
+						id: `burst-${i}`,
+						at: 200 + i,
+						kind: 'response' as const,
+						text: `Burst response ${i}`
+					}))
+				);
+				await screen.rerender({ snapshot: { ...initial, responses: [...next] } });
+				await expect
+					.poll(
+						() => log.scrollTop > before && log.scrollHeight - log.clientHeight - log.scrollTop > 50
+					)
+					.toBe(true);
+			}
+			if (interrupt === 'switch')
+				(
+					screen.getByRole('switch', { name: 'Follow latest' }).element() as HTMLInputElement
+				).click();
+			else log.dispatchEvent(new WheelEvent('wheel', { deltaY: -100 }));
+			log.scrollTop = 100;
+			await expect.element(screen.getByRole('switch', { name: 'Follow latest' })).not.toBeChecked();
+			await screen.rerender({
+				snapshot: {
+					...initial,
+					responses: [
+						...next,
+						{ id: 'after-pause', at: 999, kind: 'response', text: 'More output' }
+					]
+				}
+			});
+			// Let the original smooth animation's duration elapse to prove it was stopped.
+			await new Promise((resolve) => setTimeout(resolve, 650));
+			expect(log.scrollTop).toBe(100);
+		} finally {
+			media.mockRestore();
+		}
+	}
+);

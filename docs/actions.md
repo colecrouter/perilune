@@ -46,3 +46,7 @@ acknowledgement fails. The server omits resolved or acknowledged alerts from the
 initial page; there is no browser-storage dismissal after rendering. New failures
 still appear. Acknowledgement never clears a workflow lock or changes printer
 state.
+
+Console polish (unreleased): following new messages scrolls smoothly after the
+initial history position. Reader scrolling or navigation keys stop following;
+reduced-motion preferences keep immediate scrolling.
