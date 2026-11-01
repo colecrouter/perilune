@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import { isHttpError } from '@sveltejs/kit';
 	import { getIntegrations } from '../../routes/account/integrations.remote.js';
 	import { pairBrowser } from '../../routes/pairing.remote.js';
 	import MoonMark from './MoonMark.svelte';
@@ -11,6 +12,26 @@
 	let grant = $state<{ code: string; token: string; expires: number; url: string } | null>(null);
 	let message = $state('');
 	let pending = $state(false);
+	let cooldownUntil = $state(0);
+	let now = $state(Date.now());
+	const retrySeconds = $derived(Math.max(0, Math.ceil((cooldownUntil - now) / 1000)));
+	function failure(cause: unknown, fallback: string) {
+		if (isHttpError(cause)) {
+			if (cause.status === 429) {
+				message = '';
+				const seconds = cause.body.retryAfter;
+				now = Date.now();
+				cooldownUntil =
+					now +
+					(typeof seconds === 'number' && Number.isFinite(seconds)
+						? Math.max(1, Math.min(60, seconds))
+						: 60) *
+						1000;
+				return;
+			}
+			message = cause.body.message;
+		} else message = cause instanceof Error ? cause.message : fallback;
+	}
 	let hydrated = $state(false);
 	let inspectedCode = $state('');
 	let integrationId = $state('');
@@ -31,6 +52,7 @@
 	}
 
 	async function action(operation: string) {
+		if (pending || retrySeconds > 0 || controller.signal.aborted) return;
 		pending = true;
 		message = '';
 		try {
@@ -54,16 +76,19 @@
 						: 'Pairing denied.';
 			}
 		} catch (cause) {
-			message = cause instanceof Error ? cause.message : 'Pairing failed.';
+			failure(cause, 'Could not check pairing. Try again.');
 		} finally {
 			pending = false;
 		}
 	}
 	onMount(() => {
 		hydrated = true;
+		const clock = setInterval(() => {
+			now = Date.now();
+		}, 1000);
 		let polling = false;
 		const timer = setInterval(async () => {
-			if (!grant || polling || approve) return;
+			if (!grant || polling || approve || retrySeconds > 0) return;
 			if (Date.now() >= grant.expires) {
 				grant = null;
 				message = 'Pairing expired. Start again.';
@@ -77,8 +102,8 @@
 					location.assign('/');
 			} catch (cause) {
 				if (!controller.signal.aborted && grant === current) {
-					message = cause instanceof Error ? cause.message : 'Could not check pairing.';
-					grant = null;
+					failure(cause, 'Could not check pairing.');
+					if (!isHttpError(cause) || cause.status !== 429) grant = null;
 				}
 			} finally {
 				polling = false;
@@ -86,6 +111,7 @@
 		}, 3000);
 		return () => {
 			clearInterval(timer);
+			clearInterval(clock);
 			controller.abort();
 		};
 	});
@@ -112,15 +138,19 @@
 				>
 					<label
 						>Pairing code<input
-							disabled={!hydrated || pending}
+							disabled={!hydrated || pending || retrySeconds > 0}
 							bind:value={code}
 							autocomplete="off"
 							maxlength="11"
+							oninput={() => {
+								request = null;
+								inspectedCode = '';
+							}}
 							required
 						/></label
 					>
-					<button class="button primary" disabled={!hydrated || pending}
-						>{pending ? 'Checking…' : 'Check code'}</button
+					<button class="button primary" disabled={!hydrated || pending || retrySeconds > 0}
+						>Check code</button
 					>
 				</form>
 				{#if request}
@@ -130,7 +160,7 @@
 						{#if integrations.length}<label
 								>Link to an integration<select
 									aria-label="Link to an integration"
-									disabled={!hydrated || pending}
+									disabled={!hydrated || pending || retrySeconds > 0}
 									bind:value={integrationId}
 									><option value="">Standalone browser</option
 									>{#each integrations as integration}<option value={integration.id}
@@ -145,11 +175,11 @@
 						<div class="pair-actions">
 							<button
 								class="button primary"
-								disabled={!hydrated || pending}
+								disabled={!hydrated || pending || retrySeconds > 0}
 								onclick={() => action('approve')}>Approve browser</button
 							><button
 								class="button secondary"
-								disabled={!hydrated || pending}
+								disabled={!hydrated || pending || retrySeconds > 0}
 								onclick={() => action('deny')}>Deny</button
 							>
 						</div>
@@ -206,18 +236,27 @@
 			>
 				<label
 					>Browser name<input
-						disabled={!hydrated || pending}
+						disabled={!hydrated || pending || retrySeconds > 0}
 						bind:value={name}
 						maxlength="80"
 						required
 					/></label
 				>
-				<button class="button primary" disabled={!hydrated || pending}
-					>{pending ? 'Getting code…' : 'Get pairing code'}</button
+				<button class="button primary" disabled={!hydrated || pending || retrySeconds > 0}
+					>Get pairing code</button
 				>
 			</form>
 		{/if}
-		{#if message}<p class="pair-feedback" role="status">{message}</p>{/if}
+		<div
+			class="pair-feedback"
+			class:active={!!message || retrySeconds > 0}
+			role="status"
+			aria-live="polite"
+		>
+			{#if retrySeconds > 0}<p>
+					Too many pairing attempts. Try again in {retrySeconds}s.
+				</p>{:else if message}<p>{message}</p>{/if}
+		</div>
 	</div>
 </div>
 
@@ -226,7 +265,8 @@
 		min-height: 100svh;
 		padding: clamp(1rem, 5vh, 3rem) 1rem;
 		display: grid;
-		place-items: center;
+		align-items: start;
+		justify-items: center;
 		background: var(--rail);
 		position: relative;
 		isolation: isolate;
@@ -291,9 +331,18 @@
 		font-weight: 600;
 	}
 	.pair-feedback {
+		block-size: 5rem;
+		margin-top: 1rem;
+		overflow-y: auto;
+		background: transparent;
 		padding: 0.75rem;
-		background: var(--accent-soft);
 		border-radius: 8px;
+	}
+	.pair-feedback.active {
+		background: var(--accent-soft);
+	}
+	.pair-feedback p {
+		margin: 0;
 	}
 
 	h1 {

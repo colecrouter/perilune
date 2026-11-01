@@ -2,7 +2,10 @@
 // for information about these interfaces
 declare global {
 	namespace App {
-		// interface Error {}
+		interface Error {
+			message: string;
+			retryAfter?: number;
+		}
 		interface Locals {
 			identity?: import('./lib/server/auth/service.js').Identity | null;
 		}

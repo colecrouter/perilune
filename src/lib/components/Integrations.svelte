@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SlicerKeySecret from './SlicerKeySecret.svelte';
 	import { onMount } from 'svelte';
 	import {
 		getIntegrations,
@@ -12,7 +13,6 @@
 	let permission = $state('upload');
 	let expiry = $state('never');
 	let token = $state('');
-	let reveal = $state(false);
 	const integrations = getIntegrations();
 	const initial = await integrations;
 	let keys = $state(initial.keys);
@@ -51,7 +51,6 @@
 					...(expiry === 'never' ? {} : { expiresDays: Number(expiry) as 90 | 365 })
 				});
 				token = result.token;
-				reveal = false;
 				createMessage = 'Key created. Copy it before leaving this page.';
 			} else if (operation === 'key') {
 				await revokeSlicerKey(id!);
@@ -149,28 +148,12 @@
 		</form>
 		{#if createMessage}<p class="feedback" role="status">{createMessage}</p>{/if}
 		{#if token}
-			<div class="secret">
-				<p>Copy this key now. After leaving this page, create a replacement if you lose it.</p>
-				<input
-					type={reveal ? 'text' : 'password'}
-					value={token}
-					readonly
-					aria-label="New slicer key"
-					autocomplete="off"
-					spellcheck="false"
-				/>
-				<button class="button secondary" onclick={() => copy(token)}>Copy key</button><button
-					class="button secondary"
-					onclick={() => {
-						reveal = !reveal;
-					}}>{reveal ? 'Hide' : 'Reveal'} key</button
-				><button
-					class="button secondary"
-					onclick={() => {
-						token = '';
-					}}>Dismiss key</button
-				>
-			</div>
+			<SlicerKeySecret
+				value={token}
+				onDismiss={() => {
+					token = '';
+				}}
+			/>
 		{/if}
 		{#each keys as key (key.id)}
 			<div class="integration-row">
@@ -314,16 +297,6 @@
 	}
 	small {
 		color: var(--muted);
-	}
-	.secret {
-		margin: 1rem 0;
-		padding: 1rem;
-		background: var(--background);
-		border: 1px solid var(--border);
-		border-radius: 8px;
-	}
-	.secret input {
-		width: 100%;
 	}
 	code {
 		overflow-wrap: anywhere;
