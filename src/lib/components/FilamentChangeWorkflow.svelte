@@ -105,6 +105,7 @@
 	});
 	const pending = $derived(
 		uncertain ||
+			(active && session?.stage === 'waiting') ||
 			submitting ||
 			snapshot.actions.some((a) => a.status === 'queued' || a.status === 'sending')
 	);
@@ -175,7 +176,12 @@
 	}
 </script>
 
-<section class="panel workflow" aria-label="Filament change">
+<section
+	class="panel workflow"
+	aria-label="Filament change"
+	data-filament-step={session?.step}
+	data-filament-stage={session?.stage}
+>
 	<h2>{active ? 'Replace filament' : 'Filament change'}</h2>
 	{#if snapshot.mode === 'simulator'}<p>Connect a printer to use filament changes.</p>
 	{:else}
@@ -218,7 +224,7 @@
 					onclick={() => send('filamentChangeBegin')}>Begin filament change</button
 				>
 			{:else if session}
-				{#if owned && session.stage === 'paused' && session.slicerManaged}
+				{#if owned && ['paused', 'waiting'].includes(session.stage) && session.slicerManaged}
 					<details>
 						<summary>Manual extrusion (optional)</summary>
 						{#if !snapshot.liveFilament}<p>Manual extrusion is not enabled on this server.</p>

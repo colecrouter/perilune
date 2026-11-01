@@ -30,3 +30,11 @@ Production smoke/full validation and exact-head CI remain release gates. Real
 compatibility is not accepted by these synthetic tests. The owner's staged Resume
 macro and slicer loading profile need coordinated review/re-slicing before another
 physical test; the app does not bypass the macro or raise firmware limits.
+
+CI follow-up: the live-actions smoke still selected retired printer/assisted
+methods. It now exercises slicer pause adoption and clearance verification with
+zero commands, navigation/reload consent handling, two explicit manual moves and
+exactly one Resume. This caught manual controls unmounting/collapsing during a
+pending feed; the UI now keeps them mounted and disabled, with a component
+regression. The production live-actions smoke and all seven workflow browser
+tests pass. Final full validation/CI are rerunning on the follow-up.

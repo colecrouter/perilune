@@ -94,6 +94,15 @@ test('attendance carries only into the acknowledged session and survives success
 		distance: 10,
 		operation: 'load'
 	});
+	await screen.rerender({
+		snapshot: { ...snapshot, filamentChange: { ...session, stage: 'waiting' } }
+	});
+	await expect
+		.element(screen.getByRole('button', { name: 'Feed 10 mm', exact: true }))
+		.toBeVisible();
+	await expect
+		.element(screen.getByRole('button', { name: 'Feed 10 mm', exact: true }))
+		.toBeDisabled();
 	await screen.rerender({ snapshot: { ...snapshot, filamentChange: { ...session, step: 2 } } });
 	await expect.element(confirmation).toBeChecked();
 	await screen.getByRole('button', { name: 'Resume print', exact: true }).click();
