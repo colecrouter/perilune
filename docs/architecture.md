@@ -1908,3 +1908,8 @@ uses the paused filament-session lifecycle, with per-command bounded signed
 distances, fixed 1mm/s, existing clearance/temperature/position/limit checks and
 saved parser state. It adds no park travel. Attendance survives normal steps but
 is tied to the acknowledged session, owner, job/run, configuration and continuity.
+
+Pairing feedback (unreleased): HTTP pairing errors retain their server message.
+Rate-limit responses include bounded retry timing for a client cooldown without
+changing admission limits. The pairing form is top anchored with reserved feedback
+space. One-time slicer-key copy feedback is local to its secret controls.

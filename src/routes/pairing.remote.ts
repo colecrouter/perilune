@@ -23,7 +23,9 @@ export const pairBrowser = command(
 		const ip = `${polling ? 'poll' : 'action'}:${event.getClientAddress()}`;
 		const entry = attempts.get(ip) ?? { count: 0, expires: now + 60_000 };
 		if (entry.count >= (polling ? 600 : 30) || (!attempts.has(ip) && attempts.size >= 1000))
-			error(429, 'Too many pairing attempts. Wait a minute and try again.');
+			error(429, 'Too many pairing attempts. Wait before trying again.', {
+				retryAfter: Math.max(1, Math.ceil((entry.expires - now) / 1000))
+			});
 		entry.count++;
 		attempts.set(ip, entry);
 		try {

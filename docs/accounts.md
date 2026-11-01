@@ -53,3 +53,13 @@ sign-out still replace the document to establish the correct session boundary.
 Account polish (unreleased): section changes use a short opacity fade and tab
 colors transition without delaying navigation. Install instructions and actions
 have additional spacing. Reduced-motion preferences disable these animations.
+
+### Pairing and key feedback (unreleased)
+
+New slicer keys show copy confirmation beside the key, with spaced controls and
+hover feedback. If clipboard access fails, reveal and select the key to copy it
+manually. The secret remains available only until dismissed or leaving the page.
+
+Browser pairing reserves space for feedback so checking a code does not move the
+form. Too many attempts display a retry countdown; controls become available
+again without reloading. Pairing limits and explicit approval remain unchanged.
