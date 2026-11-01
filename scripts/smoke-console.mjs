@@ -310,7 +310,9 @@ try {
 	await livePage.getByText('Printer compatibility', { exact: true }).click();
 	await livePage.getByRole('button', { name: 'Refresh discovery' }).click();
 	await livePage
-		.getByText('Printer configuration changed. Review filament-change setup again.')
+		.getByText('Printer configuration changed. Review filament-change setup again.', {
+			exact: true
+		})
 		.waitFor();
 	assert.equal(await review.isChecked(), false, 'Refreshed configuration requires fresh review');
 	assert.equal(
