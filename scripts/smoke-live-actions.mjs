@@ -375,83 +375,106 @@ try {
 		() => document.querySelector('[aria-label="Current job"]')?.dataset.jobState === 'printing'
 	);
 	assert.equal(status.print_stats.state, 'printing');
-	// Attended synthetic macro workflow: shared ownership survives navigation,
-	// staged Resume remains explicit, and no second park/unload is appended.
+	// Slicer-managed changes adopt an existing pause without adding M600/park/purge.
 	status.extruder.temperature = 200;
 	status.extruder.target = 200;
 	publish();
 	await page.goto(base + '/filament');
-	await page.getByLabel('Method', { exact: true }).selectOption('printer');
-	await page.getByRole('checkbox', { name: /I reviewed this plan/ }).check();
+	await page.getByLabel('Method', { exact: true }).selectOption('slicer');
+	await page.getByRole('checkbox', { name: /My slicer handles loading/ }).check();
 	await page.getByRole('button', { name: 'Save plan', exact: true }).click();
 	await page.getByText(/Setup plan saved/).waitFor();
+	status.print_stats.state = 'paused';
+	status.pause_resume.is_paused = true;
+	status.idle_timeout.state = 'Idle';
+	publish();
 	const attend = () =>
-		page.getByRole('checkbox', { name: /I am at the printer and have inspected/ }).check();
+		page.getByRole('checkbox', { name: /I am at the printer for this filament change/ }).check();
+	const waitStep = (step) =>
+		page.waitForFunction((expected) => {
+			const workflow = document.querySelector('[aria-label="Filament change"]');
+			return (
+				workflow?.dataset.filamentStage === 'paused' &&
+				Number(workflow.dataset.filamentStep) === expected
+			);
+		}, step);
+	const beforeGuidance = operations.length;
+	await page.getByRole('button', { name: 'Begin filament change', exact: true }).waitFor();
 	await attend();
-	await page.getByRole('button', { name: 'Run change macro', exact: true }).click();
-	await page.getByText('Print paused and stationary.', { exact: false }).waitFor();
-	assert.equal(operations.filter((op) => op.script === 'M600\nM400').length, 1);
+	await page.getByRole('button', { name: 'Begin filament change', exact: true }).click();
+	await waitStep(1);
+	assert.equal(
+		operations.length,
+		beforeGuidance,
+		'Adopting the slicer pause sends no printer command'
+	);
+	assert.equal(
+		await page
+			.getByRole('checkbox', { name: /I am at the printer for this filament change/ })
+			.isChecked(),
+		true
+	);
 	await page.goto(base);
 	await page.getByRole('link', { name: 'Continue filament change', exact: true }).waitFor();
 	assert.equal(await page.getByRole('button', { name: 'Resume print', exact: true }).count(), 0);
 	await page.getByRole('link', { name: 'Continue filament change', exact: true }).click();
-	stagedResume = true;
-	await attend();
-	await page.getByRole('button', { name: 'Resume print', exact: true }).click();
-	await page
-		.getByText('Resume macro completed; this print remains paused.', { exact: false })
-		.waitFor();
-	assert.equal(operations.filter((op) => op.script === 'RESUME\nM400').length, 1);
-	await page.reload();
-	await page
-		.getByText('Resume macro completed; this print remains paused.', { exact: false })
-		.waitFor();
-	await page.setViewportSize({ width: 390, height: 844 });
-	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-	await page.screenshot({ path: 'test-results/filament-change-mobile.png', fullPage: true });
-	await page.setViewportSize({ width: 1280, height: 900 });
-	stagedResume = false;
-	await attend();
-	await page.getByRole('button', { name: 'Resume print', exact: true }).click();
-	await page
-		.getByText('The same print is running again. Filament guidance is complete.', { exact: true })
-		.waitFor();
-	assert.equal(operations.filter((op) => op.script === 'M600\nM400').length, 1);
-	assert.equal(operations.filter((op) => op.script === 'RESUME\nM400').length, 2);
-	// Assisted steps pause independently, require inspected parking, and remain explicit after reload.
-	await page.getByLabel('Method', { exact: true }).selectOption('assisted');
-	await page.getByRole('checkbox', { name: /I reviewed this plan/ }).check();
-	await page.getByRole('button', { name: 'Save plan', exact: true }).click();
-	await page.getByText(/Setup plan saved/).waitFor();
-	await attend();
-	await page.getByRole('button', { name: 'Pause for filament change', exact: true }).click();
-	await page.getByText('Print paused and stationary.', { exact: false }).waitFor();
-	assert.equal(operations.filter((op) => op.script === 'M600\nM400').length, 1);
-	await attend();
-	await page.getByRole('button', { name: 'Nozzle is clear; verify parking', exact: true }).click();
-	await page.getByText('Parking verified.', { exact: false }).waitFor();
-	await page.reload();
-	await page.getByText('Parking verified.', { exact: false }).waitFor();
+	await waitStep(1);
 	assert.equal(
-		await page.getByRole('checkbox', { name: /I am at the printer/ }).isChecked(),
+		await page
+			.getByRole('checkbox', { name: /I am at the printer for this filament change/ })
+			.isChecked(),
 		false
+	);
+	await attend();
+	await page.getByText('Manual extrusion (optional)', { exact: true }).click();
+	await page
+		.getByRole('button', { name: 'Nozzle is clear; enable manual controls', exact: true })
+		.click();
+	await waitStep(2);
+	assert.equal(operations.length, beforeGuidance, 'Clearance verification adds no park move');
+	await page.reload();
+	await waitStep(2);
+	await page.getByText('Manual extrusion (optional)', { exact: true }).click();
+	assert.equal(
+		await page
+			.getByRole('checkbox', { name: /I am at the printer for this filament change/ })
+			.isChecked(),
+		false
+	);
+	assert.equal(
+		await page.getByRole('button', { name: 'Feed 10 mm', exact: true }).isDisabled(),
+		true
 	);
 	await page.setViewportSize({ width: 390, height: 844 });
 	assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-	await page.screenshot({ path: 'test-results/filament-assisted-mobile.png', fullPage: true });
+	await page.screenshot({ path: 'test-results/filament-change-mobile.png', fullPage: true });
 	await attend();
-	await page.getByRole('button', { name: 'Unload 20 mm · 1 mm/s', exact: true }).click();
-	await page.getByText('unload movement verified.', { exact: false }).waitFor();
-	assert.equal(status.gcode_move.position[3], 80);
-	await attend();
-	await page.getByRole('button', { name: 'Load 20 mm · 1 mm/s', exact: true }).click();
-	await page.getByText(/^load movement verified\./).waitFor();
+	await page.getByRole('button', { name: 'Retract 10 mm', exact: true }).click();
+	await waitStep(3);
+	assert.equal(status.gcode_move.position[3], 90);
+	assert.equal(
+		await page
+			.getByRole('checkbox', { name: /I am at the printer for this filament change/ })
+			.isChecked(),
+		true,
+		'Successful manual moves retain attendance'
+	);
+	await page.getByRole('button', { name: 'Feed 10 mm', exact: true }).click();
+	await waitStep(4);
 	assert.equal(status.gcode_move.position[3], 100);
-	await attend();
 	await page.getByRole('button', { name: 'Resume print', exact: true }).click();
-	await page
-		.getByText('The same print is running again. Filament guidance is complete.', { exact: true })
-		.waitFor();
+	await page.getByRole('button', { name: 'Pause print', exact: true }).waitFor();
+	assert.equal(operations.filter((op) => op.script === 'M600\nM400').length, 0);
+	assert.equal(
+		operations.filter((op) => op.script === 'RESUME\nM400').length,
+		1,
+		'One Resume returns control to the slicer'
+	);
+	assert.equal(
+		operations.length,
+		beforeGuidance + 3,
+		'Only two requested feeds and one Resume were sent'
+	);
 	await page.setViewportSize({ width: 1280, height: 900 });
 	// Restore the original fixture heater state for the following stop-dialog assertions.
 	status.extruder.target = 0;

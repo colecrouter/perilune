@@ -41,7 +41,7 @@ export const defaultAssistedFilamentProfile: AssistedFilamentProfile = {
 export const FilamentChangeSettings = Schema.Struct({
 	revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 	fingerprint: Schema.String.check(Schema.isMaxLength(64)),
-	mode: Schema.Literals(['disabled', 'printer', 'assisted']),
+	mode: Schema.Literals(['disabled', 'slicer', 'printer', 'assisted']),
 	changeMacro: Schema.String.check(Schema.isMaxLength(64)),
 	resumeMacro: Schema.String.check(Schema.isMaxLength(64)),
 	// Explicit review is required; analysis cannot attest physical compatibility.
@@ -61,7 +61,8 @@ export function filamentSetupReason(
 	settings: FilamentChangeSettings,
 	capability: FilamentChangeCapability | null
 ): string | null {
-	if (settings.mode === 'disabled') return 'Filament changes have not been enabled.';
+	if (settings.mode === 'disabled')
+		return 'Review filament-change setup below before starting. Your slicer will handle loading and purging.';
 	if (!capability) return 'Wait for fresh printer capability discovery.';
 	if (settings.fingerprint !== capability.fingerprint)
 		return 'Printer configuration changed. Review filament-change setup again.';
@@ -95,7 +96,7 @@ export function filamentSetupReason(
 			settings.assisted.speed > capability.assisted.maxVelocity
 		)
 			return 'Extrusion speed exceeds the printer limit or that limit is unavailable.';
-	} else if (!capability.macros.includes(settings.changeMacro))
+	} else if (settings.mode === 'printer' && !capability.macros.includes(settings.changeMacro))
 		return 'The selected change macro is not registered on this printer.';
 	if (settings.resumeMacro !== 'RESUME' && !capability.macros.includes(settings.resumeMacro))
 		return 'The selected resume macro is not registered on this printer.';
@@ -141,7 +142,8 @@ export const FilamentChangeCommand = Schema.Union([
 		expectedStep: Schema.Int,
 		expectedJob: jobIdentity,
 		confirmed: Schema.Boolean,
-		operation: Schema.Literals(['unload', 'load', 'purge'])
+		operation: Schema.Literals(['unload', 'load', 'purge']),
+		distance: Schema.optional(Schema.Literals([-25, -10, -5, 5, 10, 25]))
 	}),
 	Schema.Struct({
 		type: Schema.Literal('filamentChangeEnd'),
@@ -161,6 +163,7 @@ export interface FilamentChangeSession {
 	filename: string;
 	runId: string;
 	generation: number;
+	slicerManaged?: boolean;
 	settingsRevision: number;
 	fingerprint: string;
 	step: number;
