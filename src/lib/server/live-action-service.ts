@@ -95,6 +95,8 @@ const authorized = (actor: CalibrationActor) => {
 		return false;
 	}
 };
+const slicerResumePausedMessage =
+	'The Resume command left this print paused. Review the printer macro; Resume was not repeated.';
 const recoveryMessage =
 	'A live action has an unknown outcome. Inspect the printer, then review recovery in Controls. No command was replayed.';
 const supported = new Set([
@@ -679,6 +681,12 @@ export const LiveActionServiceLive = Layer.effect(
 							}
 							if (!observed.motion.calibration && observed.motion.busy === false) {
 								if (observed.job.state === 'paused' && observed.paused === true) {
+									if (command.type === 'filamentChangeResume' && swapResult.slicerManaged) {
+										if (Date.now() >= deadline)
+											return yield* Effect.fail(reject(slicerResumePausedMessage));
+										yield* Effect.sleep('250 millis');
+										continue;
+									}
 									const move = swapResult.pendingMove;
 									if (move) {
 										const xyz =
@@ -928,9 +936,17 @@ export const LiveActionServiceLive = Layer.effect(
 					}
 				}).pipe(Effect.result);
 				const status = result._tag === 'Success' ? 'completed' : sent ? 'unknown' : 'failed';
+				const unknownMessage =
+					swapResult?.slicerManaged &&
+					job.request.command.type === 'filamentChangeResume' &&
+					result._tag === 'Failure' &&
+					result.failure instanceof ActionRejected &&
+					result.failure.message === slicerResumePausedMessage
+						? slicerResumePausedMessage
+						: recoveryMessage;
 				const message =
 					status === 'unknown'
-						? recoveryMessage
+						? unknownMessage
 						: result._tag === 'Failure'
 							? result.failure instanceof ActionRejected
 								? result.failure.message
@@ -974,7 +990,7 @@ export const LiveActionServiceLive = Layer.effect(
 					? result._tag === 'Success'
 						? swapResult
 						: sent
-							? interruptFilamentChange(swapResult, recoveryMessage)
+							? interruptFilamentChange(swapResult, unknownMessage)
 							: swapBefore
 					: undefined;
 				const persisted = yield* sql

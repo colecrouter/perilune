@@ -4,8 +4,7 @@
 	import FilamentChangeWorkflow from '#lib/components/FilamentChangeWorkflow.svelte';
 	import {
 		filamentChangeActive,
-		defaultFilamentChangeSettings,
-		defaultAssistedFilamentProfile
+		defaultFilamentChangeSettings
 	} from '#lib/domain/filament-change.js';
 	import AppShell from '#lib/components/AppShell.svelte';
 	import { getPrinter } from '../printer.remote.js';
@@ -26,14 +25,13 @@
 				reason: null
 			};
 	const setup = $derived(query?.current ?? initial);
-	let mode = $state(initial.settings.mode);
+	let mode = $state<'disabled' | 'slicer'>(
+		initial.settings.mode === 'disabled' ? 'disabled' : 'slicer'
+	);
 	let changeMacro = $state(initial.settings.changeMacro);
 	let resumeMacro = $state(initial.settings.resumeMacro);
-	let assisted = $state({ ...defaultAssistedFilamentProfile, ...initial.settings.assisted });
 	let reviewedTuple = $state('');
-	const reviewTuple = $derived(
-		JSON.stringify([mode, changeMacro, resumeMacro, assisted, setup.capability?.fingerprint])
-	);
+	const reviewTuple = $derived(JSON.stringify([mode, resumeMacro, setup.capability?.fingerprint]));
 	const reviewed = $derived(reviewedTuple === reviewTuple);
 	let revision = $state(initial.settings.revision);
 	let pending = $state(false);
@@ -55,7 +53,7 @@
 			await saveFilamentSetup({
 				revision,
 				mode,
-				assisted: mode === 'assisted' ? assisted : undefined,
+				assisted: undefined,
 				changeMacro,
 				resumeMacro,
 				reviewed,
@@ -77,7 +75,7 @@
 	><div class="page-frame serif filament-page">
 		<header>
 			<h1>Filament changes</h1>
-			<p>Use a reviewed printer macro or explicit assisted steps for a paused print.</p>
+			<p>Let your slicer handle the change. Feed filament manually only when needed.</p>
 		</header>
 		{#if !allowed}<section class="panel">
 				<h2>Operator access required</h2>
@@ -85,111 +83,38 @@
 			</section>{:else}
 			<FilamentChangeWorkflow
 				{snapshot}
+				connected={printer.connected}
 				settingsRevision={setup.settings.revision}
 				settings={setup.settings}
 				setupReason={setup.reason}
 				userId={data.user!.id}
 				role={data.user!.role}
 			/>
-			<section class="panel">
-				<h2>Printer compatibility</h2>
-				{#if setup.capability}
-					{#each setup.capability.findings as finding}<p>{finding}</p>{/each}
-				{:else}<p>
-						{setup.mode === 'simulator'
-							? 'The simulator has no physical macro configuration. Connect a printer to review compatibility.'
-							: 'Waiting for fresh capability discovery. Your saved setup is retained.'}
-					</p>{/if}
+			<section class="panel" id="filament-setup">
+				<h2>Filament-change setup</h2>
 				<p>
-					Detection does not certify parking clearance, unload distance, heater behavior or safe
-					resumption.
+					The slicer pauses and handles loading and purging after Resume. Perilune adds no change
+					macro, parking or purge sequence.
 				</p>
-				<button
-					class="button secondary"
-					disabled={!hydrated || pending}
-					onclick={() => query?.refresh()}>Refresh discovery</button
-				>
-			</section>
-			<section class="panel">
-				<h2>Change method</h2>
-				<p>Choose how to pause and handle filament. Configuration changes invalidate review.</p>
+				{#if !['disabled', 'slicer'].includes(setup.settings.mode)}<p>
+						Replace the older guided plan with slicer-managed changes after ending any active
+						guidance.
+					</p>{/if}
 				<form
 					onsubmit={(event) => {
 						event.preventDefault();
 						void save();
 					}}
 				>
-					<label for="filament-method">Method</label><select
-						id="filament-method"
-						bind:value={mode}
-						disabled={!hydrated || !owner || pending}
-					>
-						<option value="disabled">Not enabled</option><option value="printer"
-							>Use my printer’s macros</option
+					<label for="filament-method">Method</label>
+					<select id="filament-method" bind:value={mode} disabled={!hydrated || !owner || pending}>
+						<option value="disabled">Not configured</option><option value="slicer"
+							>Slicer-managed changes</option
 						>
-						<option value="assisted">Perilune-assisted steps</option></select
-					>
-					{#if mode === 'printer'}
-						<label for="change-macro">Change macro</label><select
-							id="change-macro"
-							bind:value={changeMacro}
-							disabled={!hydrated || !owner || pending}
-						>
-							{#if !setup.capability?.macros.includes(changeMacro)}<option value={changeMacro}
-									>{changeMacro} · unavailable</option
-								>{/if}
-							{#each setup.capability?.macros ?? [] as name}<option value={name}>{name}</option
-								>{/each}
-						</select>
-					{/if}
-					{#if mode === 'assisted'}
-						<p>
-							Pause first, then choose one bounded step at a time. A custom PAUSE may already
-							retract or park. Resume uses the printer’s saved pause position.
-						</p>
-						<label for="parking">Parking</label><select
-							id="parking"
-							bind:value={assisted.parking}
-							disabled={!hydrated || !owner || pending}
-							><option value="printer">Printer parks; I inspect nozzle clearance</option><option
-								value="perilune">Perilune lifts Z then parks XY</option
-							></select
-						>
-						{#if assisted.parking === 'perilune'}<p>
-								Available with native PAUSE and no active bed mesh. Review clearance over the print;
-								travel limits alone do not prove a clear path.
-							</p>{/if}
-						{#each ['parkX', 'parkY', 'zLift', 'unload', 'load', 'purge', 'speed'] as const as field}
-							{#if assisted.parking === 'perilune' || !['parkX', 'parkY', 'zLift'].includes(field)}
-								<label for={'assist-' + field}
-									>{{
-										parkX: 'Park X (mm)',
-										parkY: 'Park Y (mm)',
-										zLift: 'Z lift (mm)',
-										unload: 'Unload per step (mm)',
-										load: 'Load per step (mm)',
-										purge: 'Purge per step (mm)',
-										speed: 'Extrusion speed (mm/s)'
-									}[field]}</label
-								>
-								<input
-									id={'assist-' + field}
-									type="number"
-									step="0.1"
-									bind:value={assisted[field]}
-									disabled={!hydrated || !owner || pending}
-									required
-								/>
-							{/if}{/each}
-						<p>
-							Single-extruder Cartesian/CoreXY only. Each extrusion step is limited to 50 mm and 90
-							seconds, and to the printer’s configured limits. Longer paths require a new inspected
-							step.
-						</p>
-						{#if setup.capability?.assisted?.reason}<p>{setup.capability.assisted.reason}</p>{/if}
-					{/if}
-					{#if mode !== 'disabled'}
-						<label for="resume-macro">Resume command</label><select
+					</select>
+					{#if mode === 'slicer'}
+						<label for="resume-macro">Resume command</label>
+						<select
 							id="resume-macro"
 							bind:value={resumeMacro}
 							disabled={!hydrated || !owner || pending}
@@ -207,8 +132,8 @@
 									reviewedTuple = event.currentTarget.checked ? reviewTuple : '';
 								}}
 								disabled={!hydrated || !owner || pending}
-							/>I reviewed this plan’s parking, extrusion distances, speed and resume behavior. I
-							will attend the first test.</label
+							/>My slicer handles loading and purging. I reviewed that this Resume command returns
+							to printing in one call, without an extra filament-change sequence.</label
 						>
 					{/if}
 					{#if owner}<button
@@ -216,30 +141,19 @@
 							disabled={!hydrated ||
 								setupLocked ||
 								pending ||
-								(mode !== 'disabled' && (!reviewed || !setup.ready))}
-							>{pending ? 'Saving…' : 'Save plan'}</button
-						>{:else}<p>An owner can change this setup.</p>{/if}
+								(mode !== 'disabled' && (!reviewed || !setup.ready))}>Save plan</button
+						>{:else}<p>An owner can review this setup.</p>{/if}
 				</form>
 				{#if message}<p role="status">{message}</p>{/if}
-				{#if setup.reason && filamentChangeActive(snapshot.filamentChange)}<p>
-						{setup.reason}
-					</p>{/if}
-			</section>
-			<section class="panel">
-				<h2>No suitable macro?</h2>
-				<p>
-					Perilune-assisted changes need explicit parking and extrusion settings. This setup does
-					not install or replace M600. For a planned slicer change without M600, emit PAUSE and open
-					guidance after the print pauses. A pause does not identify whether a runout or filament
-					change caused it.
-				</p>
-				<p>
-					Review Klipper’s <a
-						href="https://github.com/Klipper3d/klipper/blob/master/config/sample-macros.cfg"
-						target="_blank"
-						rel="noreferrer">example macros</a
-					> for context. Examples require adaptation to your printer.
-				</p>
+				{#if setup.reason}<p>{setup.reason}</p>{/if}
+				<details>
+					<summary>Printer compatibility</summary
+					>{#each setup.capability?.findings ?? [] as finding}<p>{finding}</p>{/each}<button
+						class="button secondary"
+						disabled={!hydrated || pending}
+						onclick={() => query?.refresh()}>Refresh discovery</button
+					>
+				</details>
 			</section>
 		{/if}
 	</div></AppShell
@@ -266,8 +180,7 @@
 		gap: 0.8rem;
 		max-width: 36rem;
 	}
-	select,
-	input[type='number'] {
+	select {
 		width: 100%;
 		min-height: 44px;
 		padding: 0.65rem 0.8rem;
@@ -280,9 +193,6 @@
 	h2,
 	section p {
 		margin: 0;
-	}
-	section > button {
-		justify-self: start;
 	}
 	.check {
 		display: flex;

@@ -283,14 +283,14 @@ try {
 	);
 	await livePage.unroute(entryScript);
 	await livePage.getByRole('heading', { name: 'Filament changes', exact: true }).waitFor();
-	await livePage.getByLabel('Method', { exact: true }).selectOption('printer');
-	const review = livePage.getByRole('checkbox', { name: /I reviewed this plan/ });
+	await livePage.getByLabel('Method', { exact: true }).selectOption('slicer');
+	const review = livePage.getByRole('checkbox', { name: /My slicer handles loading/ });
 	await review.check();
 	await livePage.getByRole('button', { name: 'Save plan', exact: true }).click();
 	await livePage.getByText(/Setup plan saved/).waitFor();
-	await livePage.getByLabel('Change macro', { exact: true }).selectOption('TEST_MACRO');
+	await livePage.getByLabel('Resume command', { exact: true }).selectOption('TEST_MACRO');
 	assert.equal(await review.isChecked(), false, 'Review is bound to selected commands');
-	await livePage.getByLabel('Change macro', { exact: true }).selectOption('M600');
+	await livePage.getByLabel('Resume command', { exact: true }).selectOption('RESUME');
 	await review.check();
 	fixtureMacroBody = 'PAUSE\nG1 E-5';
 	sockets.at(-1).send(
@@ -307,6 +307,7 @@ try {
 			]
 		})
 	);
+	await livePage.getByText('Printer compatibility', { exact: true }).click();
 	await livePage.getByRole('button', { name: 'Refresh discovery' }).click();
 	await livePage
 		.getByText('Printer configuration changed. Review filament-change setup again.')

@@ -40,6 +40,8 @@ export function filamentChangePlan(
 		return [{ type: 'controlScript', script: `${name}\nM400` }];
 	};
 	if (command.type === 'filamentChangeBegin') {
+		if (settings.mode === 'slicer' && !command.adoptPaused)
+			throw Error('Wait for the slicer to pause this print before replacing filament.');
 		if (filamentChangeActive(session))
 			throw Error('A filament-change session already owns this printer.');
 		const reason = filamentSetupReason(settings, fresh.filamentChange ?? null);
@@ -62,7 +64,11 @@ export function filamentChangePlan(
 				generation: fresh.generation,
 				settingsRevision: settings.revision,
 				fingerprint: settings.fingerprint,
-				assisted: settings.mode === 'assisted' ? { parked: false } : undefined,
+				slicerManaged: settings.mode === 'slicer',
+				assisted:
+					settings.mode === 'assisted' || settings.mode === 'slicer'
+						? { parked: false }
+						: undefined,
 				step: 1,
 				stage: 'waiting',
 				startedAt: now,
@@ -156,10 +162,39 @@ export function filamentChangePlan(
 		throw Error(
 			'Position is no longer trusted. Do not home into a paused print; inspect and recover it manually.'
 		);
-	if (command.type === 'filamentChangePark' || command.type === 'filamentChangeFeed')
+	if (command.type === 'filamentChangePark' || command.type === 'filamentChangeFeed') {
+		if (settings.mode === 'slicer') {
+			if (!session.slicerManaged)
+				throw Error('Finish the previous guidance before using slicer-managed controls.');
+			if (command.type === 'filamentChangeFeed' && command.distance === undefined)
+				throw Error('Choose a manual extrusion distance.');
+			const distance = command.type === 'filamentChangeFeed' ? command.distance! : 5;
+			return assistedFilamentPlan(
+				command,
+				session,
+				{
+					...settings,
+					mode: 'assisted',
+					assisted: {
+						parking: 'printer',
+						parkX: 0,
+						parkY: 0,
+						zLift: 5,
+						unload: Math.abs(distance),
+						load: Math.abs(distance),
+						purge: Math.abs(distance),
+						speed: 1
+					}
+				},
+				fresh
+			);
+		}
+		if (command.type === 'filamentChangeFeed' && command.distance !== undefined)
+			throw Error('Variable manual feeding requires slicer-managed setup.');
 		return assistedFilamentPlan(command, session, settings, fresh);
+	}
 	if (
-		settings.mode === 'assisted' &&
+		(settings.mode === 'assisted' || (settings.mode === 'slicer' && session.assisted?.parked)) &&
 		(!session.assisted?.parked ||
 			!sameFilamentPosition(fresh.gcodePosition, session.assisted.position) ||
 			!sameFilamentPosition(

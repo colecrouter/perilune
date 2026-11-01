@@ -124,8 +124,15 @@ export function assistedFilamentPlan(
 		throw Error(
 			'The nozzle is cold or its target is off. Explicitly reheat and wait before extrusion.'
 		);
-	const length = profile[command.operation],
-		distance = command.operation === 'unload' ? -length : length;
+	const distance =
+			command.distance ??
+			(command.operation === 'unload' ? -profile.unload : profile[command.operation]),
+		length = Math.abs(distance);
+	if (
+		command.distance !== undefined &&
+		(command.operation === 'purge' || (command.operation === 'unload') !== distance < 0)
+	)
+		throw Error('Manual extrusion direction does not match its distance.');
 	if (
 		fresh.filament.maxDistance === null ||
 		Math.abs(distance) > fresh.filament.maxDistance ||

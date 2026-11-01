@@ -1,5 +1,7 @@
 <script lang="ts">
+	import ManualExtrusionControls from './ManualExtrusionControls.svelte';
 	import { onMount } from 'svelte';
+	import { isHttpError } from '@sveltejs/kit';
 	import {
 		filamentChangeActive,
 		type FilamentChangeCommand,
@@ -13,7 +15,9 @@
 		settings,
 		setupReason,
 		userId,
-		role
+		role,
+		connected = true,
+		onSubmit = submitAction
 	}: {
 		snapshot: PrinterSnapshot;
 		settingsRevision: number;
@@ -21,6 +25,8 @@
 		setupReason: string | null;
 		userId: string;
 		role: string;
+		connected?: boolean;
+		onSubmit?: (request: { id: string; command: FilamentChangeCommand }) => Promise<unknown>;
 	} = $props();
 	let hydrated = $state(false);
 	onMount(() => {
@@ -33,24 +39,78 @@
 	const context = $derived(
 		JSON.stringify([
 			identity,
+			userId,
 			session?.id,
-			session?.step,
-			session?.stage,
+			session?.generation,
+			session?.stage === 'review',
 			session?.ownerId,
-			settingsRevision
+			settingsRevision,
+			settings.fingerprint
 		])
 	);
 	let confirmation = $state('');
+	let beginId = $state('');
+	let beginScope = '';
+	const scope = $derived(
+		JSON.stringify([identity, settingsRevision, settings.fingerprint, userId])
+	);
+	let attendingUser: string | undefined;
+	$effect(() => {
+		if (attendingUser !== userId) {
+			confirmation = '';
+			beginId = '';
+			beginScope = '';
+			attendingUser = userId;
+		}
+	});
+	$effect(() => {
+		if (
+			!connected ||
+			snapshot.connection !== 'connected' ||
+			!snapshot.telemetryReady ||
+			snapshot.klippy !== 'ready' ||
+			session?.stage === 'review'
+		) {
+			confirmation = '';
+			beginId = '';
+			beginScope = '';
+		}
+	});
+	$effect(() => {
+		if (
+			beginId &&
+			session?.id === beginId &&
+			owned &&
+			session.stage === 'paused' &&
+			receipt?.status === 'completed' &&
+			receipt.id === beginId &&
+			beginScope === scope &&
+			connected
+		) {
+			confirmation = context;
+			beginId = '';
+		}
+	});
 	const confirmed = $derived(confirmation === context);
 	let submitting = $state(false);
+	let uncertain = $state(false);
 	let lastId = $state('');
 	let error = $state('');
 	const receipt = $derived(snapshot.actions.find((a) => a.id === lastId));
+	$effect(() => {
+		if (receipt) {
+			uncertain = false;
+			error = '';
+		}
+	});
 	const pending = $derived(
-		submitting || snapshot.actions.some((a) => a.status === 'queued' || a.status === 'sending')
+		uncertain ||
+			submitting ||
+			snapshot.actions.some((a) => a.status === 'queued' || a.status === 'sending')
 	);
 	const blocked = $derived(
 		!hydrated ||
+			!connected ||
 			pending ||
 			!confirmed ||
 			snapshot.connection !== 'connected' ||
@@ -63,7 +123,8 @@
 	);
 	async function send(
 		type: FilamentChangeCommand['type'],
-		operation?: 'unload' | 'load' | 'purge'
+		operation?: 'unload' | 'load' | 'purge',
+		distance?: -25 | -10 | -5 | 5 | 10 | 25
 	) {
 		if (
 			type === 'filamentChangeEnd' && role === 'owner'
@@ -74,6 +135,10 @@
 		submitting = true;
 		error = '';
 		lastId = crypto.randomUUID();
+		if (type === 'filamentChangeBegin') {
+			beginId = lastId;
+			beginScope = scope;
+		}
 		const common = { expectedJob: identity, confirmed };
 		const command: FilamentChangeCommand =
 			type === 'filamentChangeBegin'
@@ -82,6 +147,7 @@
 					? {
 							type: 'filamentChangeFeed',
 							operation,
+							distance,
 							...common,
 							sessionId: session!.id,
 							expectedStep: session!.step
@@ -96,8 +162,9 @@
 							expectedStep: session!.step
 						};
 		try {
-			await submitAction({ id: lastId, command });
+			await onSubmit({ id: lastId, command });
 		} catch (cause) {
+			uncertain = !isHttpError(cause);
 			error =
 				cause instanceof Error
 					? cause.message
@@ -108,44 +175,33 @@
 	}
 </script>
 
-<section class="panel workflow" aria-label="Guided filament change">
-	<h2>{active ? 'Current filament change' : 'Change filament'}</h2>
-	{#if snapshot.mode === 'simulator'}<p>
-			Guided filament changes are available when Perilune is connected to a printer. You can review
-			setup below.
-		</p>
+<section class="panel workflow" aria-label="Filament change">
+	<h2>{active ? 'Replace filament' : 'Filament change'}</h2>
+	{#if snapshot.mode === 'simulator'}<p>Connect a printer to use filament changes.</p>
 	{:else}
-		{#if active && session}<p role="status">{session.message}</p>
-			<p class="muted">
-				{owned ? 'You are handling this change.' : 'Another operator is handling this change.'} Leaving
-				this page keeps the shared session. Ending guidance does not stop or resume the printer or verify
-				its position.
-			</p>
-		{:else if session?.stage === 'finished'}<p role="status">{session.message}</p>{/if}
 		<p>
-			Nozzle: {snapshot.heaters.nozzle.current ?? '—'}°C · target {snapshot.heaters.nozzle.target ??
-				'—'}°C. <a href="/">Adjust heater targets</a>
+			Nozzle: {snapshot.heaters.nozzle.current?.toFixed(0) ?? '—'}°C · target {snapshot.heaters
+				.nozzle.target ?? '—'}°C. <a href="/">Heater controls</a>
 		</p>
 		{#if snapshot.liveRecovery}<p>
-				Review the uncertain command in <a href="/controls">Controls</a> before continuing. No command
-				will be replayed.
+				Resolve the uncertain action in <a href="/controls">Controls</a> before continuing.
 			</p>{/if}
-		{#if settings.mode === 'assisted' && !snapshot.liveFilament}<p>
-				Assisted parking and extrusion are disabled on this server. An owner must enable live
-				filament controls before using these steps.
-			</p>{/if}
-		{#if active || snapshot.job.state === 'printing' || snapshot.job.state === 'paused'}
+		{#if active && session && !session.slicerManaged}
 			<p>
-				{active && settings.mode === 'assisted'
-					? 'Inspect parking and the filament path before each step. A custom PAUSE may already have retracted filament. Remove purged material before Resume. If heaters timed out, explicitly reheat first. Do not home into a paused print.'
-					: active
-						? 'Follow your printer macro’s unload/load instructions. Check the filament path and remove purged material before resuming. If heaters timed out, explicitly reheat first. Do not home into a paused print.'
-						: snapshot.job.state === 'paused'
-							? 'This print is already paused. Starting guidance sends no change macro; a pause alone does not identify an M600 event.'
-							: settings.mode === 'assisted'
-								? 'Pause the print first. No assisted parking or extrusion is sent until you choose the next step.'
-								: 'The configured change macro may move or unload the printer. Stay with it. Perilune will not add a second park or unload.'}
+				This is an older guidance session. End it before switching to slicer-managed changes. The
+				printer will stay paused.
 			</p>
+		{:else if active && session?.stage === 'review'}<p role="alert">{session.message}</p>
+		{:else if active || snapshot.job.state === 'paused'}
+			<p>
+				Replace the filament now. Insert the new filament into the extruder; use manual feeding only
+				if needed. Your slicer handles loading and purging after Resume.
+			</p>
+		{:else if snapshot.job.state === 'printing'}<p>
+				Wait for the slicer to pause at the filament change.
+			</p>
+		{:else}<p>Start a sliced print with a filament-change pause.</p>{/if}
+		{#if (active || snapshot.job.state === 'paused') && (settings.mode === 'slicer' || active)}
 			<label class="check"
 				><input
 					type="checkbox"
@@ -154,106 +210,86 @@
 					onchange={(event) => {
 						confirmation = event.currentTarget.checked ? context : '';
 					}}
-				/>I am at the printer and have inspected its current state and this step.</label
+				/>I am at the printer for this filament change.</label
 			>
-			<div class="buttons">
-				{#if !active}<button
-						class="button primary"
-						disabled={blocked || !!setupReason}
-						onclick={() => send('filamentChangeBegin')}
-						>{snapshot.job.state === 'paused'
-							? 'Guide this paused print'
-							: settings.mode === 'assisted'
-								? 'Pause for filament change'
-								: 'Run change macro'}</button
-					>
-				{:else if session}
-					{#if owned && session.stage === 'paused'}
-						{#if session.assisted && !session.assisted.parked}{#if settings.assisted?.parking === 'perilune'}<p
-								>
-									Inspect the current position and clearance. An interrupted park may already have
-									lifted Z. Choosing Lift Z and park XY sends a new relative lift from the current
-									position; it does not replay or finish an earlier move.
-								</p>{/if}
+			{#if !active}<button
+					class="button primary"
+					disabled={blocked || !!setupReason}
+					onclick={() => send('filamentChangeBegin')}>Begin filament change</button
+				>
+			{:else if session}
+				{#if owned && session.stage === 'paused' && session.slicerManaged}
+					<details>
+						<summary>Manual extrusion (optional)</summary>
+						{#if !snapshot.liveFilament}<p>Manual extrusion is not enabled on this server.</p>
+						{:else if !session.assisted?.parked}<p>
+								Confirm the nozzle is clear of the print and filament can feed freely.
+							</p>
 							<button
-								class="button primary"
-								disabled={blocked || !snapshot.liveFilament}
+								class="button secondary"
+								disabled={blocked}
 								onclick={() => send('filamentChangePark')}
-								>{settings.assisted?.parking === 'printer'
-									? 'Nozzle is clear; verify parking'
-									: 'Lift Z and park XY'}</button
-							>{/if}
-						{#if session.assisted?.parked && settings.assisted}
-							{#each ['unload', 'load', 'purge'] as const as operation}<button
-									class="button secondary"
-									disabled={blocked || !snapshot.liveFilament}
-									onclick={() => send('filamentChangeFeed', operation)}
-									>{operation === 'unload' ? 'Unload' : operation === 'load' ? 'Load' : 'Purge'}
-									{settings.assisted[operation]} mm · {settings.assisted.speed} mm/s</button
-								>{/each}
-						{/if}
-						<button
-							class="button primary"
-							disabled={blocked || (!!session.assisted && !session.assisted.parked)}
-							onclick={() => send('filamentChangeResume')}>Resume print</button
-						>{/if}
-					{#if role === 'owner' && (session.stage === 'review' || !owned)}<button
-							class="button secondary"
-							disabled={blocked}
-							onclick={() => send('filamentChangeRecover')}>Review &amp; take over</button
-						>{/if}
-					{#if owned || role === 'owner'}<button
-							class="button secondary"
-							disabled={role === 'owner'
-								? !hydrated || pending || !confirmed || snapshot.storage !== 'healthy'
-								: blocked}
-							onclick={() => send('filamentChangeEnd')}>End guidance; leave printer as is</button
-						>{/if}
+								>Nozzle is clear; enable manual controls</button
+							>
+						{:else}<ManualExtrusionControls
+								disabled={blocked}
+								onMove={(distance) =>
+									send('filamentChangeFeed', distance < 0 ? 'unload' : 'load', distance)}
+							/>{/if}
+					</details>
+					<button
+						class="button primary"
+						disabled={blocked}
+						onclick={() => send('filamentChangeResume')}>Resume print</button
+					>
 				{/if}
-			</div>
-		{:else}<p>Start a print to use guided changes. Setup can be reviewed below.</p>{/if}
-		{#if !active && setupReason}<p>{setupReason}</p>{/if}
-		{#if pending}<p role="status">Waiting for the printer and fresh verification…</p>{/if}
-		{#if error}<p role="alert">{error}</p>{/if}
-		{#if receipt && ['failed', 'unknown'].includes(receipt.status)}<p role="alert">
-				{receipt.message}
+				{#if role === 'owner' && (session.stage === 'review' || !owned)}<button
+						class="button secondary"
+						disabled={blocked}
+						onclick={() => send('filamentChangeRecover')}>Review &amp; take over</button
+					>{/if}
+				{#if owned || role === 'owner'}<button
+						class="button secondary"
+						disabled={role === 'owner'
+							? !hydrated || pending || !confirmed || snapshot.storage !== 'healthy'
+							: blocked}
+						onclick={() => send('filamentChangeEnd')}>End guidance</button
+					>{/if}
+			{/if}
+		{/if}
+		{#if !active && (setupReason || settings.mode !== 'slicer')}<p>
+				{setupReason ?? 'Choose slicer-managed changes in setup.'}
+				<a href="#filament-setup">Review setup</a>
 			</p>{/if}
+		{#if error}<p role="alert">
+				{error}
+			</p>{:else if receipt && ['failed', 'unknown'].includes(receipt.status) && !(session?.stage === 'review' && session.message === receipt.message)}<p
+				role="alert"
+			>
+				{receipt.message ?? 'The action did not complete. Review its receipt before continuing.'}
+			</p>{/if}
+		{#if lastId}<a href={'/actions/' + lastId}>Review action</a>{/if}
 	{/if}
 </section>
 
 <style>
 	.workflow {
-		padding: 1.5rem;
 		display: grid;
-		gap: 0.85rem;
+		gap: 1rem;
 	}
-	h2,
-	p {
+	.workflow p,
+	.workflow h2 {
 		margin: 0;
 	}
-	p,
-	.check {
-		line-height: 1.6;
-	}
-	.muted {
-		color: var(--muted);
-	}
-	.check {
+	.workflow .check {
 		display: flex;
-		align-items: start;
-		gap: 0.7rem;
+		align-items: center;
+		gap: 0.75rem;
 	}
-	input {
-		margin-top: 0.4rem;
+	.workflow details {
+		padding-block: 0.5rem;
 	}
-	.buttons {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.7rem;
-	}
-	@media (max-width: 600px) {
-		.buttons button {
-			width: 100%;
-		}
+	.workflow summary {
+		cursor: pointer;
 	}
 </style>

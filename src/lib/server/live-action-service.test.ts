@@ -1961,3 +1961,89 @@ it('a reconciled unaccepted ID cannot later dispatch a live print command', asyn
 	).rejects.toThrow(/another command/);
 	expect(f.operations).toHaveLength(0);
 });
+
+async function prepareSlicerSwap(f: Awaited<ReturnType<typeof fixture>>) {
+	const common = await prepareSwap(f, true);
+	const sql = await f.runtime.runPromise(SqlClient);
+	await f.runtime.runPromise(
+		sql`UPDATE filament_change_settings SET value=json_set(value,'$.mode','slicer')`
+	);
+	return common;
+}
+it('slicer guidance adopts without commands and resumes once without parking or feeding', async () => {
+	const f = await fixture();
+	const common = await prepareSlicerSwap(f);
+	await f.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: false });
+	await f.finished();
+	expect(f.operations).toHaveLength(0);
+	expect((await f.snapshot()).filamentChange).toBeFalsy();
+	await f.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: true });
+	await f.finished();
+	const session = (await f.snapshot()).filamentChange!;
+	expect(session.slicerManaged).toBe(true);
+	expect(f.operations).toHaveLength(0);
+	await f.submit({
+		type: 'filamentChangeResume',
+		sessionId: session.id,
+		expectedStep: session.step,
+		expectedJob: common.expectedJob,
+		confirmed: true
+	});
+	await f.finished();
+	expect(f.operations).toEqual([{ type: 'controlScript', script: 'RESUME\nM400' }]);
+	expect((await f.snapshot()).filamentChange?.stage).toBe('finished');
+});
+it('a staged Resume is a contract failure in slicer mode, never a request to press Resume again', async () => {
+	const f = await fixture();
+	const common = await prepareSlicerSwap(f);
+	await f.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: true });
+	await f.finished();
+	const session = (await f.snapshot()).filamentChange!;
+	f.setBehavior('stagedResume');
+	await f.submit({
+		type: 'filamentChangeResume',
+		sessionId: session.id,
+		expectedStep: session.step,
+		expectedJob: common.expectedJob,
+		confirmed: true
+	});
+	await f.finished();
+	expect(f.operations).toEqual([{ type: 'controlScript', script: 'RESUME\nM400' }]);
+	expect((await f.snapshot()).filamentChange?.stage).toBe('review');
+	expect((await f.snapshot()).actions[0].status).toBe('unknown');
+	expect((await f.snapshot()).actions[0].message).toContain(
+		'Resume command left this print paused'
+	);
+	expect((await f.snapshot()).filamentChange?.message).toContain(
+		'Resume command left this print paused'
+	);
+});
+it('waits through a stale paused observation after a single slicer Resume', async () => {
+	const f = await fixture();
+	const common = await prepareSlicerSwap(f);
+	await f.submit({ type: 'filamentChangeBegin', ...common, adoptPaused: true });
+	await f.finished();
+	const session = (await f.snapshot()).filamentChange!;
+	f.setBehavior('stagedResume');
+	let observations = 0;
+	f.setRefresh(async () => {
+		if (f.operations.length && ++observations === 2)
+			await f.runtime.runPromise(
+				SubscriptionRef.update(f.state, (s) => ({
+					...s,
+					paused: false,
+					job: { ...s.job, state: 'printing' as const }
+				}))
+			);
+	});
+	await f.submit({
+		type: 'filamentChangeResume',
+		sessionId: session.id,
+		expectedStep: session.step,
+		expectedJob: common.expectedJob,
+		confirmed: true
+	});
+	await f.finished();
+	expect(f.operations).toHaveLength(1);
+	expect((await f.snapshot()).filamentChange?.stage).toBe('finished');
+});

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ManualExtrusionControls from './ManualExtrusionControls.svelte';
 	import FeedbackRegion from './FeedbackRegion.svelte';
 	import { temperatureReason } from '#lib/domain/temperature.js';
 	import { isHttpError } from '@sveltejs/kit';
@@ -226,19 +227,17 @@
 				and extruded filament has somewhere to go.</label
 			>
 			<details class="handling">
-				<summary>Load or adjust filament</summary><span>Feed or retract slowly · 1 mm/s</span>
-				<div class="button-row">
-					{#each [-25, -10, -5, 5, 10, 25] as distance}<button
-							disabled={!connected || Boolean(reason) || active || pending || !loaded || !clear}
-							onclick={() =>
-								send({
-									type: 'extrusionFeed',
-									runId: crypto.randomUUID(),
-									distance: distance as -25 | -10 | -5 | 5 | 10 | 25,
-									confirmed: loaded && clear
-								})}>{distance < 0 ? 'Retract' : 'Feed'} {Math.abs(distance)} mm</button
-						>{/each}
-				</div>
+				<summary>Load or adjust filament</summary>
+				<ManualExtrusionControls
+					disabled={!connected || Boolean(reason) || active || pending || !loaded || !clear}
+					onMove={(distance) =>
+						send({
+							type: 'extrusionFeed',
+							runId: crypto.randomUUID(),
+							distance,
+							confirmed: loaded && clear
+						})}
+				/>
 			</details>
 			<FeedbackRegion active={!active && !!reason} label="Filament readiness"
 				>{#if !active && reason}<p class="muted" role="status">{reason}</p>{/if}</FeedbackRegion
@@ -599,11 +598,6 @@
 		border-top: 1px solid var(--border);
 		margin-top: 1.5rem;
 		padding-top: 1rem;
-	}
-	.handling > span {
-		display: block;
-		color: var(--muted);
-		margin: 0.5rem 0 1rem;
 	}
 	.notice {
 		border: 1px solid var(--border);

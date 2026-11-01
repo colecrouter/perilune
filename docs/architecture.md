@@ -1893,3 +1893,18 @@ Account/console motion (unreleased): URL-driven Account sections have a short CS
 opacity entry transition. Console following uses a component-owned cancellable
 180ms scroll animation after its initial position; reader input cancels it and
 preserves the reading position. Reduced motion keeps immediate presentation.
+
+### Slicer-managed filament changes (unreleased)
+
+This supersedes the earlier guided macro/assisted setup for new plans. Owners
+review a fingerprint-bound one-call Resume contract; the slicer owns loading,
+purging and tower generation. Begin only adopts a stationary pause and sends no
+macro. Resume sends the selected command once, waits for observed printing, and
+retains recovery if a staged macro stays paused; it never chains another Resume.
+Legacy journals and plans remain readable/recoverable, with no silent conversion.
+
+Optional manual Feed/Retract shares a UI component with extrusion calibration but
+uses the paused filament-session lifecycle, with per-command bounded signed
+distances, fixed 1mm/s, existing clearance/temperature/position/limit checks and
+saved parser state. It adds no park travel. Attendance survives normal steps but
+is tied to the acknowledged session, owner, job/run, configuration and continuity.

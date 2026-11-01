@@ -44,6 +44,8 @@ export const saveFilamentSetup = command(
 	async (value) => {
 		requireIdentity(getRequestEvent(), 'owner');
 		const { capability } = await discovery();
+		if (!['disabled', 'slicer'].includes(value.mode))
+			error(409, 'Choose the slicer-managed workflow. Older plans are retained only for recovery.');
 		if (value.mode !== 'disabled') {
 			const reason = filamentSetupReason(value, capability);
 			if (reason) error(409, reason);
