@@ -313,12 +313,12 @@ try {
 		} else await route.continue();
 	});
 	await second.getByRole('button', { name: 'Resume print', exact: true }).click();
-	await second.getByRole('link', { name: 'Review print submission →', exact: true }).waitFor();
+	await second.getByRole('link', { name: 'Restore print controls →', exact: true }).waitFor();
 	assert.ok(lostPrintRequest);
 	const lostId = new URLSearchParams(lostPrintRequest.postData()).get('id');
 	await second.unroute('**/actions');
 	await second.goto(base + '/console');
-	await second.getByRole('link', { name: 'Review print submission →', exact: true }).waitFor();
+	await second.getByRole('link', { name: 'Restore print controls →', exact: true }).waitFor();
 	assert.equal(
 		await second.getByRole('button', { name: 'Resume print', exact: true }).isDisabled(),
 		true
@@ -327,7 +327,7 @@ try {
 		.getByRole('link', { name: 'View print receipt', exact: true })
 		.getAttribute('href')
 		.then((href) => assert.equal(href, '/actions/' + lostId));
-	await second.getByRole('button', { name: 'Check receipt', exact: true }).click();
+	await second.getByRole('button', { name: 'Check submission outcome', exact: true }).click();
 	await second.waitForFunction(() =>
 		[...document.querySelectorAll('button')].some(
 			(b) => b.textContent?.trim() === 'Resume print' && !b.disabled
@@ -355,7 +355,7 @@ try {
 		} else await route.continue();
 	});
 	await second.getByRole('button', { name: 'Stop print', exact: true }).click();
-	await second.getByRole('link', { name: 'Review print submission →', exact: true }).waitFor();
+	await second.getByRole('link', { name: 'Restore print controls →', exact: true }).waitFor();
 	const confirmationId = new URLSearchParams(lostConfirmation.postData()).get('id');
 	await second.unroute('**/actions');
 	await second.goto(base + '/account');
@@ -363,7 +363,7 @@ try {
 		.getByRole('link', { name: 'View print receipt', exact: true })
 		.getAttribute('href')
 		.then((href) => assert.equal(href, '/actions/' + confirmationId));
-	await second.getByRole('button', { name: 'Check receipt', exact: true }).click();
+	await second.getByRole('button', { name: 'Check submission outcome', exact: true }).click();
 	await second.waitForFunction(() =>
 		[...document.querySelectorAll('button')].some(
 			(b) => b.textContent?.trim() === 'Resume print' && !b.disabled
@@ -677,6 +677,13 @@ try {
 		'Help fits a narrow phone'
 	);
 	await first.screenshot({ path: 'test-results/help-mobile.png', fullPage: true });
+	await first.goto(base + '/recovery');
+	await first.getByRole('heading', { name: 'Restore print controls', exact: true }).waitFor();
+	assert.equal(
+		await first.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+		false,
+		'Recovery fits a narrow phone'
+	);
 	assert.deepEqual(errors, [], 'Production browser errors');
 	const polyfills = await fetch(`${base}/legacy-polyfills.js`);
 	assert.equal(polyfills.status, 200, 'Polyfills are served');

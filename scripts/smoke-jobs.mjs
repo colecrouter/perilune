@@ -148,7 +148,7 @@ try {
 		.getByRole('link', { name: 'View print receipt', exact: true })
 		.getAttribute('href')
 		.then((href) => assert.equal(href, '/actions/' + lostStartId));
-	await page.getByRole('button', { name: 'Check receipt', exact: true }).click();
+	await page.getByRole('button', { name: 'Check submission outcome', exact: true }).click();
 	await page
 		.getByRole('region', { name: 'Print status', exact: true })
 		.waitFor({ state: 'detached' });

@@ -55,7 +55,7 @@
 			: printActionJournal.account === account && printActionJournal.error
 				? printActionJournal.error
 				: printActionJournal.account === account && printActionJournal.entries.length
-					? 'Review the pending print receipt before starting another print.'
+					? 'Resolve the pending print submission before starting another print.'
 					: startReason(snapshot)
 	);
 	let search = $state(untrack(() => data.catalog.query.q));
@@ -433,6 +433,9 @@
 					</p>
 					<div class="readiness">
 						<h3>Ready to start?</h3>
+						{#if snapshot.liveRecovery || snapshot.safety?.halted || (printActionJournal.account === account && printActionJournal.entries.length)}<a
+								href="/recovery">Restore print controls →</a
+							>{/if}
 						<p>
 							{missing
 								? 'This file is no longer in the library.'
@@ -447,9 +450,13 @@
 							</p>{/if}
 					</div>
 					{#if currentStart}<div class="start-result" role="status">
-							<ActionFeedback receipt={currentStart} showCompleted /><a href="/"
-								>View current print →</a
-							>
+							<ActionFeedback
+								receipt={currentStart}
+								showCompleted
+							/>{#if snapshot.liveRecovery || snapshot.safety?.halted || (printActionJournal.account === account && printActionJournal.entries.length)}<a
+									class="button secondary"
+									href="/recovery">Restore print controls</a
+								>{/if}<a href="/">View current print →</a>
 						</div>{/if}
 					<a
 						role="button"
@@ -556,7 +563,10 @@
 					class="error-text"
 				>
 					{reason}
-				</p>{/if}{#if failure}<p role="alert" class="error-text">
+				</p>
+				{#if snapshot.liveRecovery || snapshot.safety?.halted || (printActionJournal.account === account && printActionJournal.entries.length)}<a
+						href="/recovery">Restore print controls →</a
+					>{/if}{/if}{#if failure}<p role="alert" class="error-text">
 					{failure}
 				</p>{/if}
 			<div class="dialog-actions">

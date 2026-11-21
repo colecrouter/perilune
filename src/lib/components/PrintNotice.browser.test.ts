@@ -113,8 +113,8 @@ test('lost stop acknowledgement links its stable receipt without automatic resen
 	const id = submitStop.mock.calls[0][0].id;
 	await screen.getByRole('button', { name: 'Keep printing', exact: true }).click();
 	await expect
-		.element(screen.getByRole('link', { name: 'Review print submission →' }))
-		.toHaveAttribute('href', '/actions/' + id);
+		.element(screen.getByRole('link', { name: 'Restore print controls →' }))
+		.toHaveAttribute('href', '/recovery');
 	const receipt: ActionRecord = {
 		id,
 		label: 'Stop print',
@@ -217,7 +217,7 @@ test('explicit receipt reconciliation can close a never-accepted stop without re
 	await screen.getByRole('dialog').getByRole('button', { name: 'Stop print', exact: true }).click();
 	id = submitStop.mock.calls[0][0].id;
 	await screen.getByRole('button', { name: 'Keep printing', exact: true }).click();
-	await screen.getByRole('button', { name: 'Check receipt', exact: true }).click();
+	await screen.getByRole('button', { name: 'Check submission outcome', exact: true }).click();
 	await expect
 		.element(screen.getByRole('button', { name: 'Pause print', exact: true }))
 		.toBeEnabled();
@@ -289,9 +289,9 @@ test('receipt reconciliation remains available after the print ends', async () =
 		reconcile
 	});
 	await expect
-		.element(screen.getByRole('button', { name: 'Check receipt', exact: true }))
+		.element(screen.getByRole('button', { name: 'Check submission outcome', exact: true }))
 		.toBeVisible();
-	await screen.getByRole('button', { name: 'Check receipt', exact: true }).click();
+	await screen.getByRole('button', { name: 'Check submission outcome', exact: true }).click();
 	await expect
 		.element(screen.getByRole('region', { name: 'Print status' }))
 		.not.toBeInTheDocument();

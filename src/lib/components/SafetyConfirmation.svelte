@@ -34,12 +34,21 @@
 			: intent === 'stop'
 				? {
 						intent,
-						recoveryOf: snapshot.liveRecovery?.id ?? '',
+						recoveryOf:
+							snapshot.liveRecovery?.id ??
+							snapshot.safety?.actions.find((a) => a.status === 'unknown' && !a.reviewedAt)?.id ??
+							'',
 						filename: snapshot.job.filename ?? '',
 						runId: snapshot.job.runId ?? ''
 					}
 				: intent === 'cooldown' || intent === 'abortProbe'
-					? { intent, recoveryOf: snapshot.liveRecovery?.id ?? '' }
+					? {
+							intent,
+							recoveryOf:
+								snapshot.liveRecovery?.id ??
+								snapshot.safety?.actions.find((a) => a.status === 'unknown' && !a.reviewedAt)?.id ??
+								''
+						}
 					: { intent }
 	);
 </script>

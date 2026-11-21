@@ -4,7 +4,7 @@
 	import { page } from '$app/state';
 	import { Dialog } from 'bits-ui';
 	import { recoverLiveAction } from '../../routes/printer.remote.js';
-	let { snapshot }: { snapshot?: PrinterSnapshot } = $props();
+	let { snapshot, inline = false }: { snapshot?: PrinterSnapshot; inline?: boolean } = $props();
 	const recovery = $derived(snapshot?.liveRecovery);
 	let pausedConfirmed = $state(false);
 	const pausedCandidate = $derived(
@@ -61,68 +61,78 @@
 	}
 </script>
 
+{#snippet review()}
+	{#if inline}<h2>Confirm the printer is stopped</h2>{:else}<Dialog.Title
+			>Is the printer stopped?</Dialog.Title
+		><Dialog.Description>Check the printer before restoring controls.</Dialog.Description>{/if}
+	<p>
+		Inspect the printer in person or on camera. Confirm that movement has stopped and the displayed
+		heater targets are appropriate. Clearing this lock does not undo or resend the previous action.
+	</p>
+	{#if pausedCandidate}<label class="paused-review"
+			><input type="checkbox" bind:checked={pausedConfirmed} disabled={!printerReady || busy} /> I have
+			verified this is the same paused print and movement has stopped.</label
+		>
+		<p>
+			The previous Resume outcome stays unknown. Unlocking leaves the print paused and does not send
+			another Resume. Check printer messages and any purged material before continuing.
+		</p>{/if}
+	{#if pausedCandidate && !printerReady}<p>
+			Waiting for a connected, idle printer before you can confirm this paused print. Current print
+			data is retained.
+		</p>{/if}
+	{#if !ready && !pausedCandidate}<p>
+			Recovery needs a connected, idle printer. If a print is running or paused, stop it using the
+			recovery controls above, then return here. Unlocking does not stop a job or turn heaters off.
+		</p>{/if}
+	{#if failure}<p role="alert">{failure}</p>{/if}
+	<div class="recovery-actions">
+		{#if !inline}<button
+				class="button secondary"
+				disabled={busy}
+				onclick={() => {
+					open = false;
+				}}>Keep controls locked</button
+			>{/if}<button class="button primary" disabled={busy || !ready} onclick={recover}
+			>{busy ? 'Checking printer…' : 'Printer checked · unlock controls'}</button
+		>
+	</div>
+{/snippet}
+
 {#if recovery}
-	<aside class="live-recovery" role="status">
+	<aside class="live-recovery" class:inline role="status">
 		<div>
 			<strong>Check the printer before continuing</strong>
-			<p>{recovery.message}</p>
+			{#if !inline}<p>{recovery.message}</p>{/if}
 		</div>
 		{#if page.data.user?.role === 'owner'}
-			<Dialog.Root bind:open>
-				<Dialog.Trigger class="button secondary">Review recovery</Dialog.Trigger>
-				<Dialog.Portal
-					><Dialog.Overlay class="recovery-overlay" /><Dialog.Content
-						class="recovery-dialog"
-						onEscapeKeydown={(event) => {
-							if (busy) event.preventDefault();
-						}}
-						onInteractOutside={(event) => {
-							if (busy) event.preventDefault();
-						}}
-					>
-						<Dialog.Title>Is the printer stopped?</Dialog.Title>
-						<Dialog.Description
-							>Inspect the printer in person or on camera. Confirm that movement has stopped and the
-							displayed heater targets are appropriate. Clearing this lock does not undo or resend
-							the previous action.</Dialog.Description
+			{#if inline}{@render review()}{:else}<Dialog.Root bind:open>
+					<Dialog.Trigger class="button secondary">Review recovery</Dialog.Trigger>
+					<Dialog.Portal
+						><Dialog.Overlay class="recovery-overlay" /><Dialog.Content
+							class="recovery-dialog"
+							onEscapeKeydown={(event) => {
+								if (busy) event.preventDefault();
+							}}
+							onInteractOutside={(event) => {
+								if (busy) event.preventDefault();
+							}}
 						>
-						{#if pausedCandidate}<label class="paused-review"
-								><input
-									type="checkbox"
-									bind:checked={pausedConfirmed}
-									disabled={!printerReady || busy}
-								/> I have verified this is the same paused print and movement has stopped.</label
-							>
-							<p>
-								The previous Resume outcome stays unknown. Unlocking leaves the print paused and
-								does not send another Resume. Check printer messages and any purged material before
-								continuing.
-							</p>{/if}
-						{#if pausedCandidate && !printerReady}<p>
-								Waiting for a connected, idle printer before you can confirm this paused print.
-								Current print data is retained.
-							</p>{/if}
-						{#if !ready && !pausedCandidate}<p>
-								Recovery needs a connected, idle printer. If a print is running or paused, stop it
-								using the recovery controls above, then return here. Unlocking does not stop a job
-								or turn heaters off.
-							</p>{/if}
-						{#if failure}<p role="alert">{failure}</p>{/if}
-						<div class="recovery-actions">
-							<Dialog.Close class="button secondary" disabled={busy}
-								>Keep controls locked</Dialog.Close
-							><button class="button primary" disabled={busy || !ready} onclick={recover}
-								>{busy ? 'Checking printer…' : 'Printer checked · unlock controls'}</button
-							>
-						</div>
-					</Dialog.Content></Dialog.Portal
-				>
-			</Dialog.Root>
+							{@render review()}
+						</Dialog.Content></Dialog.Portal
+					>
+				</Dialog.Root>{/if}
 		{/if}
 	</aside>
 {/if}
 
 <style>
+	.inline {
+		display: block;
+		margin: 0;
+		border: 0;
+		padding: 0;
+	}
 	.paused-review {
 		display: flex;
 		align-items: flex-start;

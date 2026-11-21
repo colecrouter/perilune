@@ -10,6 +10,10 @@
 		<h1>{data.receipt.label}</h1>
 		<p role="status">{actionStatusLabel[data.receipt.status]}</p>
 		{#if data.receipt.message}<p>{data.receipt.message}</p>{/if}
+		{#if data.receipt.status === 'unknown' && !data.receipt.reviewedAt}<a
+				class="button primary"
+				href="/recovery">Restore print controls</a
+			>{/if}
 		<details>
 			<summary>Request details</summary>
 			<p><code>{data.receipt.id}</code></p>

@@ -1913,3 +1913,13 @@ Pairing feedback (unreleased): HTTP pairing errors retain their server message.
 Rate-limit responses include bounded retry timing for a client cooldown without
 changing admission limits. The pairing form is top anchored with reserved feedback
 space. One-time slicer-key copy feedback is local to its secret controls.
+
+### Actionable print recovery (unreleased)
+
+`/recovery` collects emergency, ordinary unknown-action, safety-outcome and
+account-scoped browser submission recovery. Jobs and print/safety notices link to
+this correction path; action records retain a direct recovery link. Completion
+waits for browser journal initialization and pending ordinary/safety operations.
+Safety preparation commands can bind to an unreviewed safety outcome as well as
+the original ordinary reservation; owner, epoch, freshness and idempotency fences
+remain in place. No recovery is dispatched automatically.
