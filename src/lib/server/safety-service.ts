@@ -1,3 +1,4 @@
+import type { PrinterSnapshot } from '#lib/domain/printer.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { Context, Effect, Layer, Schedule, Semaphore, SubscriptionRef } from 'effect';
 import { SqlClient } from 'effect/sql/SqlClient';
@@ -336,6 +337,11 @@ export const SafetyServiceLive = Layer.effect(
 				}
 				yield* publish();
 			});
+		const recoveryMatches = (snapshot: PrinterSnapshot, id: string) =>
+			snapshot.liveRecovery?.id === id ||
+			Boolean(
+				snapshot.safety?.actions.some((a) => a.id === id && a.status === 'unknown' && !a.reviewedAt)
+			);
 		const freshFor = (job: Work) =>
 			Effect.gen(function* () {
 				const fresh = yield* transport.refresh(job.generation);
@@ -343,7 +349,7 @@ export const SafetyServiceLive = Layer.effect(
 				if (!authorized(job.actor, true))
 					return yield* Effect.fail(rejected('An authorized owner is required.'));
 				if (job.request.operation.type === 'emergency') return fresh;
-				if (snapshot.liveRecovery?.id !== job.request.operation.recoveryOf)
+				if (!recoveryMatches(snapshot, job.request.operation.recoveryOf))
 					return yield* Effect.fail(
 						rejected('The original recovery changed. Review the current printer state.')
 					);
@@ -585,9 +591,11 @@ export const SafetyServiceLive = Layer.effect(
 				} else if (!isEmergency) {
 					if (
 						interlock.halted ||
-						snapshot.liveRecovery?.id !==
+						!recoveryMatches(
+							snapshot,
 							(request.operation as Exclude<SafetyRequest['operation'], { type: 'emergency' }>)
 								.recoveryOf
+						)
 					)
 						return yield* Effect.fail(
 							rejected('Review the current recovery state before submitting.')

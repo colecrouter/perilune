@@ -50,3 +50,16 @@ state.
 Console polish (unreleased): following new messages scrolls smoothly after the
 initial history position. Reader scrolling or navigation keys stop following;
 reduced-motion preferences keep immediate scrolling.
+
+## Direct print recovery (unreleased)
+
+When a print submission or printer recovery blocks printing, choose **Restore
+print controls** beside the blocked controls. The recovery screen keeps emergency,
+uncertain-action, safety-outcome, and browser-submission checks together. Resolving
+one item leaves any remaining correction visible. A completed recovery returns you
+to Jobs; it never resends Start, Resume, or another uncertain command.
+
+Owners can explicitly stop the current job, abort a manual probe, or turn off
+heaters when preparing to review an uncertain safety outcome. Each command remains
+bound to the current recovery and requires fresh execution-time checks. Technical
+action records remain available as secondary details.

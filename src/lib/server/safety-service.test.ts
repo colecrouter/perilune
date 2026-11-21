@@ -664,3 +664,21 @@ it('fences the old reviewed token synchronously before a new emergency can publi
 		reviewedAt: null
 	});
 });
+
+it('allows explicit cooldown for a still-unreviewed safety outcome without an ordinary reservation', async () => {
+	const f = await fixture();
+	f.setBehavior('partial');
+	const first = await f.submit({ type: 'cooldown', recoveryOf: f.recoveryId });
+	await f.finished(first.id);
+	const recoveryOf = first.id;
+	f.setBehavior('normal');
+	await Effect.runPromise(SubscriptionRef.update(f.state, (s) => ({ ...s, liveRecovery: null })));
+	const result = await f.submit({ type: 'cooldown', recoveryOf });
+	expect((await f.finished(result.id)).observed).toBe(true);
+	expect(
+		(await f.snapshot()).safety?.actions.find((a) => a.id === recoveryOf)?.reviewedAt
+	).toBeNull();
+	await expect(f.submit({ type: 'cooldown', recoveryOf: randomUUID() })).rejects.toThrow(
+		/current recovery/
+	);
+});

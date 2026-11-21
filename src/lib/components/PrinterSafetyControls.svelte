@@ -41,14 +41,14 @@
 		</div>
 		{#if safety.halted}<p role="alert">
 				Emergency interlock active. Ordinary controls remain locked.
-				<a href="/activity#emergency">Review hazard and recover →</a>
+				<a href="/recovery">Restore print controls →</a>
 			</p>{:else if snapshot.liveRecovery}<p role="status">
 				Controls locked after an uncertain action.
-				<a href="/activity#recovery">Check the printer and review recovery →</a>
+				<a href="/recovery">Restore print controls →</a>
 			</p>{:else if active.some((a) => a.status === 'unknown')}<p role="status">
-				A safety outcome needs review. <a href="/activity#safety">Review safety outcome →</a>
+				A safety outcome needs review. <a href="/recovery">Review safety outcome →</a>
 			</p>{:else if active.length}<p role="status">
-				Safety action in progress. <a href="/activity#safety">View progress →</a>
+				Safety action in progress. <a href="/recovery">View progress →</a>
 			</p>{/if}
 	</aside>
 {/if}

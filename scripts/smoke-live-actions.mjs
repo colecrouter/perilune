@@ -684,9 +684,7 @@ try {
 		.getByRole('dialog')
 		.getByRole('button', { name: 'Disengage motors', exact: true })
 		.click();
-	await page
-		.getByRole('link', { name: 'Check the printer and review recovery →', exact: true })
-		.waitFor();
+	await page.getByRole('link', { name: 'Restore print controls →', exact: true }).first().waitFor();
 
 	drop = false;
 	// Recovery safety is a separate workflow, never a replay of the lost motor command.
@@ -760,7 +758,7 @@ try {
 		.waitFor();
 	await page.getByRole('link', { name: '← Return to overview', exact: true }).click();
 	assert.equal(safetyRequests.filter((p) => p === '/printer/emergency_stop').length, 1);
-	await page.getByRole('link', { name: 'Review hazard and recover →', exact: true }).click();
+	await page.getByRole('link', { name: 'Restore print controls →', exact: true }).first().click();
 	const recoveryPanel = page.getByRole('region', { name: 'Emergency recovery', exact: true });
 	await recoveryPanel
 		.getByRole('checkbox', {
@@ -840,14 +838,17 @@ try {
 	await page.goto(base);
 	drop = true;
 	await page.getByRole('button', { name: 'Resume print', exact: true }).click();
-	await page
-		.getByRole('link', { name: 'Check the printer and review recovery →', exact: true })
-		.waitFor();
+	await page.waitForFunction(() =>
+		document
+			.querySelector('[aria-label="Printer safety"]')
+			?.textContent.includes('Controls locked after an uncertain action.')
+	);
+	await page.getByRole('link', { name: 'Restore print controls →', exact: true }).first().waitFor();
 	drop = false;
 	await page.reload();
-	await page.goto(base + '/activity#recovery');
-	await page.getByRole('button', { name: 'Review recovery', exact: true }).click();
-	const pausedReview = page.getByRole('dialog');
+	await page.goto(base + '/recovery');
+	await page.getByRole('heading', { name: 'Restore print controls', exact: true }).waitFor();
+	const pausedReview = page.locator('.live-recovery');
 	const unlock = pausedReview.getByRole('button', {
 		name: 'Printer checked · unlock controls',
 		exact: true

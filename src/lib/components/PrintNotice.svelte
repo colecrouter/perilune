@@ -203,15 +203,14 @@
 						{userId}
 						onStop={stop}
 					/>{/if}
-				{#if operator && unresolved}<a href={`/actions/${uncertainId}`}>Review print submission →</a
-					>
+				{#if operator && unresolved}<a href="/recovery">Restore print controls →</a>
 					{#if reconcile}<button
 							class="button secondary"
 							disabled={checking || !available}
-							onclick={checkReceipt}>{checking ? 'Checking…' : 'Check receipt'}</button
+							onclick={checkReceipt}>{checking ? 'Checking…' : 'Check submission outcome'}</button
 						>{/if}
-				{:else if operator && receipt?.status === 'unknown'}<a href={`/actions/${receipt.id}`}
-						>Review uncertain print action →</a
+				{:else if operator && receipt?.status === 'unknown'}<a href="/recovery"
+						>Restore print controls →</a
 					>{/if}
 				{#if !active}<a href="/jobs">Job library →</a>{/if}
 			{/snippet}
