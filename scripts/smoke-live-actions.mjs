@@ -838,10 +838,15 @@ try {
 	await page.goto(base);
 	drop = true;
 	await page.getByRole('button', { name: 'Resume print', exact: true }).click();
+	await page.waitForFunction(() =>
+		document
+			.querySelector('[aria-label="Printer safety"]')
+			?.textContent.includes('Controls locked after an uncertain action.')
+	);
 	await page.getByRole('link', { name: 'Restore print controls →', exact: true }).first().waitFor();
 	drop = false;
 	await page.reload();
-	await page.getByRole('link', { name: 'Restore print controls →', exact: true }).first().click();
+	await page.goto(base + '/recovery');
 	await page.getByRole('heading', { name: 'Restore print controls', exact: true }).waitFor();
 	const pausedReview = page.locator('.live-recovery');
 	const unlock = pausedReview.getByRole('button', {
